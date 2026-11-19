@@ -23,16 +23,6 @@ end
 -- Montant exact en po pour les champs (4 décimales = au cuivre près) : renvoyer un champ inchangé ne doit rien changer.
 local function po(c) return (("%.4f"):format(c / 10000):gsub("%.?0+$", "")) end
 
--- Ce que tous les objets de la liste coûteraient d'après TON dernier scan (nil = au moins un sans prix).
-local function estimate(items, market)
-  local total, missing = 0, {}
-  for _, l in ipairs(items) do
-    local cost = ns.buyCost(l.id, l.qty, market)
-    if cost then total = total + cost else missing[#missing + 1] = l.id end
-  end
-  return total, missing
-end
-
 -- Besoins vérifiés contre les recettes connues (n° 12) : quantité maximale de chaque objet dans l'arbre complet,
 -- et ses ancêtres (demander une barre ET son minerai = doublon).
 local function expansion(o)
@@ -116,24 +106,19 @@ function ns.ctDescribe(c, me)
   if #c.m == 0 then add("   |cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r") end
   add(" ")
 
-  -- P8 : ton estimation, ta perte maximale.
-  local m = ns.market()
-  local items = m and m.items
-  add(("|cffffd100Ton estimation|r (scan de l'HV : %s)"):format(m and m.scanned or "jamais"))
+  -- P8 : ton estimation, ta perte maximale (ns.ctEstimation, la même que sur la page du projet).
+  local e = ns.ctEstimation(c, me)
+  add(("|cffffd100Ton estimation|r (scan de l'HV : %s)"):format(e.scanned or "jamais"))
   if #c.m > 0 then
-    local est, missing = estimate(c.m, items)
-    local gap = est > 0 and (caution - est) / est * 100 or 0
-    local color = (artisan and gap > 10 or not artisan and gap < -10) and "|cffe64d4d" or "|cff59cc73"
-    add(("   composants ~%s · caution %s%+.0f %%|r"):format(money(est), color, gap))
-    if #missing > 0 then add(("   |cffe6994d! %d composant(s) sans prix connu : estimation incomplète|r"):format(#missing)) end
+    add(("   composants ~%s · caution %s%+.0f %%|r"):format(money(e.composants), e.alerte and "|cffe64d4d" or "|cff59cc73", e.ecart))
+    if e.manquants > 0 then add(("   |cffe6994d! %d composant(s) sans prix connu : estimation incomplète|r"):format(e.manquants)) end
     if artisan then
-      add(("   Si le client disparaît après l'étape 1 : tu perds au plus %s + ton travail"):format(money(math.max(0, caution - est))))
+      add(("   Si le client disparaît après l'étape 1 : tu perds au plus %s + ton travail"):format(money(e.perte)))
     else
-      add(("   Si l'artisan disparaît après l'étape 1 : tu perds au plus %s"):format(money(math.max(0, est - caution))))
+      add(("   Si l'artisan disparaît après l'étape 1 : tu perds au plus %s"):format(money(e.perte)))
     end
   end
-  local value = estimate(c.o, items)
-  if value > 0 then add(("   les objets livrés valent ~%s à l'HV (tu %s %s)"):format(money(value), artisan and "reçois" or "paies", money(delivery))) end
+  if e.valeur > 0 then add(("   les objets livrés valent ~%s à l'HV (tu %s %s)"):format(money(e.valeur), artisan and "reçois" or "paies", money(delivery))) end
 
   -- Vérifications
   local checks = {}

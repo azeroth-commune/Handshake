@@ -148,6 +148,31 @@ function ns.ctTotal(list)
   return s
 end
 
+-- P8 (SECURITE.md, n° 13) : TON estimation des termes du contrat c, d'après ton dernier scan de l'HV, vue depuis ta place
+-- (me). La fiche du contrat (ns.ctDescribe) et la page du projet lisent ces nombres, rien n'est estimé ailleurs.
+--   scanned : date du scan (nil = jamais) ; composants : ce que coûteraient les apports, hors ceux sans prix connu ;
+--   manquants : combien n'ont pas de prix (estimation incomplète) ; ecart : caution − composants, en % des composants ;
+--   alerte : au-delà de 10 % dans le sens où je perds (client : caution trop basse ; artisan : trop haute) ; perte : ce
+--   que je perds au plus si l'autre disparaît après l'étape 1 ; valeur : ce que valent les objets livrés (hors sans prix).
+local function estimate(list, items)
+  local total, missing = 0, 0
+  for _, l in ipairs(list) do
+    local cost = ns.buyCost(l.id, l.qty, items)
+    if cost then total = total + cost else missing = missing + 1 end
+  end
+  return total, missing
+end
+function ns.ctEstimation(c, me)
+  local m = ns.market()
+  local items, artisan, caution = m and m.items, me == c.artisan, ns.ctTotal(c.m)
+  local e = { scanned = m and m.scanned, valeur = (estimate(c.o, items)) }
+  e.composants, e.manquants = estimate(c.m, items)
+  e.ecart = e.composants > 0 and (caution - e.composants) / e.composants * 100 or 0
+  e.alerte = artisan and e.ecart > 10 or not artisan and e.ecart < -10
+  e.perte = math.max(0, artisan and caution - e.composants or e.composants - caution)
+  return e
+end
+
 ---------------------------------------------------------------------------------------------------
 -- Lecture stricte (P3) : champs à position fixe, entiers sans zéro de tête, bornes, listes triées sans doublon.
 local function int(s, maxLen, lo, hi)
