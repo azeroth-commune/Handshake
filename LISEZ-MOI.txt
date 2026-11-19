@@ -1,0 +1,36 @@
+HANDSHAKE (bêta) — commandes et contrats d'artisanat entre joueurs, pour WoW Forever
+
+INSTALLER (2 minutes)
+1. Ferme le jeu.
+2. Dézippe : tu obtiens un dossier « Handshake ».
+3. Mets ce dossier dans :
+      World of Warcraft\_forever_\Interface\AddOns\
+   (à côté de tes autres addons). Il faut que ce soit exactement :
+      ...\_forever_\Interface\AddOns\Handshake\Handshake.toc
+   et PAS ...\AddOns\Handshake\Handshake\Handshake.toc (double dossier = ne marche pas).
+4. Lance le jeu. Sur l'écran de choix du perso : bouton « AddOns » en bas à gauche,
+   vérifie que « Handshake (bêta) » est coché.
+5. En jeu, tape /contrat : une fenêtre « Contrats » s'ouvre. C'est bon.
+
+À SAVOIR
+- Rien ne part tout seul : tu cliques toujours toi-même (envoyer, signer, accepter l'échange).
+- Pendant un échange avec quelqu'un avec qui tu as un contrat signé, un panneau s'affiche à droite de la
+  fenêtre d'échange et dit si c'est CONFORME au contrat. S'il dit NON CONFORME, n'accepte pas.
+- Après un échange lié à un contrat, tape /reload : c'est ce qui enregistre sur le disque.
+- Avant de tester, tape une fois :  /console scriptErrors 1   (pour voir les erreurs s'il y en a).
+
+FAIRE UNE DEMANDE
+  /handshake, tape l'objet voulu, « Ajouter », mets le nom de l'artisan dans « Joueur ».
+  Ou Ctrl+clic droit sur un objet n'importe où (sacs, lien du chat, recette…) : il s'ajoute à la commande.
+  Dans l'arbre, Ctrl+clic sur un composant que tu fournis toi-même (il passe en bleu).
+  « Offre » : ce que tu proposes de payer (ou laisse vide : l'artisan chiffrera).
+  « Préparer la demande », relis-la dans /contrat, puis « Envoyer la proposition ».
+
+COMMANDES
+  /contrat            les contrats (lire, signer, refuser, contre-proposer)
+  /handshake          la fenêtre des commandes (arbre acheter ou fabriquer, besoins)
+  /handshake noms     un diagnostic des noms (à envoyer si on te le demande)
+
+EN CAS DE PROBLÈME
+Une capture d'écran de la fenêtre + le texte de l'erreur s'il y en a une, envoyés à la personne qui t'a donné
+l'addon. Pour désinstaller : supprime le dossier Handshake.

@@ -1,0 +1,280 @@
+-- Handshake, la base : fenêtres, montants, noms d'objets, et les données dont le calcul a besoin.
+-- Si GameData est installé, on prend ses données (plus riches) ; sinon Handshake lit lui-même, sans rien demander :
+--   recettes et recettes connues : quand tu ouvres une fenêtre de métier ;
+--   prix de l'hôtel des ventes   : à l'ouverture de l'HV (scan complet du jeu, au plus un par 15 min) ;
+--   sacs et banque               : à chaque changement de sac, et quand la banque est ouverte.
+-- Tout va dans HandshakeDB (SavedVariables), écrit au /reload ou à la déconnexion.
+local _, ns = ...
+
+local function gd() return GameDataAPI ~= nil and GameDataDB ~= nil end
+local function db() return HandshakeDB end
+
+---------------------------------------------------------------------------------------------------
+-- Accès aux données (GameData d'abord)
+local function house() return GetRealmName() .. "-" .. UnitFactionGroup("player") end
+-- Recettes : celles scannées dans les fenêtres de métier (GameData ou Handshake), complétées par la réserve Classic
+-- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
+local classic -- la réserve, mise en forme une fois
+function ns.recipes()
+  local own = (gd() and GameDataDB.recipes) or db().recipes or {}
+  if not HandshakeClassicRecipes then return own end
+  if not classic then
+    classic = {}
+    for k, c in pairs(HandshakeClassicRecipes) do
+      local reagents = {}
+      for i = 1, #c[6], 2 do reagents[#reagents + 1] = { id = c[6][i], qty = c[6][i + 1] } end
+      classic[k] = { output = c[1], made_min = c[2], made_max = c[3], profession = c[4], name = c[5], reagents = reagents, level = c[7],
+        classic = true }
+    end
+  end
+  local out, made = {}, {}
+  for k, r in pairs(own) do out[k] = r; if r.output then made[r.output] = true end end
+  for k, r in pairs(classic) do
+    if out[k] == nil and not made[r.output] then out[k] = r end -- une recette scannée de cet objet fait foi
+  end
+  return out
+end
+-- Compétence requise pour apprendre une recette : la sienne si les données la donnent, sinon celle de la réserve Classic.
+function ns.recipeLevel(key, r)
+  if r and r.level then return r.level end
+  local c = key and HandshakeClassicRecipes and HandshakeClassicRecipes[key]
+  return c and c[7] or nil
+end
+function ns.chars() return (gd() and GameDataDB.chars) or db().chars or {} end
+function ns.vendors() return (gd() and GameDataDB.vendors) or {} end
+function ns.items() return (gd() and GameDataItems and GameDataItems.items) or db().items or {} end
+function ns.market() return (gd() and GameDataMarket and GameDataMarket[house()]) or (db().market or {})[house()] end
+
+-- Sur Forever, UnitName("player") renvoie prénom, nom de famille ; la clé d'un perso est « Prénom Nom-Royaume »
+-- (même forme que GameData).
+function ns.charKey()
+  local first, last = UnitName("player")
+  return (last and (first .. " " .. last) or first) .. "-" .. GetRealmName()
+end
+
+-- Conteneurs d'Enum.BagIndex dont le nom passe le filtre (sacs, banque, onglets : ce que ce client a).
+function ns.containers(keep)
+  local out, seen = {}, {}
+  for name, bag in pairs(Enum.BagIndex or {}) do
+    if keep(name) and not seen[bag] then
+      seen[bag] = true
+      local size = C_Container.GetContainerNumSlots(bag)
+      if size and size > 0 then
+        local items = {}
+        for slot = 1, size do
+          local it = C_Container.GetContainerItemInfo(bag, slot)
+          if it then items[#items + 1] = { id = it.itemID, count = it.stackCount } end
+        end
+        out[name] = { size = size, items = items }
+      end
+    end
+  end
+  return out
+end
+function ns.isBag(n) return n == "Backpack" or n == "Keyring" or n == "ReagentBag" or n:find("^Bag_") ~= nil end
+function ns.isBank(n) return n:find("[Bb]ank") ~= nil end
+
+---------------------------------------------------------------------------------------------------
+-- Montants et noms
+function ns.money(c)
+  local fmt = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+  return c and fmt(math.floor(c + 0.5)) or "?"
+end
+-- Montant court : au-delà d'1 po on oublie les pc, au-delà de 100 po les pa.
+function ns.moneyShort(c)
+  if not c then return "–" end
+  c = math.floor(math.abs(c) + 0.5)
+  if c >= 1000000 then c = math.floor(c / 10000 + 0.5) * 10000 elseif c >= 10000 then c = math.floor(c / 100 + 0.5) * 100 end
+  if c == 0 then return "0" end
+  return ((C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString)(c, 10)
+end
+function ns.moneySigned(c)
+  if not c then return "–" end
+  return (c >= 0 and "|cff59cc73+" or "|cffe64d4d-") .. ns.moneyShort(c) .. "|r"
+end
+
+-- Nom d'un objet : demandé au serveur s'il n'est pas encore connu, retenu quand il arrive.
+local asked = {}
+local function remember(id)
+  local name, link = C_Item.GetItemInfo(id)
+  if name then
+    if not gd() then db().items[id] = { name = name, link = link } end
+    return name, link
+  end
+  if not asked[id] and C_Item.RequestLoadItemDataByID then asked[id] = true C_Item.RequestLoadItemDataByID(id) end
+end
+ns.rememberItem = remember
+
+function ns.itemLabel(id)
+  local it = ns.items()[id]
+  local _, link = C_Item.GetItemInfo(id)
+  if not link and not it then remember(id) end
+  return (it and it.link) or link or (it and it.name) or ("objet " .. id)
+end
+
+function ns.findItem(text)
+  local id = tonumber(text:match("item:(%d+)")) or tonumber(text)
+  if id then return id end
+  local wanted = text:lower()
+  for iid, it in pairs(ns.items()) do
+    if it.name and it.name:lower() == wanted then return iid end
+  end
+  for _, r in pairs(ns.recipes()) do
+    if r.name and r.name:lower() == wanted then return r.output end
+  end
+end
+
+-- Une fenêtre sombre, bord lavande, déplaçable, fermée par Échap, avec titre et croix.
+function ns.newWindow(name, title, w, h)
+  local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
+  f:SetSize(w, h)
+  f:SetPoint("CENTER")
+  f:SetFrameStrata("HIGH")
+  f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+  f:SetBackdropColor(0.06, 0.06, 0.08, 0.96)
+  f:SetBackdropBorderColor(0.66, 0.56, 1.00, 0.35)
+  f:EnableMouse(true)
+  f:SetMovable(true)
+  f:SetClampedToScreen(true)
+  f:SetToplevel(true)
+  f:HookScript("OnShow", function(self) self:Raise() end)
+  f:RegisterForDrag("LeftButton")
+  f:SetScript("OnDragStart", f.StartMoving)
+  f:SetScript("OnDragStop", f.StopMovingOrSizing)
+  table.insert(UISpecialFrames, name) -- Échap ferme la fenêtre
+  f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  f.title:SetPoint("TOPLEFT", 14, -12)
+  f.title:SetText(title)
+  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+  close:SetPoint("TOPRIGHT", 2, 2)
+  if BeAGoodPal and BeAGoodPal.AddCaptureButton then BeAGoodPal.AddCaptureButton(f, title, -30, -8) end
+  f:Hide()
+  return f
+end
+
+---------------------------------------------------------------------------------------------------
+-- Lecture des données quand GameData n'est pas là.
+local DIFFICULTY = { [0] = "optimal", [1] = "medium", [2] = "easy", [3] = "trivial" }
+
+local function myChar()
+  local key = ns.charKey()
+  db().chars[key] = db().chars[key] or {}
+  return db().chars[key]
+end
+
+-- Métiers (API moderne C_TradeSkillUI de Forever) : toutes les recettes du métier ouvert, apprises ou non.
+local function scanTradeSkill()
+  local T = C_TradeSkillUI
+  local p = T and T.GetBaseProfessionInfo and T.GetBaseProfessionInfo()
+  local prof = p and p.professionName
+  if not prof or prof == "" then return end
+  if (T.IsTradeSkillLinked and T.IsTradeSkillLinked()) or (T.IsTradeSkillGuild and T.IsTradeSkillGuild())
+    or (T.IsNPCCrafting and T.IsNPCCrafting()) then return end -- le métier d'un autre, ou d'un PNJ
+  local list = T.GetAllRecipeIDs and T.GetAllRecipeIDs() or T.GetFilteredRecipeIDs()
+  if not list or #list == 0 then return end
+  local known = {}
+  for _, id in ipairs(list) do
+    pcall(function()
+      local r = T.GetRecipeInfo(id)
+      if not r or r.isDummyRecipe then return end
+      local s = T.GetRecipeSchematic(id, false)
+      local reagents = {}
+      for _, slot in ipairs(s and s.reagentSlotSchematics or {}) do
+        local rg = slot.reagents and slot.reagents[1]
+        local basic = not Enum.CraftingReagentType or slot.reagentType == nil or slot.reagentType == Enum.CraftingReagentType.Basic
+        if rg and basic and slot.required ~= false then
+          reagents[#reagents + 1] = { id = rg.itemID, qty = slot.quantityRequired }
+          if rg.itemID then remember(rg.itemID) end
+        end
+      end
+      db().recipes[id] = { profession = prof, name = r.name, output = s and s.outputItemID, reagents = reagents,
+        made_min = s and s.quantityMin, made_max = s and s.quantityMax ~= s.quantityMin and s.quantityMax or nil }
+      if s and s.outputItemID then remember(s.outputItemID) end
+      if r.learned then known[id] = DIFFICULTY[r.relativeDifficulty] or true end
+    end)
+  end
+  local c = myChar()
+  c.recipes = c.recipes or {}
+  c.recipes[prof] = { rank = p.skillLevel, max = p.maxSkillLevel, known = known }
+end
+
+-- Hôtel des ventes : scan complet du jeu (C_AuctionHouse.ReplicateItems), lu par paquets de 2 000 pour ne pas
+-- figer l'écran ; par objet, le prix unitaire le plus bas, la quantité, et les paliers de prix les moins chers.
+local TIERS, BATCH, COOLDOWN = 20, 2000, 15 * 60
+local ahOpen, reading, lastRequest, readAt = false, false, -COOLDOWN, nil
+
+function ns.aggregate(rows)
+  local by = {}
+  for _, r in ipairs(rows) do
+    local count = (r.count and r.count > 0) and r.count or 1
+    if r.id and r.buyout and r.buyout > 0 then
+      by[r.id] = by[r.id] or {}
+      table.insert(by[r.id], { math.floor(r.buyout / count), count })
+    end
+  end
+  local out = {}
+  for id, list in pairs(by) do
+    table.sort(list, function(a, b) return a[1] < b[1] end)
+    local tiers, qty = {}, 0
+    for _, e in ipairs(list) do
+      local last = tiers[#tiers]
+      if last and last.price == e[1] then last.qty = last.qty + e[2]
+      elseif #tiers < TIERS then tiers[#tiers + 1] = { price = e[1], qty = e[2] } end
+      qty = qty + e[2]
+    end
+    out[id] = { min = list[1][1], qty = qty, auctions = #list, tiers = tiers }
+  end
+  return out
+end
+
+local function readReplicate()
+  local n = C_AuctionHouse.GetNumReplicateItems()
+  local rows, i = {}, 0
+  local function step()
+    for idx = i, math.min(i + BATCH, n) - 1 do
+      local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(idx)
+      rows[#rows + 1] = { id = itemID, count = count, buyout = buyout }
+    end
+    i = i + BATCH
+    if i < n then return C_Timer.After(0, step) end
+    db().market[house()] = { scanned = date("%d/%m %H:%M"), items = ns.aggregate(rows) }
+    reading, readAt = false, GetTime()
+    print(("Handshake : hôtel des ventes lu (%d enchères)."):format(n))
+  end
+  step()
+end
+
+local scanToken = 0
+local f = CreateFrame("Frame")
+f:RegisterEvent("ADDON_LOADED")
+f:SetScript("OnEvent", function(_, event, a1)
+  if event == "ADDON_LOADED" then
+    if a1 ~= "Handshake" then return end
+    HandshakeDB = HandshakeDB or {}
+    for _, k in ipairs({ "recipes", "chars", "items", "market" }) do HandshakeDB[k] = HandshakeDB[k] or {} end
+    if gd() then return end -- GameData lit tout ça pour nous
+    for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
+      "REPLICATE_ITEM_LIST_UPDATE", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED", "ITEM_DATA_LOAD_RESULT" }) do
+      pcall(f.RegisterEvent, f, e)
+    end
+  elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" then
+    scanToken = scanToken + 1 -- ces événements arrivent en rafale : un seul scan, une demi-seconde après
+    local mine = scanToken
+    C_Timer.After(0.5, function() if mine == scanToken then scanTradeSkill() end end)
+  elseif event == "AUCTION_HOUSE_SHOW" then
+    ahOpen = true
+    if GetTime() - lastRequest >= COOLDOWN then lastRequest = GetTime(); C_AuctionHouse.ReplicateItems() end
+  elseif event == "AUCTION_HOUSE_CLOSED" then
+    ahOpen = false
+  elseif event == "REPLICATE_ITEM_LIST_UPDATE" and ahOpen and not reading then
+    if readAt and GetTime() - readAt < COOLDOWN then return end
+    reading = true
+    readReplicate()
+  elseif event == "BAG_UPDATE_DELAYED" then
+    myChar().bags = ns.containers(ns.isBag)
+  elseif event == "BANKFRAME_OPENED" or event == "PLAYERBANKSLOTS_CHANGED" then
+    myChar().bank = ns.containers(ns.isBank)
+  elseif event == "ITEM_DATA_LOAD_RESULT" and a1 and asked[a1] then
+    remember(a1)
+  end
+end)

@@ -1,0 +1,486 @@
+-- Vérification hors jeu (non chargée par le TOC) : luajit Handshake/check.lua
+-- Juste assez de l'API WoW pour le calcul et le texte. Les premiers tests jouent « GameData installé » (ses tables
+-- globales servent de données) ; un test à la fin joue Handshake seul.
+local noop = function() end
+local stubMT = { __index = function() return noop end }
+CreateFrame = function() return setmetatable({}, stubMT) end
+SlashCmdList, StaticPopupDialogs, UISpecialFrames = {}, {}, {}
+C_Timer = { After = noop, NewTicker = noop }
+C_Item = { GetItemInfo = noop, GetItemIconByID = noop }
+date, time = os.date, os.time
+GetTime = function() return 0 end
+GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
+GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {} }, { items = {} }, {}
+GameDataAPI = {}
+HandshakeDB = { recipes = {}, chars = {}, items = {}, market = {} }
+local ns = {}
+for _, f in ipairs({ "Donnees", "Calcul", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
+  assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
+end
+assert(ns.findItem and ns.itemLabel and ns.newWindow, "base chargée")
+
+-- Acheter ou fabriquer : 20 barres de fer, barre à l'HV plus chère que son minerai fondu.
+
+local market = {
+  [3575] = { min = 300, qty = 50, tiers = { { price = 300, qty = 10 }, { price = 310, qty = 40 } } }, -- barre
+  [2772] = { min = 270, qty = 15, tiers = { { price = 270, qty = 15 } } },                            -- minerai : 15 seulement
+}
+assert(ns.buyCost(3575, 20, market) == 10 * 300 + 10 * 310, "achat palier par palier")
+local ore, how, partial = ns.buyCost(2772, 20, market)
+assert(ore == 20 * 270 and how == "HV" and partial, "pas assez en vente : le reste au dernier prix, signalé")
+GameDataDB.vendors = { [1] = { items = { { id = 2880, price = 90, stack = 1 } } } }
+assert(select(2, ns.buyCost(2880, 2, market)) == "marchand")
+local by = { [3575] = { { key = 3307, known = true, r = { name = "Fonte du fer", made_min = 1, reagents = { { id = 2772, qty = 1 } } } } } }
+local p = ns.plan(3575, 20, { market = market, by = by }, 0, {})
+assert(p.how == "fabriquer" and p.cost == 5400 and p.buy == 6100 and p.parts[1].qty == 20, "fondre est moins cher")
+local list = ns.shopping(p, {})
+assert(list[2772].qty == 20 and not list[3575], "liste de courses : le minerai, pas la barre")
+market[2772].tiers[1].price = 400 -- minerai devenu cher : on achète la barre
+assert(ns.plan(3575, 20, { market = market, by = by }, 0, {}).how == "HV")
+-- Recette que personne n'a apprise : pas prise par le calcul, mais le « + » existe et la force.
+local byU = { [3575] = { { key = 3307, known = false, r = by[3575][1].r } } }
+local pu = ns.plan(3575, 20, { market = market, by = byU }, 0, {})
+assert(pu.how == "HV" and pu.craftable, "recette pas apprise : achetée, mais « + » possible")
+pu = ns.plan(3575, 20, { market = market, by = byU, force = { [3575] = "fabriquer" } }, 0, {})
+assert(pu.how == "fabriquer" and pu.known == false, "« + » : décomposé avec la recette pas apprise")
+-- Déjà en stock : « + » possible, et forcé il fabrique au lieu de prendre le stock.
+local ps = ns.plan(3575, 1, { market = market, by = by, stock = { [3575] = { 1, 0, 0 } } }, 0, {})
+assert(ps.how == "stock" and ps.craftable, "en stock : « + » possible")
+ps = ns.plan(3575, 1, { market = market, by = by, stock = { [3575] = { 1, 0, 0 } }, force = { [3575] = "fabriquer" } }, 0, {})
+assert(ps.how == "fabriquer" and ps.have[1] == 0 and ps.parts[1].id == 2772, "forcé : fabriqué, stock non pris")
+print("Handshake : acheter ou fabriquer OK")
+
+-- Stock partagé entre deux suivis, et feuilles combinées.
+market[2772].tiers[1].price = 270
+local stock = { [2772] = { 15, 5, 0 }, [3575] = { 4, 0, 0 } } -- 20 minerais (15 sacs + 5 banque), 4 barres en sac
+local ctx = { market = market, by = by, stock = stock }
+local a = ns.plan(3575, 10, ctx, 0, {})  -- 1er suivi : 4 barres en stock, 6 à fondre avec 6 minerais du sac
+assert(a.have[1] == 4 and a.need == 6 and a.how == "fabriquer" and a.cost == 0, "barres du sac puis minerai du sac : gratuit")
+local b = ns.plan(3575, 20, ctx, 0, {})  -- 2e suivi : plus de barres ; 14 minerais restants (9 sac + 5 banque), 6 à acheter
+assert(b.have[1] == 0 and b.parts[1].have[1] == 9 and b.parts[1].have[2] == 5 and b.parts[1].need == 6, "stock partagé")
+assert(b.cost == 6 * 270)
+local g = ns.craftGraph({ a, b })
+local t1, ore = g.byKey.T1, g.byKey.I2772
+assert(t1.have[1] == 4 and t1.made == 6 and g.byKey.T2.made == 20, "barres : 4 du sac, le reste à fondre")
+assert(ore.qty == 26 and ore.need == 6 and ore.have[1] == 15 and ore.have[2] == 5 and #ore.parents == 2, "minerai : une case pour les deux suivis")
+print("Handshake : stock partagé et cases communes OK")
+
+-- Arbre par étages : marteau (10 bronze) et cuirasse (20 bronze), bronze = cuivre + étain, ×2 par fonte.
+local by2 = {
+  [5541] = { { key = 1, known = true, r = { name = "Marteau", reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } } } },
+  [2870] = { { key = 2, known = true, r = { name = "Cuirasse", reagents = { { id = 2841, qty = 20 }, { id = 5500, qty = 2 } } } } },
+  [2841] = { { key = 3, known = true, r = { name = "Fonte du bronze", made_min = 2, reagents = { { id = 2770, qty = 1 }, { id = 2771, qty = 1 } } } } },
+}
+local mk = { [2770] = { tiers = { { price = 10, qty = 999 } } }, [2771] = { tiers = { { price = 10, qty = 999 } } },
+  [5500] = { tiers = { { price = 500, qty = 999 } } }, [2841] = { tiers = { { price = 100, qty = 999 } } },
+  [5541] = { tiers = { { price = 99999, qty = 9 } } }, [2870] = { tiers = { { price = 99999, qty = 9 } } } }
+local function both(force)
+  local c = { market = mk, by = by2, force = force }
+  return ns.craftGraph({ ns.plan(5541, 1, c, 0, {}), ns.plan(2870, 1, c, 0, {}) })
+end
+local tree = both()
+local bronze, pearl, copper = tree.byKey.I2841, tree.byKey.I5500, tree.byKey.I2770
+assert(tree.cols == 3 and bronze.col == 1 and pearl.col == 1 and copper.col == 2, "étages : bronze et perle en 1, minerai en 2")
+assert(bronze.qty == 30 and bronze.made == 30 and bronze.crafts == 15 and #bronze.parents == 2, "une case bronze pour les deux")
+assert(copper.qty == 15 and copper.need == 15 and #copper.parents == 1 and pearl.qty == 3, "cuivre sous le bronze seulement")
+for _, n in ipairs(tree.nodes) do -- pas de chevauchement dans un étage
+  for _, m in ipairs(tree.nodes) do
+    assert(n == m or n.col ~= m.col or math.abs(n.y - m.y) >= 50, "cases superposées")
+  end
+end
+-- « – » sur le bronze : acheté tout fait, plus d'étage 2. « + » quand l'achat est moins cher : décomposé quand même.
+local bought = both({ [2841] = "acheter" })
+assert(bought.cols == 2 and bought.byKey.I2841.need == 30 and bought.byKey.I2841.made == 0 and not bought.byKey.I2770, "bronze acheté")
+assert(bought.byKey.I2841.craftable, "le « + » reste proposé")
+mk[2841].tiers[1].price = 1
+assert(both().byKey.I2841.made == 0, "bronze à 1 pc : acheté d'office")
+assert(both({ [2841] = "fabriquer" }).byKey.I2841.made == 30, "décomposé à la main")
+-- Lien qui saute un étage (ta capture : barre de fer commandée + haubert qui en consomme) : il passe par un relais à
+-- l'étage 1, et aucune case de cet étage ne lui marche dessus.
+do
+  local c = { market = mk, by = by2, force = { [2841] = "fabriquer" } }
+  local g = ns.craftGraph({ ns.plan(2841, 2, c, 0, {}), ns.plan(5541, 1, c, 0, {}) }) -- bronze commandé + marteau
+  local e
+  for _, x in ipairs(g.edges) do if x.from.key == "T1" and x.to.key == "I2770" then e = x end end
+  assert(e and #e.path == 3 and e.path[2].kind == "relay" and e.path[2].col == 1, "relais à l'étage 1")
+  local r = e.path[2]
+  for _, n in ipairs(g.nodes) do
+    assert(n.col ~= 1 or r.y + 14 <= n.y or n.y + 42 <= r.y, "une case de l'étage 1 recouvre le lien")
+  end
+end
+-- Groupes par métier : marteau et cuirasse = Forge (Bel 164 en connaît 1 sur 2), bronze = Minage (Alt 90, 0 sur 1) ;
+-- la couture, personne ne l'a.
+do
+  by2[5541][1].r.profession, by2[2870][1].r.profession, by2[2841][1].r.profession = "Forge", "Forge", "Minage"
+  by2[5541][1].r.level = 100
+  local crafters = { { name = "Bel", ranks = { Forge = 164 }, known = { [1] = true } }, { name = "Alt", ranks = { Minage = 90 }, known = {} } }
+  local g = ns.assignCrafters(both({ [2841] = "fabriquer" }), crafters)
+  local hammer, plate, bronze = g.byKey.T1, g.byKey.T2, g.byKey.I2841
+  assert(hammer.who == "Bel" and hammer.whoKnows and plate.who == "Bel" and not plate.whoKnows, "forge : Bel (marteau connu, cuirasse à apprendre)")
+  assert(bronze.who == "Alt" and not bronze.whoKnows, "bronze : Alt a le minage")
+  local forge = g.groupOf.Forge
+  assert(#g.groups == 2 and g.groups[1] == forge and #forge.nodes == 2 and #forge.recipes == 2 and forge.level == 100, "un groupe par métier")
+  assert(forge.best == "Bel" and forge.label == "Étape 2 · Forge · niv. 100 requis · Bel 164 (1/2)", forge.label)
+  -- Un bloc = une commande, par étapes : le minage (étape 1) livre 30 bronzes ; la forge (étape 2) livre le marteau et la
+  -- cuirasse, et reçoit le bronze en apport.
+  local mine = g.groupOf.Minage
+  assert(mine.step == 1 and #mine.deliver == 1 and mine.qty[2841] == 30 and not next(mine.inputs), "étape 1 : le minage")
+  assert(forge.step == 2 and forge.qty[5541] == 1 and forge.qty[2870] == 1 and forge.inputs[2841], "étape 2 : la forge, bronze fourni")
+  -- Rectangles : chaque métier dans sa bande, aucune case d'un autre dans son rectangle.
+  for _, grp in ipairs(g.groups) do
+    local top, bottom, left, right = math.huge, -math.huge, math.huge, -math.huge
+    for _, n in ipairs(grp.cards) do
+      top, bottom = math.min(top, n.y), math.max(bottom, n.y + 42)
+      left, right = math.min(left, n.col), math.max(right, n.col)
+    end
+    for _, n in ipairs(g.nodes) do
+      local inside = n.col >= left and n.col <= right and n.y + 42 > top and n.y < bottom
+      assert(not inside or n.band == grp.key, "une case d'un autre dans le rectangle de " .. grp.key)
+    end
+  end
+  assert(g.byKey.I2770.band == "Minage", "minerai sous le bronze : dans la bande du minage")
+  -- Commandes entre métiers : le bronze du minage pour le marteau et la cuirasse = UNE commande Minage -> Forge, par Alt.
+  local o = g.orders[1]
+  assert(#g.orders == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt", "une commande Minage -> Forge")
+  assert(#o.lines == 1 and o.lines[1] == 2841 and o.qty[2841] == 30 and #o.edges == 2, "30 barres de bronze, deux liens regroupés")
+  by2[2841][1].r.profession = "Couture"
+  g = ns.assignCrafters(both({ [2841] = "fabriquer" }), crafters)
+  assert(g.byKey.I2841.who == false and g.groupOf.Couture.label == "Étape 1 · Couture · personne de ta liste", "personne ne fait la couture")
+  assert(g.groups[2].key == "Couture", "les métiers que personne n'a viennent après")
+  for _, n in ipairs(g.nodes) do -- rien ne se chevauche, bande sans artisan comprise
+    for _, m in ipairs(g.nodes) do
+      assert(n == m or n.col ~= m.col or n.y + 42 <= m.y or m.y + 42 <= n.y, "cases superposées")
+    end
+  end
+  by2[2841][1].r.profession, by2[5541][1].r.level = "Minage", nil
+end
+print("Handshake : arbre par étages OK")
+
+-- Suggestions : fabricables d'abord, puis début de nom, puis noms courts.
+GameDataItems.items = { [1] = { name = "Barre de bronze" }, [2] = { name = "Bronze" }, [3] = { name = "Lame en bronze" }, [4] = { name = "Fer" } }
+GameDataDB.recipes = { [9] = { name = "Lame en bronze", output = 3 }, [8] = { name = "Cuirasse changeante", output = 210794 } }
+local sug = ns.suggestItems(ns.itemIndex(), "bron")
+assert(#sug == 3 and sug[1].id == 3 and sug[2].id == 2 and sug[3].id == 1, "ordre des suggestions")
+assert(ns.suggestItems(ns.itemIndex(), "chang")[1].id == 210794, "recette dont l'objet n'a pas de nom")
+assert(#ns.suggestItems(ns.itemIndex(), "b") == 0, "au moins 2 lettres")
+print("Handshake : suggestions OK")
+
+
+-- Texte échangé : liens réels (~80 caractères), découpés sous 255, relus à l'identique.
+local function link(id, name) return ("|cff1eff00|Hitem:%d::::::::31:::::::::|h[%s]|h|r"):format(id, name) end
+GameDataItems.items = { [7963] = { name = "Claymore en mithril", link = link(7963, "Claymore en mithril") },
+  [7920] = { name = "Camail en mithril", link = link(7920, "Camail en mithril") },
+  [7927] = { name = "Gants ornés en mithril", link = link(7927, "Gants ornés en mithril") },
+  [3858] = { name = "Minerai de mithril", link = link(3858, "Minerai de mithril") },
+  [7989] = { name = "Plans : Claymore en mithril" } }
+local order = { lines = { { id = 7963, qty = 1 }, { id = 7920, qty = 1 }, { id = 7927, qty = 2 } } }
+local msgs = ns.listMessages("Commande", order.lines, "· pourboire 5 po · je fournis les composants")
+assert(#msgs >= 2, "trop long pour un message")
+for _, m in ipairs(msgs) do assert(#m <= 255, "message de " .. #m .. " caractères") end
+assert(msgs[1]:find("^Commande %(1/%d%) : 1x|cff"), msgs[1])
+-- À l'arrivée : morceaux recollés (le serveur livre les chuchotements d'un joueur dans l'ordre), puis relus.
+popups = {}
+StaticPopup_Show = function(_, who, kind, data) popups[#popups + 1] = { who = who, kind = kind, data = data } end
+Ambiguate = function(s) return (s:gsub("%-.*", "")) end
+for i = 1, #msgs do ns.onChat("CHAT_MSG_WHISPER", msgs[i], "Bob-Belegard") end
+assert(#popups == 1 and popups[1].who == "Bob" and popups[1].kind == "commande", "une seule proposition d'import, une fois complet")
+local lines, kind, tip, mats = ns.parseList(popups[1].data.text)
+assert(kind == "commande" and #lines == 3 and lines[3].id == 7927 and lines[3].qty == 2, "lignes relues")
+assert(tip == 50000 and mats, "pourboire et composants relus")
+-- Écrit à la main : quantité après le lien, doublon additionné, noms entre crochets sans lien.
+local l2 = ns.parseList("tu peux me faire " .. link(7963, "Claymore en mithril") .. " x2 et " .. link(7920, "Camail en mithril") .. " " .. link(7963, "Claymore en mithril"))
+assert(#l2 == 2 and l2[1].qty == 3 and l2[2].qty == 1, "x2 après le lien, puis la claymore encore une fois")
+local l3 = ns.parseList("Besoins : 36x[Minerai de mithril] [Camail en mithril]")
+assert(#l3 == 2 and l3[1].id == 3858 and l3[1].qty == 36 and l3[2].qty == 1, "noms tapés à la main")
+assert(ns.poText(55600) == "5.56 po" and ns.poText(50000) == "5 po")
+print("Handshake : texte échangé OK")
+
+-- Besoins : composants pas fabriqués avec ce qu'on a ; recette pas apprise -> l'objet « Plans : … ».
+local res = { graph = { nodes = {
+  { id = 7963, kind = "target", qty = 1, made = 1, need = 0, have = { 0, 0, 0 }, unknown = true, recipe = { name = "Claymore en mithril" } },
+  { id = 3858, kind = "item", qty = 36, made = 0, need = 30, cost = 3000, have = { 6, 0, 0 }, how = "HV" },
+  { id = 7920, kind = "item", qty = 1, made = 0, need = 0, cost = 0, have = { 1, 0, 0 } },
+} }, total = 3000 }
+local rows, recipes = ns.orderNeeds(res)
+assert(#rows == 2 and rows[1].id == 3858 and rows[1].required == 36 and rows[2].need == 0, "manquants d'abord, le complet ensuite")
+assert(#recipes == 1 and recipes[1].item == 7989, "recette trouvée par son nom")
+print("Handshake : besoins OK")
+
+-- Reprise des suivis de GameData à la première ouverture du module.
+GameDataDB.craft_targets, GameDataDB.craft_options = { { id = 7963, qty = 1 } }, { bags = true }
+HandshakeDB = nil
+local loader
+CreateFrame = function() return setmetatable({ SetScript = function(_, _, fn) loader = fn end }, stubMT) end
+assert(loadfile("Handshake/Commande.lua"))("Handshake", ns)
+loader(nil, "ADDON_LOADED", "Handshake")
+assert(#HandshakeDB.orders == 1 and HandshakeDB.orders[1].lines[1].id == 7963 and HandshakeDB.options.bags, "suivis repris")
+assert(GameDataDB.craft_targets == nil, "plus rien dans GameData")
+ns.openCraftWindow = noop -- pas d'interface hors jeu
+ns.importText(msgs[1] .. " " .. msgs[2]:gsub("^.-: ", ""), "Bob")
+assert(#HandshakeDB.orders == 2 and HandshakeDB.current == 2 and ns.currentOrder().player == "Bob", "commande importée affichée")
+print("Handshake : reprise et import OK")
+
+-- /commande essai : la commande affichée revient comme un chuchotement de soi-même, sans réseau.
+UnitName = function() return "Belegard" end
+popups = {}
+local realPrint = print
+print = noop
+ns.costCommand("essai")
+print = realPrint
+assert(#popups == 1 and popups[1].who == "Belegard" and popups[1].kind == "commande", "essai : import proposé")
+print("Handshake : essai OK")
+
+-- Morceaux bornés : (1/9999) ignoré, un « 1/n » repart de zéro.
+local t0 = 0
+GetTime = function() return t0 end
+popups = {}
+ns.onChat("CHAT_MSG_WHISPER", "Commande (1/9999) : 1x[Minerai de mithril]", "Mal-Belegard")
+ns.onChat("CHAT_MSG_WHISPER", "Commande (2/2) : vieux morceau", "Bob-Belegard")
+ns.onChat("CHAT_MSG_WHISPER", msgs[1], "Bob-Belegard")
+assert(#popups == 0, "rien de complet")
+ns.onChat("CHAT_MSG_WHISPER", msgs[2], "Bob-Belegard")
+assert(#popups == (#msgs == 2 and 1 or 0), "le vieux 2/2 a été jeté par le 1/2")
+print("Handshake : morceaux bornés OK")
+
+-- Contrats entre deux joueurs simulés : Belegard (artisan) et Bob (client), chacun sa base.
+local REALM = "CAMWOWEU4Realm8PvP"
+local BEL, BOB = "Belegard-" .. REALM, "Bob-" .. REALM
+GetNormalizedRealmName = function() return REALM end
+local clock = 1795000000
+GetServerTime = function() return clock end
+local bases = { [BEL] = { contracts = {} }, [BOB] = { contracts = {} } }
+local current, notes, wire = BEL, {}, {}
+local function as(who) current = who; HandshakeDB = bases[who] end
+UnitName = function() return (current:match("^[^%-]+")) end
+local GBEL, GBOB, GMAL = "Player-1-0000BEEF", "Player-1-00000B0B", "Player-1-0000BAD0"
+UnitGUID = function(u) if u == "player" then return current == BEL and GBEL or GBOB end end
+local function P(origin, id, v, parent, client, cg, artisan, ag, m, o, d)
+  return table.concat({ "P", "2", origin, id, v, parent, client, cg, artisan, ag, m, o, d }, "|")
+end
+local MAL = "Mallory-" .. REALM
+ns.ctNotify = function(t) notes[#notes + 1] = current .. " : " .. t end
+-- Le réseau : ce qu'envoie l'un arrive chez l'autre (on peut aussi intercepter pour jouer l'attaquant).
+C_ChatInfo = { SendAddonMessage = function(prefix, text, channel, target)
+  wire[#wire + 1] = text
+  local from = current
+  as(ns.fullName(target)); ns.ctOnAddon(prefix, text, channel, from); as(from)
+end }
+local function inject(from, to, body) -- un message forgé, en un morceau
+  local back = current
+  as(to); ns.ctOnAddon("Handshake", "1/1|" .. body, "WHISPER", from); as(back)
+end
+local function count(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
+
+assert(ns.fullName("Bob") == BOB and ns.fullName("Bob", "CAMWOW EU4 Realm 8 PvP") == BOB, "noms normalisés")
+assert(ns.fullName("Bob|cff") == nil and ns.fullName("") == nil, "nom piégé refusé")
+assert(ns.ctHash("abc") ~= ns.ctHash("abd") and #ns.ctHash("abc") == 16, "empreinte 64 bits")
+
+-- Belegard propose : Bob fournit 36 minerais (caution 150 pc l'unité), Belegard livre une claymore payée 5400 + 4000.
+as(BEL)
+local terms = { origin = BEL, id = "1795000000", v = "1", parent = "0", client = BOB, artisan = BEL, clientGUID = "0", artisanGUID = GBEL,
+  m = { { id = 3858, qty = 36, unit = 150 } }, o = { { id = 7963, qty = 1, unit = 9400 } }, d = clock + 3 * 86400 }
+ns.ctPropose(terms)
+as(BOB)
+local k = BEL .. "#1795000000"
+local atBob = HandshakeDB.contracts[k]
+assert(atBob and atBob.status == "a_signer" and atBob.author == BEL, "Bob a la proposition")
+assert(atBob.hash == bases[BEL].contracts[k].hash, "même empreinte des deux côtés")
+
+-- Bob contre-propose une caution de 6000 au lieu de 5400 : v2, parent = v1.
+ns.ctCounter(atBob, 6000, nil, nil)
+as(BEL)
+local atBel = HandshakeDB.contracts[k]
+assert(atBel.v == "2" and atBel.status == "a_signer" and atBel.prev.v == "1" and ns.ctTotal(atBel.m) == 36 * 167, "contre-proposition reçue, avec la version d'avant")
+
+-- n° 5 : Belegard accepte avec l'empreinte affichée ; une empreinte périmée ne signe rien.
+assert(not ns.ctAccept(atBel, "0000000000000000"), "empreinte périmée : rien n'est signé")
+assert(ns.ctAccept(atBel, atBel.hash), "signé côté Belegard")
+as(BOB)
+assert(HandshakeDB.contracts[k].status == "signe", "signé côté Bob")
+print("Handshake : contrat proposé, négocié, signé OK")
+
+-- Attaques sur la négociation (SECURITE.md).
+local before = count(bases[BOB].contracts)
+-- n° 2 : Mallory propose au nom de Belegard (origine ≠ expéditeur).
+inject(MAL, BOB, P(BEL, "1795000001", "1", "0", BOB, "0", BEL, GBEL, "", "7963:1:1", clock + 3600))
+-- n° 3 : rôles qui ne sont pas {moi, l'expéditeur}.
+inject(MAL, BOB, P(MAL, "1795000002", "1", "0", "Carl-" .. REALM, "0", MAL, GMAL, "", "7963:1:1", clock + 3600))
+-- n° 14 : nombres piégés, zéros de tête, liste pas triée, doublon, quantité énorme.
+for _, bad in ipairs({ "0x10:1:1", "7963:01:1", "7963:1:1,3858:1:1", "7963:1:1,7963:1:1", "7963:5000:1", "7963:1:-1", "7963:1:1e9" }) do
+  inject(MAL, BOB, P(MAL, "1795000003", "1", "0", BOB, "0", MAL, GMAL, "", bad, clock + 3600))
+end
+-- n° 11 : échéance absurde ; n° 22 : protocole inconnu (l'ancien « 1 » aussi) ; champ en trop.
+inject(MAL, BOB, P(MAL, "1795000004", "1", "0", BOB, "0", MAL, GMAL, "", "7963:1:1", clock + 99 * 86400))
+inject(MAL, BOB, (P(MAL, "1795000005", "1", "0", BOB, "0", MAL, GMAL, "", "7963:1:1", clock + 3600):gsub("^P|2|", "P|1|")))
+inject(MAL, BOB, P(MAL, "1795000006", "1", "0", BOB, "0", MAL, GMAL, "", "7963:1:1", clock + 3600) .. "|x")
+-- Identité : sans son propre identifiant, avec un identifiant qui n'est pas le mien, avec un identifiant piégé.
+inject(MAL, BOB, P(MAL, "1795000007", "1", "0", BOB, "0", MAL, "0", "", "7963:1:1", clock + 3600))
+inject(MAL, BOB, P(MAL, "1795000008", "1", "0", BOB, GMAL, MAL, GMAL, "", "7963:1:1", clock + 3600))
+inject(MAL, BOB, P(MAL, "1795000009", "1", "0", BOB, "0", MAL, "Player-1-|cff00", "", "7963:1:1", clock + 3600))
+-- Mallory annonce l'identifiant de Belegard : le serveur (son chuchotement) a donné le vrai à Bob.
+ns.knownGUID[MAL] = GMAL
+inject(MAL, BOB, P(MAL, "1795000010", "1", "0", BOB, "0", MAL, GBEL, "", "7963:1:1", clock + 3600))
+assert(count(bases[BOB].contracts) == before, "aucune proposition piégée enregistrée")
+-- n° 19 : un tiers refuse le contrat signé de Bob et Belegard.
+inject(MAL, BOB, "R|2|" .. BEL .. "|1795000000|2")
+-- n° 5/P5 : une v3 envoyée après la signature ne change rien.
+inject(BEL, BOB, P(BEL, "1795000000", "3", atBel.hash, BOB, GBOB, BEL, GBEL, "3858:36:1", "7963:1:9400", clock + 3600))
+local signed = bases[BOB].contracts[k]
+assert(signed.status == "signe" and signed.v == "2" and ns.ctTotal(signed.m) == 36 * 167, "contrat signé figé")
+-- n° 12 (inondation) : au-delà de 3 propositions en attente du même joueur, ignoré (témoin : les 3 premières passent).
+for n = 1, 5 do
+  inject(MAL, BOB, P(MAL, "17950001" .. n, "1", "0", BOB, "0", MAL, GMAL, "", "7963:1:1", clock + 3600))
+end
+assert(count(bases[BOB].contracts) == before + 3, "3 propositions en attente au plus")
+as(BOB); ns.ctOnAddon("Handshake", "1/99|P", "WHISPER", "Mallory-" .. REALM)
+print("Handshake : attaques sur la négociation repoussées OK")
+
+-- Échanges. Étape 1 vue par Bob (client) : il donne 20 minerais, Belegard 20 × 167 (6000/36 arrondi à l'unité).
+as(BOB)
+local unit = signed.m[1].unit
+local function snap(partner, give, get) return { partner = partner, guid = GBEL, give = give, get = get } end
+local s1 = snap(BEL, { items = { [3858] = 20 }, money = 0 }, { items = {}, money = 20 * unit })
+assert(ns.ctEvaluate(signed, BOB, s1, clock).ok, "lot 1 équilibré : conforme")
+-- n° 45 : caution trop faible pour ce qui est donné.
+local short = ns.ctEvaluate(signed, BOB, snap(BEL, { items = { [3858] = 20 }, money = 0 }, { items = {}, money = 19 * unit }), clock)
+assert(not short.ok and short.short == unit, "il manque une unité de caution")
+-- n° 30/33 : objet hors contrat donné, trop donné.
+assert(not ns.ctEvaluate(signed, BOB, snap(BEL, { items = { [3858] = 40 }, money = 0 }, { items = {}, money = 40 * unit }), clock).ok, "40 > 36 : non conforme")
+assert(not ns.ctEvaluate(signed, BOB, snap(BEL, { items = { [7963] = 1 }, money = 0 }, { items = {}, money = 99999 }), clock).ok, "objet hors contrat donné")
+-- n° 31/26 : autre partenaire, autre personnage (GUID), contrat échu, objet illisible.
+assert(not ns.ctEvaluate(signed, BOB, snap("Bélegard-" .. REALM, s1.give, s1.get), clock).ok, "homonyme")
+assert(not ns.ctEvaluate(signed, BOB, { partner = BEL, guid = "x", unknown = true, give = s1.give, get = s1.get }, clock).ok, "illisible")
+assert(not ns.ctEvaluate(signed, BOB, s1, clock + 4 * 86400).ok, "échu")
+ns.ctRecord(signed, BOB, s1, clock)
+assert(signed.peer.guid == GBEL and signed.peer.verified and signed.got[3858] == nil and signed.gave[3858] == 20 and signed.net == 0, "lot 1 inscrit")
+assert(not ns.ctEvaluate(signed, BOB, { partner = BEL, guid = "Player-1-AUTRE", give = s1.give, get = s1.get }, clock).ok, "même nom, autre identifiant")
+local renamed = ns.ctEvaluate(signed, BOB, { partner = "Belegarde-" .. REALM, guid = GBEL, give = { items = { [3858] = 16 }, money = 0 },
+  get = { items = {}, money = 16 * unit } }, clock)
+assert(renamed.ok and renamed.warnings[1]:find("nom a changé"), "même identifiant, nouveau nom : conforme, signalé")
+-- n° 46 : « c'est le lot 2/2, donne tout » — le reste dû vient du registre : 16 au plus.
+assert(not ns.ctEvaluate(signed, BOB, snap(BEL, { items = { [3858] = 20 }, money = 0 }, { items = {}, money = 20 * unit }), clock).ok, "plus que les 16 restants")
+ns.ctRecord(signed, BOB, snap(BEL, { items = { [3858] = 16 }, money = 0 }, { items = {}, money = 16 * unit }), clock)
+-- Étape 2 : la claymore contre 9400 ; n° 35 : sans l'objet, payer est non conforme.
+assert(not ns.ctEvaluate(signed, BOB, snap(BEL, { items = {}, money = 9400 }, { items = {}, money = 0 }), clock).ok, "payer sans recevoir")
+local s2 = snap(BEL, { items = {}, money = 9400 }, { items = { [7963] = 1 }, money = 0 })
+assert(ns.ctEvaluate(signed, BOB, s2, clock).ok, "livraison conforme")
+ns.ctRecord(signed, BOB, s2, clock)
+assert(signed.status == "clos" and signed.net == 0, "contrat clos, solde nul")
+print("Handshake : échanges vérifiés et contrat clos OK")
+
+-- Demande (CONCEPTION.md) : Bob veut une claymore (30 minerais + 4 cuirs lourds), il apporte le cuir (Ctrl+clic),
+-- offre 3 po. Contrat v1 : caution = prix de marché du cuir seulement ; la claymore = sa part de caution + l'offre.
+as(BOB)
+GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
+GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } },
+  [4234] = { tiers = { { price = 500, qty = 999 } } }, [7963] = { tiers = { { price = 99999, qty = 9 } } } } } }
+GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 }, { id = 4234, qty = 4 } } } }
+GameDataItems.items[4234] = { name = "Cuir lourd", link = link(4234, "Cuir lourd") }
+HandshakeDB.force = {}
+local demande = { player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } }, apports = { [4234] = true } }
+local dres = ns.computeDemande(demande)
+local brought = ns.demandeApports(dres)
+assert(#brought == 1 and brought[1].id == 4234 and brought[1].qty == 4, "apport : le cuir, case entière")
+assert(dres.roots[1].how == "fabriquer" and dres.roots[1].cost == 30 * 200, "part de l'artisan : le minerai seulement")
+local v1 = ns.ctFromDemande(demande, 3)
+assert(v1.client == BOB and v1.artisan == BEL and v1.clientGUID == GBOB, "moi client, l'autre artisan")
+assert(#v1.m == 1 and v1.m[1].id == 4234 and v1.m[1].unit == 500 and v1.o[1].unit == 4 * 500 + 30000, "caution sur l'apport + offre")
+assert(ns.ctParse(ns.ctCanonical(v1), BOB, BEL, clock), "ce qu'on envoie passe notre propre lecture stricte")
+-- Sans apport : vente simple (pas de caution).
+local simple = ns.ctFromDemande({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } }, 3)
+assert(#simple.m == 0 and simple.o[1].unit == 30000, "vente simple")
+-- En clair : « Commande : 1x[Claymore] · j'apporte 4x[Cuir lourd] · offre 3 po », relu à l'identique.
+popups = {}
+local realWhisper = ns.whisper
+ns.whisper = function(msg) ns.onChat("CHAT_MSG_WHISPER", msg, BOB) end
+ns.sendOrder(demande)
+ns.whisper = realWhisper
+assert(#popups == 1, "commande reçue")
+local wanted, kindR, offer, apportsR = ns.parseList(popups[1].data.text)
+assert(#wanted == 1 and wanted[1].id == 7963 and #apportsR == 1 and apportsR[1].id == 4234 and apportsR[1].qty == 4 and offer == 30000,
+  "ce qu'il veut, ce qu'il apporte, son offre")
+ns.openCraftWindow = noop
+HandshakeDB.orders = HandshakeDB.orders or {}
+ns.importText(popups[1].data.text, "Bob")
+assert(ns.currentOrder().apports and ns.currentOrder().apports[4234] and ns.currentOrder().tip == 30000, "demande importée avec ses apports")
+print("Handshake : demande (apports, offre, vente simple, en clair) OK")
+
+-- Je réponds (l'artisan) : Belegard ouvre la demande dans son arbre, demande aussi le minerai et chiffre 5 po.
+ns.ctPropose(v1)
+as(BEL)
+local key1 = ns.ctKey(v1)
+local recu = HandshakeDB.contracts[key1]
+assert(recu and ns.ctStatus(recu) == "a_signer", "demande reçue par l'artisan")
+HandshakeDB.orders = {}
+local rep = ns.replyOrder(recu)
+assert(rep.reply == key1 and rep.apports[4234] and rep.tip == 30000 and rep.lines[1].id == 7963 and rep.player == BOB, "sa demande dans mon arbre")
+assert(select(2, ns.ctReplyFromOrder(rep)):find("rien n'a changé"), "rien changé : rien ne part")
+rep.apports[3858], rep.tip = true, 50000
+assert(ns.replyOrder(recu) == rep and rep.apports[3858], "même version rouverte : mes changements restent")
+local v2 = ns.ctReplyFromOrder(rep)
+assert(v2.v == "2" and #v2.m == 2 and v2.m[1].id == 3858 and v2.m[1].unit == 200 and v2.m[2].unit == 500,
+  "minerai ajouté au prix de mon scan, cuir à la caution du contrat")
+assert(v2.o[1].unit == 30 * 200 + 4 * 500 + 50000, "livraison = cautions + mon prix")
+as(BOB)
+local back = HandshakeDB.contracts[key1]
+assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob reçoit la contre-proposition")
+assert(not ns.ctReplyFromOrder({ reply = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
+print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
+
+-- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
+C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
+GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
+GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } } } } }
+GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 } } } }
+as(BOB)
+local fiche = ns.ctDescribe(signed, BOB)
+assert(fiche:find("36 demandés, la recette en consomme 30"), "minerai gonflé signalé")
+assert(fiche:find("Si l'artisan disparaît après l'étape 1 : tu perds au plus 1188pc"), "perte max du client : 36×200 − 6012")
+as(BEL)
+assert(ns.ctDescribe(bases[BEL].contracts[k], BEL):find("tu es l'ARTISAN"), "rôle affiché depuis mon côté")
+print("Handshake : fiche du contrat OK")
+
+-- Noms à la Forever : prénom + nom de famille (avec tirets), royaume après le dernier tiret.
+assert(ns.fullName("Aedi Triple-Forgé-" .. REALM) == "Aedi-" .. REALM, "nom de famille à tiret, royaume au bout")
+assert(ns.fullName("Aedi Triple-Forgé") == "Aedi-" .. REALM, "sans royaume : le tiret est celui du nom de famille")
+assert(ns.fullName("Riwanon", "Kerys") == "Riwanon-Kerys" and ns.fullName("Riwanon") == "Riwanon-" .. REALM)
+assert(ns.fullName("Bob-AutreRoyaume") == "Bob-AutreRoyaume", "autre royaume")
+UnitName = function() return "Belegard", "Marteaudefer" end
+assert(ns.me() == BEL, "moi = prénom + royaume, pas le nom de famille")
+print("Handshake : noms à la Forever OK")
+
+-- Handshake seul (sans GameData) : ses propres tables servent.
+GameDataAPI = nil
+HandshakeDB.recipes = { [5] = { name = "Fonte du cuivre", output = 2840, reagents = { { id = 2770, qty = 1 } } } }
+HandshakeDB.items = { [2840] = { name = "Barre de cuivre" } }
+assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "données propres")
+local agg = ns.aggregate({ { id = 2770, count = 20, buyout = 2000 }, { id = 2770, count = 5, buyout = 400 } })
+assert(agg[2770].min == 80 and agg[2770].qty == 25 and agg[2770].tiers[1].price == 80, "HV agrégé")
+-- Réserve Classic : ajoutée pour les objets sans recette scannée, jamais par-dessus une recette scannée du même objet.
+HandshakeClassicRecipes = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 } },
+  [9002] = { 4255, 1, 1, "Travail du cuir", "Armure verte en cuir", { 4234, 9 } } }
+local merged = ns.recipes()
+assert(merged[5] and not merged[9001], "barre de cuivre déjà scannée : la recette Classic ne la double pas")
+assert(merged[9002] and merged[9002].output == 4255 and merged[9002].reagents[1].qty == 9, "armure verte en cuir : recette Classic")
+HandshakeClassicRecipes = nil
+HandshakeDB.recipes[6] = { name = "Fonte du bronze", profession = "Minage", output = 2841, reagents = { { id = 2840, qty = 1 } } }
+local demo = ns.demoOrder("hasard")
+assert(demo.name == "Essai : au hasard" and #demo.lines == 1 and demo.lines[1].id == 2841, "essai : le bronze (son cuivre se fabrique)")
+assert(#ns.demoOrder().lines == 3 and ns.demoOrder("ceinture").lines[1].id == 10721, "essais choisis : le set, les ceintures")
+HandshakeDB.recipes[6] = nil
+print("Handshake : sans GameData OK")
+
+-- Identité complète : prénom, nom de famille (lu au serveur, jamais dans un message), royaume, identifiant.
+GetRealmName = function() return "CAMWOW EU4 Realm 8 PvP" end
+UnitExists, UnitIsPlayer = function() return true end, function() return true end
+UnitGUID = function(u) return u == "target" and GBOB or GBEL end
+UnitName = function(u) if u == "target" then return "Bob", "Kerys-de|cffBois" end return "Belegard", "Marteaudefer" end
+ns.learnUnit("target")
+assert(ns.identity(BOB, GBOB) == "Bob Kerys-de||cffBois — CAMWOW EU4 Realm 8 PvP — " .. GBOB, "nom de famille lu, codes échappés")
+assert(ns.myIdentity() == "Belegard Marteaudefer — CAMWOW EU4 Realm 8 PvP — " .. GBEL)
+assert(ns.identity("Carl-AutreRoyaume", nil) == "Carl — AutreRoyaume — identifiant inconnu")
+print("Handshake : identité complète OK")
+
+-- Destinataire d'un chuchotement : prénom seul dans mon royaume (Forever lit « Prénom-Royaume » comme un nom de famille).
+assert(ns.whisperTarget(BOB) == "Bob" and ns.whisperTarget("Bob") == "Bob" and ns.whisperTarget("Bob-AutreRoyaume") == "Bob-AutreRoyaume")
+print("Handshake : destinataire des chuchotements OK")
