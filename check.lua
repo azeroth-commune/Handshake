@@ -542,6 +542,50 @@ assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob 
 assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
 print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
 
+-- Règles de la réponse (#10), une règle du module Projet : ce que veut le demandeur (lignes, quantités) est figé, avec
+-- une raison affichable telle quelle ; apports, choix de case, prix et commande d'un bloc restent à l'artisan. La demande
+-- est un contrat reçu (seuls son empreinte, son client, o et m comptent ici).
+as(BEL)
+do
+  local function recue(hash, qty)
+    return { origin = BOB, id = "77", hash = hash, client = BOB, o = { { id = 7963, qty = qty, unit = 9000 } },
+      m = { { id = 4234, qty = 4, unit = 500 } } }
+  end
+  local r = ns.projetReponse(recue("h1", 1))
+  local function figee(quoi, ok, raison)
+    assert(ok == false and type(raison) == "string" and raison:find("sa demande", 1, true), quoi .. " : refusé, avec sa raison")
+  end
+  figee("lignes", ns.projetPeut(r, "lignes"))
+  figee("ajouter une ligne", ns.projetAjouter(r, 3858, 2))
+  figee("changer une quantité", ns.projetQuantite(r, 1, 5))
+  figee("retirer une ligne", ns.projetRetirer(r, 1))
+  assert(#r.lines == 1 and r.lines[1].qty == 1, "ce qu'il veut n'a pas bougé")
+  for _, quoi in ipairs({ "apports", "choix", "offre", "commander" }) do assert(ns.projetPeut(r, quoi), quoi .. " : permis") end
+  assert(ns.projetApport(r, 3858, true) and r.apports[3858], "apports : contre-proposition")
+  assert(ns.projetChoix(r, 3858, "acheter") and r.choix[3858] == "acheter", "choix de case : estimation de l'artisan")
+  assert(ns.projetOffre(r, 40000) and ns.projetCommande(r).tip == 40000, "offre : mon prix")
+  -- Commander un bloc d'une réponse : une commande de cette réponse (sous-traitance), ordinaire (j'en suis le client).
+  ns.projetChoix(r, 3858, nil)
+  local i = ns.projetCommander(r, ns.projetArbre(r, TOUT).blocs[1])
+  local sous = ns.projetCommande(r, i)
+  assert(i == 2 and #ns.projetCommandes(r) == 2 and sous.bloc and not sous.reponse and sous.etat == "pas envoyée",
+    "le bloc commandé : une commande de la réponse")
+  assert(ns.projetCommande(r).reponse and not ns.projetCommande(r).etat, "la 1re reste la réponse elle-même, sans état")
+  ns.projetArtisan(r, "Cid", i)
+  assert(ns.projetOffre(r, 700, i) and ns.projetCommande(r, i).player == "Cid" and ns.projetCommande(r, i).tip == 700,
+    "sa commande de bloc se règle comme une autre")
+  -- La même version rouverte : mes changements restent ; une nouvelle version de la demande : la réponse est reprise.
+  assert(ns.projetReponse(recue("h1", 1)) == r and r.apports[3858] and ns.projetCommande(r).tip == 40000, "même version : rien ne bouge")
+  assert(ns.projetReponse(recue("h2", 3)) == r and r.lines[1].qty == 3 and not r.apports[3858] and r.apports[4234]
+    and ns.projetCommande(r).tip == 3 * 9000 - 4 * 500, "nouvelle version : sa demande reprise, mes changements effacés")
+  -- Un projet à moi : tout se modifie.
+  local mien = ns.nouveauProjet({ lines = { { id = 7963, qty = 1 } } })
+  assert(ns.projetPeut(mien, "lignes") and ns.projetQuantite(mien, 1, 2) and ns.projetAjouter(mien, 3858, 1) and ns.projetRetirer(mien, 2),
+    "mon projet : lignes et quantités se changent")
+end
+as(BOB)
+print("Handshake : règles de la réponse OK")
+
 -- Projets : un choix de case appartient à son projet (CONTEXT.md) ; ni l'arbre ni le contrat d'un autre projet n'en
 -- dépendent. Marteau = 10 bronzes + 1 perle, cuirasse = 20 bronzes ; le bronze se fond (cuivre + étain, ×2).
 as(BOB)

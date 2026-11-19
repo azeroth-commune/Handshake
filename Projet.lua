@@ -75,9 +75,28 @@ function ns.projetReponse(c)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Modifications. Dans une réponse, ce que veut le demandeur est figé : lignes et quantités refusées (false).
+-- Modifications. Ce qu'une réponse permet (CONTEXT.md) est une règle de ce module, appelée à évoluer : une ligne par
+-- modification, true = permise, sinon la raison du refus, à afficher telle quelle. Un projet à moi permet tout.
+local FIGE = "c'est sa demande : ce qu'il veut ne change pas ici"
+local REPONSE = {
+  lignes = FIGE, -- ajouter, retirer une ligne, changer une quantité
+  apports = true, -- contre-proposition
+  choix = true, -- décomposer / acheter : l'estimation de l'artisan
+  offre = true, -- son prix
+  commander = true, -- un bloc : la sous-traitance (une commande de sa réponse, dont il est le client)
+}
+
+-- « Peut-on modifier quoi sur ce projet ? » (la fenêtre grise d'après elle) : true, ou false, raison.
+function ns.projetPeut(p, quoi)
+  local r = p.reponse and REPONSE[quoi]
+  if r and r ~= true then return false, r end
+  return true
+end
+
+-- Chaque modification renvoie true, ou false, raison (projetCommander : nil, raison).
 function ns.projetAjouter(p, id, qty)
-  if p.reponse then return false end
+  local ok, raison = ns.projetPeut(p, "lignes")
+  if not ok then return false, raison end
   for _, l in ipairs(p.lines) do
     if l.id == id then l.qty = qty; return true end
   end
@@ -86,29 +105,38 @@ function ns.projetAjouter(p, id, qty)
 end
 
 function ns.projetQuantite(p, i, qty)
-  if p.reponse or not p.lines[i] then return false end
+  local ok, raison = ns.projetPeut(p, "lignes")
+  if not ok then return false, raison end
+  if not p.lines[i] then return false, "cette ligne n'existe pas" end
   if qty and qty >= 1 then p.lines[i].qty = math.min(qty, 9999) end
   return true
 end
 
 function ns.projetRetirer(p, i)
-  if p.reponse then return false end
+  local ok, raison = ns.projetPeut(p, "lignes")
+  if not ok then return false, raison end
   table.remove(p.lines, i)
   return true
 end
 
 -- choix = "fabriquer" (« + », décomposer), "acheter" (« – », tout fait) ou nil (le calcul des prix décide).
 function ns.projetChoix(p, id, choix)
+  local ok, raison = ns.projetPeut(p, "choix")
+  if not ok then return false, raison end
   p.choix = p.choix or {}
   p.choix[id] = choix
   if not next(p.choix) then p.choix = nil end
+  return true
 end
 
 -- « Je le fournis » : la case entière, et tout ce qu'il y a sous elle, sort de la part de l'artisan.
 function ns.projetApport(p, id, oui)
+  local ok, raison = ns.projetPeut(p, "apports")
+  if not ok then return false, raison end
   p.apports = p.apports or {}
   p.apports[id] = oui or nil
   if not next(p.apports) then p.apports = nil end
+  return true
 end
 
 function ns.projetRenommer(p, name) p.name = name end
@@ -134,12 +162,19 @@ local function etat(ct)
 end
 
 function ns.projetArtisan(p, name, i) commandes(p)[i or 1].player = name ~= "" and name or nil end
-function ns.projetOffre(p, cuivre, i) commandes(p)[i or 1].tip = cuivre end
+function ns.projetOffre(p, cuivre, i)
+  local ok, raison = ns.projetPeut(p, "offre")
+  if not ok then return false, raison end
+  commandes(p)[i or 1].tip = cuivre
+  return true
+end
 
 -- « Commander » un bloc (res.blocs) : une commande de plus dans ce projet, à celui qui en connaît le plus ; le même
 -- bloc commandé deux fois redonne la même, tant qu'elle n'est pas envoyée (figée, une nouvelle la remplace pour la
 -- suite). Renvoie son rang.
 function ns.projetCommander(p, bloc)
+  local ok, raison = ns.projetPeut(p, "commander")
+  if not ok then return nil, raison end
   local list = commandes(p)
   for i, c in ipairs(list) do if c.bloc == bloc.key and not envoyee(c) then return i end end
   list[#list + 1] = { bloc = bloc.key, player = bloc.best }
