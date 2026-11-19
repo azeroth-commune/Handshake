@@ -24,11 +24,17 @@ CreateFrame = function() local f = setmetatable({}, stubMT); f.SetScript = funct
 assert(loadfile("LibCommune/LibStub.lua"))()
 assert(loadfile("LibCommune/LibCommune.lua"))()
 CreateFrame = function() return setmetatable({}, stubMT) end
+assert(loadfile("LibCommune/Interface.lua"))() -- fenêtres, montants, noms d'objets
+assert(loadfile("LibCommune/Capture.lua"))()
 local ns = {}
 for _, f in ipairs({ "Donnees", "Calcul", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
   assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
 end
 assert(ns.findItem and ns.itemLabel and ns.newWindow, "base chargée")
+local commune = LibStub("LibCommune-1.0")
+assert(ns.newWindow == commune.Fenetre and ns.money == commune.Argent and ns.moneyShort == commune.ArgentCourt
+  and ns.moneySigned == commune.ArgentSigne, "fenêtres et montants : ceux de la lib commune, plus de copie")
+assert(not io.open("Handshake/Donnees.lua"):read("*a"):find("CreateFrame(\"Frame\", name", 1, true), "plus de copie de la fenêtre")
 
 -- Acheter ou fabriquer : 20 barres de fer, barre à l'HV plus chère que son minerai fondu.
 
