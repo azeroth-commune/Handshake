@@ -1,5 +1,6 @@
 -- Handshake : une commande passe d'un joueur à l'autre.
--- Commande = les lignes « objet × quantité » d'un projet (Projet.lua), le joueur d'en face, une offre, des apports.
+-- Commande = une part d'un projet (ns.projetCommande, Projet.lua) : ses lignes « objet × quantité », le joueur d'en face,
+-- une offre, des apports.
 -- Ce qu'il faut pour la faire (la liste des besoins) a la même forme : on peut la renvoyer au client, ou la passer
 -- à un autre joueur comme une commande.
 -- Échange : du texte avec des liens d'objets, lisible et écrivable à la main (Maj+clic), par chuchotement :
