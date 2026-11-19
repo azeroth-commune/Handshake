@@ -329,11 +329,9 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
   if event ~= "ADDON_LOADED" then return ns.onChat(event, a1, a2, ...) end
   if a1 ~= "Handshake" then return end
   HandshakeDB = HandshakeDB or {}
-  local db, old = HandshakeDB, GameDataDB or {}
-  -- Reprise de ce qui vivait dans GameData avant le module (18/11/2026).
-  db.options = db.options or old.craft_options or { bags = true, bank = true, alts = false, unlearned = false }
+  local db = HandshakeDB
+  db.options = db.options or { bags = true, bank = true, alts = false, unlearned = false }
   db.contracts = db.contracts or {}
   for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
-  ns.migrerProjets(db, old)
-  old.craft_options, old.craft_force, old.craft_targets = nil, nil, nil
+  ns.migrerProjets(db)
 end)

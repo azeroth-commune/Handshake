@@ -386,7 +386,7 @@ function ns.crafters()
     end
     return byKey[key]
   end
-  for key, c in pairs(ns.chars()) do
+  for key, c in pairs(ns.metiers()) do
     local e = entry(key)
     for _, p in pairs(c.professions or {}) do
       if type(p) == "table" and p.name then e.ranks[p.name] = math.max(e.ranks[p.name] or 0, p.rank or 0) end
@@ -535,8 +535,7 @@ function ns.projetDemande(p) return ns.projetArbre(p, { unlearned = true }) end
 -- Migration des SavedVariables (19/11/2026) : chaque commande enregistrée devient un projet (artisan et offre repris
 -- tels quels, puis rangés dans sa commande « tout le projet » à la première lecture, voir commandes), une commande liée
 -- à un contrat devient une réponse, la table globale des choix (« force ») est jetée.
--- old = GameDataDB d'avant le module (ses suivis deviennent un projet).
-function ns.migrerProjets(d, old)
+function ns.migrerProjets(d)
   if not d.projets then
     d.projets = {}
     for _, o in ipairs(d.orders or {}) do
@@ -544,9 +543,6 @@ function ns.migrerProjets(d, old)
       d.projets[#d.projets + 1] = o
     end
     d.courant = d.current
-    if not d.orders and old.craft_targets and #old.craft_targets > 0 then
-      ns.nouveauProjet({ name = "Mon projet", lines = old.craft_targets })
-    end
   end
   d.orders, d.current, d.force = nil, nil, nil
 end

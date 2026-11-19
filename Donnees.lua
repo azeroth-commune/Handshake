@@ -1,10 +1,9 @@
 -- Handshake, la base : les données dont le calcul a besoin (fenêtres, montants, noms d'objets : la lib commune).
--- Recettes et recettes connues : lues par la lib commune (LibCommune), avec ou sans GameData ; sans lui, c'est son
--- relevé de repli (le perso connecté, fenêtre de métier ouverte, en mémoire le temps de la session), jamais sauvegardé ici.
--- Le reste : si GameData est installé, on prend ses données (plus riches) ; sinon Handshake lit lui-même :
---   prix de l'hôtel des ventes   : à l'ouverture de l'HV (scan complet du jeu, au plus un par 15 min) ;
---   sacs et banque               : à chaque changement de sac, et quand la banque est ouverte.
--- Ça va dans HandshakeDB (SavedVariables), écrit au /reload ou à la déconnexion.
+-- Aucune donnée relevée n'est sauvegardée ici (ADR 0001 de l'atelier) : recettes connues, inventaires, métiers, marchands,
+-- objets et cours de l'HV sont lus par la lib commune (LibCommune, lib:Lire), avec ou sans GameData. Sans lui, c'est son
+-- relevé de repli (le perso connecté, en mémoire, le temps de la session : recettes connues, sacs, banque vue cette
+-- session) ; l'HV passe par un fournisseur (Auctionator…) ou attend GameData, les autres persos aussi.
+-- HandshakeDB ne garde que les données propres de Handshake : commandes, contrats, projets, réglages.
 local _, ns = ...
 
 local lib = LibStub("LibCommune-1.0") -- embarquée (OptionalDeps en développement)
@@ -16,20 +15,18 @@ local function recettesConnues()
 end
 -- { [perso] = { [métier] = { rank, max, known = { [clé] = difficulté } } } }
 function ns.knownRecipes() return recettesConnues().persos end
-
-local function gd() return GameDataAPI ~= nil and GameDataDB ~= nil end
-local function db() return HandshakeDB end
+-- Un type par perso, tous les persos relevés : { [perso] = … }.
+local function parPerso(t) local d = lib:Lire(t, "tous") return d and d.persos or {} end
 
 ---------------------------------------------------------------------------------------------------
--- Accès aux données (GameData d'abord)
-local function house() return GetRealmName() .. "-" .. UnitFactionGroup("player") end
+-- Accès aux données (par la lib)
 -- Recettes : celles relevées dans les fenêtres de métier (par la lib commune), complétées par la réserve Classic
 -- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
 local classic -- la réserve, mise en forme une fois
 local nomsDemandes = {} -- recettes dont on a déjà demandé les noms d'objets
 function ns.recipes()
   local own = recettesConnues().recettes
-  if not gd() then -- sans GameData, personne d'autre ne demande ces noms au serveur
+  if not lib:Lire("objets") then -- sans catalogue des objets (GameData), personne d'autre ne demande ces noms au serveur
     for k, r in pairs(own) do
       if not nomsDemandes[k] then
         nomsDemandes[k] = true
@@ -61,10 +58,50 @@ function ns.recipeLevel(key, r)
   local c = key and HandshakeClassicRecipes and HandshakeClassicRecipes[key]
   return c and c[7] or nil
 end
-function ns.chars() return (gd() and GameDataDB.chars) or db().chars or {} end
-function ns.vendors() return (gd() and GameDataDB.vendors) or {} end
-function ns.items() return (gd() and GameDataItems and GameDataItems.items) or db().items or {} end
-function ns.market() return (gd() and GameDataMarket and GameDataMarket[house()]) or (db().market or {})[house()] end
+-- { [perso] = { bags, bank, … } } ; { [perso] = { professions, skills } } ; { [PNJ] = { items = { { id, price, stack, limited } } } }
+function ns.inventaires() return parPerso("inventaires") end
+function ns.metiers() return parPerso("métiers et compétences") end
+function ns.vendors() return lib:Lire("marchands") or {} end
+-- Mes sacs, lus à l'instant (la fenêtre se recalcule à chaque changement de sac).
+function ns.mesSacs() return lib.Conteneurs(lib.EstSac) end
+
+-- Noms d'objets : le catalogue des objets (GameData), sinon ceux arrivés du serveur cette session, en mémoire seulement.
+local nomsDeSession = {}
+function ns.items() return lib:Lire("objets") or nomsDeSession end
+
+-- Cours de l'HV (scan de GameData, sinon un fournisseur : Auctionator, TSM, AuctionDB), même forme qu'avant :
+-- { items = { [id] = { min, qty, tiers, … } }, scanned (date du scan de GameData), source (le fournisseur) }, ou nil et
+-- la raison de la lib.
+function ns.market()
+  local d, lot = lib:Lire("cours de l'HV")
+  if not d then return nil, lot end
+  local h = d.hv and d.hv[GetRealmName() .. "-" .. (UnitFactionGroup("player") or "")]
+  -- ponytail: une ligne lue au plus une fois par calcul (un calcul = un ns.market())
+  local items = setmetatable({}, { __index = function(t, id)
+    local l = d.objet(id) or false
+    rawset(t, id, l)
+    return l
+  end })
+  return { items = items, scanned = h and h.scanned, source = lot and lot.fournisseur }
+end
+-- L'état des prix de l'HV, pour la barre d'état : d'où ils viennent, ou ce qui les apporterait.
+function ns.texteHV(m)
+  local raison
+  if not m then m, raison = ns.market() end
+  if m and m.scanned then return "HV du " .. m.scanned end
+  if m then return "prix de l'HV : " .. (m.source or "?") end
+  if raison == "pas de GameData ni de fournisseur" then
+    return "pas de prix de l'HV : GameData (scan à l'ouverture de l'HV) ou Auctionator les apporterait"
+  end
+  return "HV jamais scanné : ouvre l'hôtel des ventes"
+end
+-- Ce que GameData apporterait, quand il n'est pas là (la lib dit « pas de GameData » pour un type qu'elle ne relève pas
+-- sans lui) : une ligne pour la fenêtre, nil s'il est là.
+function ns.apportGameData()
+  if select(2, lib:Lire("objets")) ~= "pas de GameData" then return nil end
+  return "Sans GameData : ce perso seul, sa banque vue cette session. GameData ajouterait tes rerolls, ta banque à tout moment"
+    .. (ns.market() and "." or " et les prix de l'HV.")
+end
 
 -- Sur Forever, UnitName("player") renvoie prénom, nom de famille ; la clé d'un perso est « Prénom Nom-Royaume »
 -- (même forme que GameData).
@@ -73,122 +110,26 @@ function ns.charKey()
   return (last and (first .. " " .. last) or first) .. "-" .. GetRealmName()
 end
 
--- Conteneurs d'Enum.BagIndex dont le nom passe le filtre (sacs, banque, onglets : ce que ce client a).
-function ns.containers(keep)
-  local out, seen = {}, {}
-  for name, bag in pairs(Enum.BagIndex or {}) do
-    if keep(name) and not seen[bag] then
-      seen[bag] = true
-      local size = C_Container.GetContainerNumSlots(bag)
-      if size and size > 0 then
-        local items = {}
-        for slot = 1, size do
-          local it = C_Container.GetContainerItemInfo(bag, slot)
-          if it then items[#items + 1] = { id = it.itemID, count = it.stackCount } end
-        end
-        out[name] = { size = size, items = items }
-      end
-    end
-  end
-  return out
-end
-function ns.isBag(n) return n == "Backpack" or n == "Keyring" or n == "ReagentBag" or n:find("^Bag_") ~= nil end
-function ns.isBank(n) return n:find("[Bb]ank") ~= nil end
-
 ---------------------------------------------------------------------------------------------------
--- Montants, noms d'objets, fenêtres : ceux de la lib commune. Un nom d'objet arrivé du serveur est retenu dans
--- HandshakeDB.items quand GameData n'est pas là (sinon c'est GameData qui le retient).
+-- Montants, noms d'objets, fenêtres : ceux de la lib commune. Un nom d'objet arrivé du serveur est retenu en mémoire
+-- (nomsDeSession), jamais sauvegardé.
 ns.money, ns.moneyShort, ns.moneySigned, ns.newWindow = lib.Argent, lib.ArgentCourt, lib.ArgentSigne, lib.Fenetre
-local function garde() if not gd() then return db().items end end
-function ns.rememberItem(id) return lib.RetenirObjet(id, garde()) end
-function ns.itemLabel(id) return lib.NomObjet(id, ns.items(), garde()) end
+function ns.rememberItem(id) return lib.RetenirObjet(id, nomsDeSession) end
+function ns.itemLabel(id) return lib.NomObjet(id, ns.items(), nomsDeSession) end
 function ns.findItem(text) return lib.TrouverObjet(text, ns.items(), ns.recipes()) end
 
 ---------------------------------------------------------------------------------------------------
--- Lecture des données quand GameData n'est pas là.
-local function myChar()
-  local key = ns.charKey()
-  db().chars[key] = db().chars[key] or {}
-  return db().chars[key]
-end
-
--- Hôtel des ventes : scan complet du jeu (C_AuctionHouse.ReplicateItems), lu par paquets de 2 000 pour ne pas
--- figer l'écran ; par objet, le prix unitaire le plus bas, la quantité, et les paliers de prix les moins chers.
-local TIERS, BATCH, COOLDOWN = 20, 2000, 15 * 60
-local ahOpen, reading, lastRequest, readAt = false, false, -COOLDOWN, nil
-
-function ns.aggregate(rows)
-  local by = {}
-  for _, r in ipairs(rows) do
-    local count = (r.count and r.count > 0) and r.count or 1
-    if r.id and r.buyout and r.buyout > 0 then
-      by[r.id] = by[r.id] or {}
-      table.insert(by[r.id], { math.floor(r.buyout / count), count })
-    end
-  end
-  local out = {}
-  for id, list in pairs(by) do
-    table.sort(list, function(a, b) return a[1] < b[1] end)
-    local tiers, qty = {}, 0
-    for _, e in ipairs(list) do
-      local last = tiers[#tiers]
-      if last and last.price == e[1] then last.qty = last.qty + e[2]
-      elseif #tiers < TIERS then tiers[#tiers + 1] = { price = e[1], qty = e[2] } end
-      qty = qty + e[2]
-    end
-    out[id] = { min = list[1][1], qty = qty, auctions = #list, tiers = tiers }
-  end
-  return out
-end
-
-local function readReplicate()
-  local n = C_AuctionHouse.GetNumReplicateItems()
-  local rows, i = {}, 0
-  local function step()
-    for idx = i, math.min(i + BATCH, n) - 1 do
-      local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(idx)
-      rows[#rows + 1] = { id = itemID, count = count, buyout = buyout }
-    end
-    i = i + BATCH
-    if i < n then return C_Timer.After(0, step) end
-    db().market[house()] = { scanned = date("%d/%m %H:%M"), items = ns.aggregate(rows) }
-    reading, readAt = false, GetTime()
-    print(("Handshake : hôtel des ventes lu (%d enchères)."):format(n))
-  end
-  step()
-end
-
--- Les recettes relevées ne se sauvegardent plus ici (ADR 0001 de l'atelier) : on purge celles d'un Handshake d'avant.
+-- Les données relevées ne se sauvegardent plus ici (ADR 0001 de l'atelier) : on purge celles d'un Handshake d'avant
+-- (recettes, sacs et banque des persos, noms d'objets, HV). Les données propres restent.
+local RELEVES = { "recipes", "chars", "items", "market" }
 function ns.purgerAnciensReleves()
-  HandshakeDB.recipes = nil
-  for _, c in pairs(HandshakeDB.chars or {}) do c.recipes = nil end
+  for _, k in ipairs(RELEVES) do HandshakeDB[k] = nil end
 end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
-f:SetScript("OnEvent", function(_, event, a1)
-  if event == "ADDON_LOADED" then
-    if a1 ~= "Handshake" then return end
-    HandshakeDB = HandshakeDB or {}
-    for _, k in ipairs({ "chars", "items", "market" }) do HandshakeDB[k] = HandshakeDB[k] or {} end -- plus de « recipes » : la lib
-    ns.purgerAnciensReleves()
-    if gd() then return end -- GameData lit tout ça pour nous
-    for _, e in ipairs({ "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
-      "REPLICATE_ITEM_LIST_UPDATE", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED" }) do
-      pcall(f.RegisterEvent, f, e)
-    end
-  elseif event == "AUCTION_HOUSE_SHOW" then
-    ahOpen = true
-    if GetTime() - lastRequest >= COOLDOWN then lastRequest = GetTime(); C_AuctionHouse.ReplicateItems() end
-  elseif event == "AUCTION_HOUSE_CLOSED" then
-    ahOpen = false
-  elseif event == "REPLICATE_ITEM_LIST_UPDATE" and ahOpen and not reading then
-    if readAt and GetTime() - readAt < COOLDOWN then return end
-    reading = true
-    readReplicate()
-  elseif event == "BAG_UPDATE_DELAYED" then
-    myChar().bags = ns.containers(ns.isBag)
-  elseif event == "BANKFRAME_OPENED" or event == "PLAYERBANKSLOTS_CHANGED" then
-    myChar().bank = ns.containers(ns.isBank)
-  end
+f:SetScript("OnEvent", function(_, _, a1)
+  if a1 ~= "Handshake" then return end
+  HandshakeDB = HandshakeDB or {}
+  ns.purgerAnciensReleves()
 end)

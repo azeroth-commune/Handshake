@@ -1,6 +1,7 @@
 -- Vérification hors jeu (non chargée par le TOC) : luajit Handshake/check.lua
 -- Juste assez de l'API WoW pour le calcul et le texte. Les premiers tests jouent « GameData installé » (ses tables
--- globales servent de données) ; un test à la fin joue Handshake seul.
+-- globales servent de données, lues par la lib commune via les vrais accesseurs de GameData) ; un test à la fin joue
+-- Handshake seul. Dans les deux cas, rien de relevé n'est écrit dans HandshakeDB (ADR 0001 de l'atelier).
 local noop = function() end
 local stubMT = { __index = function() return noop end }
 CreateFrame = function() return setmetatable({}, stubMT) end
@@ -10,14 +11,22 @@ C_Item = { GetItemInfo = noop, GetItemIconByID = noop }
 date, time = os.date, os.time
 GetTime = function() return 0 end
 GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
-GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {} }, { items = {} }, {}
--- GameData installé : la lib commune lit ses recettes par GameDataAPI.recettesConnues (même forme que GameData).
-GameDataAPI = { recettesConnues = function()
+GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {}, lots = {} }, { items = {} }, {}
+-- GameData installé : la lib commune lit ses données par GameDataAPI, ses vrais accesseurs (GameData/Souscriptions.lua :
+-- inventaires, métiers, marchands, objets, cours de l'HV) ; les recettes connues, même forme que GameData.
+GameDataAPI = {}
+assert(loadfile("GameData/Souscriptions.lua"))("GameData", GameDataAPI)
+GameDataAPI.recettesConnues = function()
   local persos = {}
   for k, c in pairs(GameDataDB.chars) do persos[k] = c.recipes end
   return { recettes = GameDataDB.recipes, persos = persos }
-end }
-HandshakeDB = { chars = {}, items = {}, market = {} }
+end
+HandshakeDB = {}
+-- Rien de relevé dans les SavedVariables de Handshake : seulement ses données propres.
+local RELEVES = { "recipes", "chars", "items", "market" }
+local function aucunReleve(quand)
+  for _, k in ipairs(RELEVES) do assert(HandshakeDB[k] == nil, quand .. " : relevé « " .. k .. " » écrit dans HandshakeDB") end
+end
 -- La lib commune (dépôt voisin, chargée avant Handshake comme dans le jeu) ; son cadre garde son script d'événements.
 local libCadre
 CreateFrame = function() local f = setmetatable({}, stubMT); f.SetScript = function(self, _, fn) self.onEvent = fn end; libCadre = f; return f end
@@ -26,6 +35,7 @@ assert(loadfile("LibCommune/LibCommune.lua"))()
 CreateFrame = function() return setmetatable({}, stubMT) end
 assert(loadfile("LibCommune/Interface.lua"))() -- fenêtres, montants, noms d'objets
 assert(loadfile("LibCommune/Capture.lua"))()
+assert(loadfile("LibCommune/Fournisseurs.lua"))() -- cours de l'HV : GameData, sinon Auctionator…
 local ns = {}
 for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
   assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
@@ -92,9 +102,9 @@ local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = f
   GameDataDB.recipes = d.recettes
   GameDataDB.chars = d.persos or {}
   GameDataDB.chars[MOI] = { bank = sac(d.banque) }
-  ns.containers = function() return sac(d.sacs) end
+  commune.Conteneurs = function(garder) return garder("Backpack") and sac(d.sacs) or {} end -- mes sacs, lus à l'instant
 end
-local realContainers = ns.containers
+local realContainers = commune.Conteneurs
 donnees({ hv = market, recettes = { [3307] = { name = "Fonte du fer", output = 3575, reagents = { { id = 2772, qty = 1 } } } },
   sacs = { [2772] = 15, [3575] = 4 }, banque = { [2772] = 5 } })
 local fer = ns.nouveauProjet({ lines = { { id = 3575, qty = 10 }, { id = 3575, qty = 20 } } })
@@ -241,7 +251,7 @@ do
   end
   bronzeR.profession = "Minage"
 end
-ns.containers, GameDataDB.chars = realContainers, {}
+commune.Conteneurs, GameDataDB.chars = realContainers, {}
 print("Handshake : dessin de l'arbre (étages, relais, bandes) OK")
 
 -- Suggestions : fabricables d'abord, puis début de nom, puis noms courts.
@@ -294,15 +304,24 @@ assert(#rows == 2 and rows[1].id == 3858 and rows[1].required == 36 and rows[2].
 assert(#recipes == 1 and recipes[1].item == 7989, "recette trouvée par son nom")
 print("Handshake : besoins OK")
 
--- Reprise des suivis de GameData à la première ouverture du module : ils deviennent un projet.
-GameDataDB.craft_targets, GameDataDB.craft_options = { { id = 7963, qty = 1 } }, { bags = true }
-HandshakeDB = nil
+aucunReleve("avec GameData, après les calculs")
+-- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
+HandshakeDB = { chars = { [MOI] = { bags = {}, bank = {} } }, items = { [1] = { name = "x" } }, market = { ["R-Alliance"] = {} },
+  recipes = {}, contracts = { k = { status = "signe" } }, projets = { { name = "P", lines = {} } }, courant = 1,
+  options = { bags = true }, surnames = { Bob = "Kerys" }, debug = { on = true } }
 local loader
 CreateFrame = function() return setmetatable({ SetScript = function(_, _, fn) loader = fn end }, stubMT) end
+assert(loadfile("Handshake/Donnees.lua"))("Handshake", ns)
+loader(nil, "ADDON_LOADED", "Handshake")
+aucunReleve("au chargement")
+assert(HandshakeDB.contracts.k and HandshakeDB.projets[1].name == "P" and HandshakeDB.options.bags and HandshakeDB.surnames.Bob
+  and HandshakeDB.debug.on, "données propres gardées")
+-- Première ouverture : réglages par défaut, aucun projet repris de GameData (ses vieux suivis ne sont plus lus).
+HandshakeDB = nil
 assert(loadfile("Handshake/Commande.lua"))("Handshake", ns)
 loader(nil, "ADDON_LOADED", "Handshake")
-assert(select(2, ns.numeroProjet()) == 1 and ns.projetCourant().lines[1].id == 7963 and HandshakeDB.options.bags, "suivis repris")
-assert(GameDataDB.craft_targets == nil, "plus rien dans GameData")
+assert(select(2, ns.numeroProjet()) == 1 and #ns.projetCourant().lines == 0 and HandshakeDB.options.bags and HandshakeDB.options.bank,
+  "réglages par défaut, un projet vide")
 -- Migration (19/11/2026) : des commandes enregistrées à l'ancienne (la 2e liée à un contrat, affichée) et la table
 -- globale des choix « fabriquer / acheter ».
 HandshakeDB = { orders = {
@@ -631,8 +650,8 @@ print("Handshake : choix de case propres à chaque projet OK")
 -- ne réduisent jamais la part de l'artisan (CONCEPTION.md). Avec un marteau dans mes sacs et le stock coché, ce que livre
 -- le minage = le bronze que la forge reçoit en apport.
 as(BOB)
-local sacsAvant, optionsAvant = ns.containers, HandshakeDB.options
-ns.containers = function() return { b = { items = { { id = 5541, count = 1 } } } } end
+local sacsAvant, optionsAvant = commune.Conteneurs, HandshakeDB.options
+commune.Conteneurs = function() return { b = { items = { { id = 5541, count = 1 } } } } end
 HandshakeDB.options = { bags = true, unlearned = true }
 local ok, err = pcall(function()
   local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 2 }, { id = 2870, qty = 1 } } })
@@ -643,7 +662,7 @@ local ok, err = pcall(function()
   assert(livre.id == 2841 and recu[1].id == 2841 and livre.qty == recu[1].qty and livre.qty == 40,
     ("le minage livre %d bronzes, la forge en reçoit %d"):format(livre.qty, recu[1].qty))
 end)
-ns.containers, HandshakeDB.options = sacsAvant, optionsAvant
+commune.Conteneurs, HandshakeDB.options = sacsAvant, optionsAvant
 assert(ok, err)
 print("Handshake : commandes sur l'arbre de la demande OK")
 
@@ -844,24 +863,34 @@ assert(ns.me() == BEL, "moi = prénom + royaume, pas le nom de famille")
 print("Handshake : noms à la Forever OK")
 
 -- Avec GameData : les recettes connues de tous ses persos, par la lib commune.
-GameDataDB.chars = { ["Alt Dupont-R"] = { recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } } }, ["Sans-R"] = {} }
+GameDataDB.chars = { ["Alt Dupont-R"] = { recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
+  professions = { { name = "Couture", rank = 120 } }, bags = { b = { items = { { id = 2840, count = 4 } } } } }, ["Sans-R"] = {} }
 assert(ns.knownRecipes()["Alt Dupont-R"].Forge.known[9] and not ns.knownRecipes()["Sans-R"], "recettes connues de GameData")
 local alt
 for _, e in ipairs(ns.crafters()) do if e.key == "Alt Dupont-R" then alt = e end end
 assert(alt and alt.name == "Alt" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData")
+assert(alt.ranks.Couture == 120, "métiers des persos (fiche de GameData), par la lib")
+-- Mes autres persos (option « mes autres persos ») : leurs sacs, par la lib.
+GameDataDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
+GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [2840] = { tiers = { { price = 50, qty = 99 } } } } } }
+local bronze = ns.nouveauProjet({ lines = { { id = 2841, qty = 6 } } })
+local arbreAlts = ns.projetArbre(bronze, { alts = true, unlearned = true })
+assert(arbreAlts.caseDe.I2840.have[3] == 4 and arbreAlts.caseDe.I2840.need == 2, "sacs d'un autre perso déduits")
+assert(ns.texteHV() == "HV du hier" and ns.apportGameData() == nil, "avec GameData : la date de son scan, rien à réclamer")
 GameDataDB.chars = {}
+aucunReleve("avec GameData")
 print("Handshake : recettes connues avec GameData OK")
 
--- Handshake seul (sans GameData) : les recettes viennent du relevé de repli de la lib (fenêtre de métier ouverte),
--- jamais écrites dans HandshakeDB ; les autres données (objets, HV) restent dans ses propres tables.
+-- Handshake seul (sans GameData) : tout vient du relevé de repli de la lib (le perso connecté, en mémoire : recettes
+-- connues dans la fenêtre de métier, sacs, banque vue cette session), d'un fournisseur pour l'HV, jamais de HandshakeDB.
 GameDataAPI = nil
--- Relevés sauvegardés par un Handshake d'avant (recettes, recettes connues des persos) : purgés au chargement (ADR 0001).
+-- Relevés sauvegardés par un Handshake d'avant : purgés (ADR 0001), données propres gardées.
 HandshakeDB.recipes = { [1] = { name = "vieux relevé" } }
 HandshakeDB.chars = { ["Vieux-Perso"] = { recipes = { Forge = { known = { [1] = 1 } } }, bags = { [2770] = 3 } } }
+HandshakeDB.items, HandshakeDB.market = { [2770] = { name = "Minerai" } }, { ["R-Alliance"] = { items = {} } }
 ns.purgerAnciensReleves()
-assert(HandshakeDB.recipes == nil and HandshakeDB.chars["Vieux-Perso"].recipes == nil, "anciens relevés de recettes purgés")
-assert(HandshakeDB.chars["Vieux-Perso"].bags[2770] == 3, "le reste des persos (sacs) n'est pas touché")
-HandshakeDB.chars = {}
+aucunReleve("sans GameData, purge")
+assert(HandshakeDB.contracts and HandshakeDB.projets, "données propres gardées")
 assert(not ns.recipes()[5] and not next(ns.knownRecipes()), "rien de relevé cette session")
 UnitName = function() return "Belegard", "Marteaudefer" end
 Enum = Enum or {}
@@ -875,21 +904,43 @@ C_TradeSkillUI = {
 C_Timer.After = function(_, fn) fn() end
 libCadre.onEvent(libCadre, "TRADE_SKILL_LIST_UPDATE")
 C_Timer.After = noop
--- Les noms des produits et composants des recettes relevées sont demandés au serveur (comme l'ancien relevé de Handshake).
+-- Les noms des produits et composants des recettes relevées sont demandés au serveur ; arrivés, gardés en mémoire.
 local demandes = {}
 C_Item.RequestLoadItemDataByID = function(id) demandes[id] = true end
 ns.recipes()
 assert(demandes[2840] and demandes[2770] and demandes[2841], "noms des produits et composants demandés au serveur")
 C_Item.RequestLoadItemDataByID = nil
-HandshakeDB.items = { [2840] = { name = "Barre de cuivre" } }
-assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "relevé de repli")
+C_Item.GetItemInfo = function(id) if id == 2840 then return "Barre de cuivre", "|Hitem:2840|h[Barre de cuivre]|h" end end
+ns.rememberItem(2840)
+C_Item.GetItemInfo = noop
+assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "relevé de repli, noms en mémoire")
 assert(ns.knownRecipes()[ns.charKey()].Minage.known[5] and not ns.knownRecipes()[ns.charKey()].Minage.known[6], "recettes connues du perso")
-assert(HandshakeDB.recipes == nil, "rien écrit dans HandshakeDB.recipes")
-assert(next(HandshakeDB.chars) == nil, "rien écrit dans HandshakeDB.chars (recettes connues comprises)")
 local moi = ns.crafters()[1]
 assert(moi.key == ns.charKey() and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
-local agg = ns.aggregate({ { id = 2770, count = 20, buyout = 2000 }, { id = 2770, count = 5, buyout = 400 } })
-assert(agg[2770].min == 80 and agg[2770].qty == 25 and agg[2770].tiers[1].price == 80, "HV agrégé")
+-- Sacs (lus à l'instant) et banque (vue cette session) du perso connecté : par la lib, déduits du calcul.
+Enum.BagIndex = { Backpack = 0, Bank = -1 }
+local slots = { [0] = { { itemID = 2770, stackCount = 2 } }, [-1] = { { itemID = 2770, stackCount = 3 } } }
+C_Container = { GetContainerNumSlots = function(b) return #slots[b] end, GetContainerItemInfo = function(b, i) return slots[b][i] end }
+GetBuildInfo = function() return "1.16.1", "64000" end
+libCadre.onEvent(libCadre, "BANKFRAME_OPENED")
+local cuivre = ns.nouveauProjet({ lines = { { id = 2840, qty = 10 } } })
+local arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true, alts = true })
+local minerai = arbreSeul.caseDe.I2770
+assert(minerai.have[1] == 2 and minerai.have[2] == 3 and minerai.have[3] == 0 and minerai.need == 5, "sacs et banque du perso, pas d'autres persos")
+-- HV : ni GameData ni fournisseur, rien à acheter ; la fenêtre dit ce que GameData apporterait.
+assert(minerai.unpriced and ns.market() == nil, "pas de prix de l'HV")
+assert(ns.texteHV():find("GameData", 1, true) and ns.texteHV():find("Auctionator", 1, true), "HV : ce qui l'apporterait")
+local apport = ns.apportGameData()
+assert(apport and apport:find("rerolls", 1, true) and apport:find("banque", 1, true) and apport:find("HV", 1, true), "ce que GameData apporterait")
+-- Avec Auctionator (fournisseur) : ses prix du jour, sans paliers ; l'HV n'est plus dans ce qui manque.
+time = os.time
+Auctionator = { API = { v1 = { GetAuctionPriceByItemID = function(_, id) return id == 2770 and 30 or nil end,
+  GetAuctionAgeByItemID = function() return 0 end } } }
+arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true })
+assert(arbreSeul.caseDe.I2770.cost == 5 * 30 and ns.texteHV() == "prix de l'HV : Auctionator", "prix d'Auctionator")
+assert(not ns.apportGameData():find("HV", 1, true), "fournisseur présent : GameData pour les rerolls et la banque")
+Auctionator = nil
+aucunReleve("sans GameData")
 -- Réserve Classic : ajoutée pour les objets sans recette scannée, jamais par-dessus une recette scannée du même objet.
 HandshakeClassicRecipes = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 } },
   [9002] = { 4255, 1, 1, "Travail du cuir", "Armure verte en cuir", { 4234, 9 } } }
