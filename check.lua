@@ -650,6 +650,21 @@ do
   local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
   assert(ns.ctAccept(v2, v2.hash))
   assert(cmd().etat == "signée" and cmd().tip == 10000, "signée, au prix de la version signée")
+  -- En clair (#7) : le texte part de la commande, avec ses lignes, ses apports et son offre ; envoyée, ce sont ceux de son
+  -- contrat, même si la recette a changé depuis (la cuirasse prend maintenant 25 bronzes).
+  for id, nom in pairs({ [5541] = "Marteau", [2870] = "Cuirasse", [2841] = "Barre de bronze" }) do
+    GameDataItems.items[id] = { name = nom, link = link(id, nom) }
+  end
+  GameDataDB.recipes[2].reagents[1].qty = 25
+  popups = {}
+  ns.whisper = function(msg) ns.onChat("CHAT_MSG_WHISPER", msg, BOB) end
+  ns.sendOrder(cmd())
+  ns.whisper = realWhisper
+  GameDataDB.recipes[2].reagents[1].qty = 20
+  local voulu, _, offre, apporte = ns.parseList(popups[1].data.text)
+  table.sort(voulu, function(a, b) return a.id < b.id end)
+  assert(#voulu == 2 and voulu[1].id == 2870 and voulu[1].qty == 1 and voulu[2].id == 5541 and voulu[2].qty == 1, "ses lignes")
+  assert(#apporte == 1 and apporte[1].id == 2841 and apporte[1].qty == 30 and offre == 10000, "ses apports (du contrat), son offre")
   -- Le bloc de la forge commandé de nouveau : sa commande est figée, une nouvelle commande vivante (son identité à elle) ;
   -- commandé encore une fois : la même, tant qu'elle n'est pas partie.
   local j = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
