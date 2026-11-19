@@ -1035,6 +1035,12 @@ function ns.openCraftWindow(id, qty)
   if id then track(id, qty or 1) else refresh() end
 end
 if GameDataAPI then GameDataAPI.openCraftWindow = ns.openCraftWindow end -- minicarte et menu de GameData
+-- Bouton de minicarte et entrée des options communs d'Azeroth Commune (LibCommune#3) : clic ou ligne du menu = cette fenêtre.
+local commune = LibStub and LibStub("LibCommune-1.0", true)
+if commune and commune.Regrouper then
+  commune.Regrouper({ nom = "Handshake", dossier = "Handshake", icone = "Interface\\Icons\\Trade_BlackSmithing",
+    ouvrir = function() ns.openCraftWindow() end, store = function() return HandshakeDB end })
+end
 
 -- Ctrl+clic droit sur un objet n'importe où dans le jeu (sacs, banque, lien du chat, butin, fenêtre de métier, HV) : il
 -- entre dans la commande affichée et la fenêtre s'ouvre. Un objet-recette (« Plans : Claymore ») donne l'objet fabriqué.
