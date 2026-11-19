@@ -1,4 +1,4 @@
--- Handshake, la base : fenêtres, montants, noms d'objets, et les données dont le calcul a besoin.
+-- Handshake, la base : les données dont le calcul a besoin (fenêtres, montants, noms d'objets : la lib commune).
 -- Recettes et recettes connues : lues par la lib commune (LibCommune), avec ou sans GameData ; sans lui, c'est son
 -- relevé de repli (le perso connecté, fenêtre de métier ouverte, en mémoire le temps de la session), jamais sauvegardé ici.
 -- Le reste : si GameData est installé, on prend ses données (plus riches) ; sinon Handshake lit lui-même :
@@ -7,11 +7,11 @@
 -- Ça va dans HandshakeDB (SavedVariables), écrit au /reload ou à la déconnexion.
 local _, ns = ...
 
-local lib = LibStub and LibStub("LibCommune-1.0", true)
-if lib then lib:Demander("recettes connues") end
+local lib = LibStub("LibCommune-1.0") -- embarquée (OptionalDeps en développement)
+lib:Demander("recettes connues")
 -- Recettes connues de tous les persos relevés (sans GameData : le perso connecté) et recettes vues, ou rien.
 local function recettesConnues()
-  return lib and lib:Lire("recettes connues", "tous") or { recettes = {}, persos = {} }
+  return lib:Lire("recettes connues", "tous") or { recettes = {}, persos = {} }
 end
 -- { [perso] = { [métier] = { rank, max, known = { [clé] = difficulté } } } }
 function ns.knownRecipes() return recettesConnues().persos end
@@ -95,82 +95,13 @@ function ns.isBag(n) return n == "Backpack" or n == "Keyring" or n == "ReagentBa
 function ns.isBank(n) return n:find("[Bb]ank") ~= nil end
 
 ---------------------------------------------------------------------------------------------------
--- Montants et noms
-function ns.money(c)
-  local fmt = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
-  return c and fmt(math.floor(c + 0.5)) or "?"
-end
--- Montant court : au-delà d'1 po on oublie les pc, au-delà de 100 po les pa.
-function ns.moneyShort(c)
-  if not c then return "–" end
-  c = math.floor(math.abs(c) + 0.5)
-  if c >= 1000000 then c = math.floor(c / 10000 + 0.5) * 10000 elseif c >= 10000 then c = math.floor(c / 100 + 0.5) * 100 end
-  if c == 0 then return "0" end
-  return ((C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString)(c, 10)
-end
-function ns.moneySigned(c)
-  if not c then return "–" end
-  return (c >= 0 and "|cff59cc73+" or "|cffe64d4d-") .. ns.moneyShort(c) .. "|r"
-end
-
--- Nom d'un objet : demandé au serveur s'il n'est pas encore connu, retenu quand il arrive.
-local asked = {}
-local function remember(id)
-  local name, link = C_Item.GetItemInfo(id)
-  if name then
-    if not gd() then db().items[id] = { name = name, link = link } end
-    return name, link
-  end
-  if not asked[id] and C_Item.RequestLoadItemDataByID then asked[id] = true C_Item.RequestLoadItemDataByID(id) end
-end
-ns.rememberItem = remember
-
-function ns.itemLabel(id)
-  local it = ns.items()[id]
-  local _, link = C_Item.GetItemInfo(id)
-  if not link and not it then remember(id) end
-  return (it and it.link) or link or (it and it.name) or ("objet " .. id)
-end
-
-function ns.findItem(text)
-  local id = tonumber(text:match("item:(%d+)")) or tonumber(text)
-  if id then return id end
-  local wanted = text:lower()
-  for iid, it in pairs(ns.items()) do
-    if it.name and it.name:lower() == wanted then return iid end
-  end
-  for _, r in pairs(ns.recipes()) do
-    if r.name and r.name:lower() == wanted then return r.output end
-  end
-end
-
--- Une fenêtre sombre, bord lavande, déplaçable, fermée par Échap, avec titre et croix.
-function ns.newWindow(name, title, w, h)
-  local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
-  f:SetSize(w, h)
-  f:SetPoint("CENTER")
-  f:SetFrameStrata("HIGH")
-  f:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-  f:SetBackdropColor(0.06, 0.06, 0.08, 0.96)
-  f:SetBackdropBorderColor(0.66, 0.56, 1.00, 0.35)
-  f:EnableMouse(true)
-  f:SetMovable(true)
-  f:SetClampedToScreen(true)
-  f:SetToplevel(true)
-  f:HookScript("OnShow", function(self) self:Raise() end)
-  f:RegisterForDrag("LeftButton")
-  f:SetScript("OnDragStart", f.StartMoving)
-  f:SetScript("OnDragStop", f.StopMovingOrSizing)
-  table.insert(UISpecialFrames, name) -- Échap ferme la fenêtre
-  f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  f.title:SetPoint("TOPLEFT", 14, -12)
-  f.title:SetText(title)
-  local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", 2, 2)
-  if BeAGoodPal and BeAGoodPal.AddCaptureButton then BeAGoodPal.AddCaptureButton(f, title, -30, -8) end
-  f:Hide()
-  return f
-end
+-- Montants, noms d'objets, fenêtres : ceux de la lib commune. Un nom d'objet arrivé du serveur est retenu dans
+-- HandshakeDB.items quand GameData n'est pas là (sinon c'est GameData qui le retient).
+ns.money, ns.moneyShort, ns.moneySigned, ns.newWindow = lib.Argent, lib.ArgentCourt, lib.ArgentSigne, lib.Fenetre
+local function garde() if not gd() then return db().items end end
+function ns.rememberItem(id) return lib.RetenirObjet(id, garde()) end
+function ns.itemLabel(id) return lib.NomObjet(id, ns.items(), garde()) end
+function ns.findItem(text) return lib.TrouverObjet(text, ns.items(), ns.recipes()) end
 
 ---------------------------------------------------------------------------------------------------
 -- Lecture des données quand GameData n'est pas là.
@@ -242,7 +173,7 @@ f:SetScript("OnEvent", function(_, event, a1)
     ns.purgerAnciensReleves()
     if gd() then return end -- GameData lit tout ça pour nous
     for _, e in ipairs({ "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
-      "REPLICATE_ITEM_LIST_UPDATE", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED", "ITEM_DATA_LOAD_RESULT" }) do
+      "REPLICATE_ITEM_LIST_UPDATE", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED" }) do
       pcall(f.RegisterEvent, f, e)
     end
   elseif event == "AUCTION_HOUSE_SHOW" then
@@ -258,7 +189,5 @@ f:SetScript("OnEvent", function(_, event, a1)
     myChar().bags = ns.containers(ns.isBag)
   elseif event == "BANKFRAME_OPENED" or event == "PLAYERBANKSLOTS_CHANGED" then
     myChar().bank = ns.containers(ns.isBank)
-  elseif event == "ITEM_DATA_LOAD_RESULT" and a1 and asked[a1] then
-    remember(a1)
   end
 end)
