@@ -1,13 +1,13 @@
 # Handshake
 
-Add-on WoW Forever. Repo `Virgile-Dauge/Handshake` (privé pour l'instant). Espace de travail parent : `../` (outils, recherche, captures — pas dans ce repo).
+Add-on WoW Forever. Repo `azeroth-commune/Handshake` (privé pour l'instant). Espace de travail parent : `../` (outils, recherche, captures — pas dans ce repo).
 Déploiement : lien symbolique depuis le dossier AddOns du jeu, `/reload` suffit.
 
 ## Agent skills
 
 ### Issue tracker
 
-GitHub Issues de `Virgile-Dauge/Handshake`, toujours avec `-R Virgile-Dauge/Handshake` ; PR externes : non. See `docs/agents/issue-tracker.md`.
+GitHub Issues de `azeroth-commune/Handshake`, toujours avec `-R azeroth-commune/Handshake` ; PR externes : non. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

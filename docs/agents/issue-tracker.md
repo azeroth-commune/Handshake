@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations, **always with `-R Virgile-Dauge/Handshake`** (sessions often start in the parent workspace, whose remote is NOT this repo).
+Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations, **always with `-R azeroth-commune/Handshake`** (sessions often start in the parent workspace, whose remote is NOT this repo).
 
 ## Conventions
 
@@ -11,7 +11,7 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-Repo: `Virgile-Dauge/Handshake` — pass `-R Virgile-Dauge/Handshake` to every `gh issue` / `gh label` / `gh pr` call. Don't infer it from the current directory.
+Repo: `azeroth-commune/Handshake` — pass `-R azeroth-commune/Handshake` to every `gh issue` / `gh label` / `gh pr` call. Don't infer it from the current directory.
 
 ## Pull requests as a triage surface
 
