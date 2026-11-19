@@ -1,9 +1,9 @@
--- Handshake, la fenêtre (/commande) : une commande en haut, son arbre par étages dessous.
+-- Handshake, la fenêtre (/commande) : un projet en haut (Projet.lua), son arbre par étages dessous.
 -- Colonne 0 : ce qu'on suit. Étage 1 : ce qu'il faut pour le fabriquer. Étage 2 : ce qu'il faut pour ces
 -- composants, etc. Une seule case par objet : la barre de bronze du marteau et de la dague, c'est la même case,
 -- rangée à l'étage le plus profond où elle sert.
 -- Un objet est décomposé quand c'est moins cher d'après le dernier scan de l'HV ; « + » le décompose quand même,
--- « – » l'achète tout fait (clic encore = retour au calcul). Choix gardés dans HandshakeDB.force.
+-- « – » l'achète tout fait (clic encore = retour au calcul). Ce choix de case appartient au projet affiché.
 -- Barre sous chaque case : vert = dans tes sacs, bleu = à ta banque, violet = chez tes autres persos,
 -- orange = à fabriquer, gris = à acheter, rouge = ni prix ni recette. Le stock est partagé : ce qu'un suivi
 -- prend n'est plus là pour le suivant.
@@ -59,14 +59,10 @@ end
 local cards, lines, labels = {}, {}, {}
 
 local function opts() return HandshakeDB.options end
-local function targets() return ns.currentOrder().lines end
-local function forced() return HandshakeDB.force end
-local function replying() return ns.currentOrder().reply ~= nil end -- « je réponds » : la demande d'un autre
+local function projet() return ns.projetCourant() end
+local function replying() return projet().reponse ~= nil end -- « je réponds » : la demande d'un autre
 
 ---------------------------------------------------------------------------------------------------
--- L'arbre, sans rien dessiner (testé hors jeu dans check.lua). roots[i] = plan d'un suivi (ns.plan).
--- Nœuds : "T<i>" suivi, "I<id>" objet (toutes ses apparitions additionnées). Un objet peut être en partie
--- en stock, en partie fabriqué (made), en partie acheté (need).
 -- Hauteurs. Chaque case (ou relais) vise le milieu de ses voisins, sans chevauchement (de gauche à droite, puis retour).
 -- Un relais ne prend que la hauteur d'un lien. bands (facultatif) = clés de bande dans l'ordre, n.band sur chaque nœud :
 -- chaque bande est placée seule (voisins de sa bande seulement), puis les bandes sont empilées, BAND_GAP entre elles.
@@ -124,57 +120,12 @@ function ns.layoutGraph(g, bands)
   g.height = offset
 end
 
-function ns.craftGraph(roots)
-  local nodes, list, edges, byPair = {}, {}, {}, {}
-  local function nodeOf(key, kind, id)
-    local n = nodes[key]
-    if not n then
-      n = { key = key, kind = kind, id = id, qty = 0, have = { 0, 0, 0 }, need = 0, cost = 0, made = 0, madeCost = 0, crafts = 0, apport = 0,
-        parents = {}, children = {} }
-      nodes[key], list[#list + 1] = n, n
-    end
-    return n
-  end
-  local function edge(from, to, qty)
-    local k = from.key .. ">" .. to.key
-    local e = byPair[k]
-    if not e then
-      e = { from = from, to = to, qty = 0 }
-      byPair[k], edges[#edges + 1] = e, e
-      to.parents[#to.parents + 1], from.children[#from.children + 1] = from, to
-    end
-    e.qty = e.qty + qty
-  end
-  local function add(n, p)
-    n.qty = n.qty + p.qty
-    for i = 1, 3 do n.have[i] = n.have[i] + p.have[i] end
-    n.craftable = n.craftable or p.craftable
-    if p.how == "apport" then
-      n.apport = n.apport + p.qty
-    elseif p.how == "fabriquer" then
-      n.made, n.madeCost, n.crafts = n.made + p.need, n.madeCost + p.cost, n.crafts + p.crafts
-      n.recipe, n.unknown, n.incomplete = p.recipe, n.unknown or not p.known, n.incomplete or p.incomplete
-      n.recipeKey = n.recipeKey or p.recipeKey
-      if p.buy then n.buy = (n.buy or 0) + p.buy end
-      for _, part in ipairs(p.parts) do
-        local c = nodeOf("I" .. part.id, "item", part.id)
-        add(c, part)
-        edge(n, c, part.qty)
-      end
-    else
-      n.need, n.cost = n.need + p.need, n.cost + (p.cost or 0)
-      if p.need > 0 and not p.cost then n.unpriced = true end
-      if p.how ~= "stock" then n.how = p.how end
-      n.partial = n.partial or p.partial
-    end
-  end
-  for i, r in ipairs(roots) do
-    local t = nodeOf("T" .. i, "target", r.id)
-    t.index = i
-    add(t, r)
-  end
-
-  -- Étages : suivis en 0, un objet juste à droite de son parent le plus à droite.
+-- Le dessin de l'arbre d'un projet (res = ns.projetArbre, Projet.lua), sans rien afficher (testé hors jeu dans check.lua).
+-- Étages : les lignes du projet en 0, un objet juste à droite de son parent le plus à droite. Bandes : un bloc = ses
+-- cases + ce qui n'est pas fabriqué sous elles (rattaché à son premier parent), puis le reste (acheté ou en stock).
+-- Chaque bloc reçoit sa couleur (index), son titre (label) et ses cases dessinées (cards).
+function ns.dessinArbre(res)
+  local list, edges = res.cases, res.liens
   local last = 0
   for _, n in ipairs(list) do n.col = n.kind == "target" and 0 or 1 end
   for _ = 1, #list do -- ponytail: relaxation O(n²), assez pour quelques dizaines de cases ; s'arrête sur une boucle
@@ -207,168 +158,30 @@ function ns.craftGraph(roots)
     end
     e.first, e.last = e.path[2], e.path[#e.path - 1]
   end
-  local g = { nodes = list, edges = edges, cols = last + 1, byKey = nodes, all = all, up = up, down = down }
-  ns.layoutGraph(g)
-  return g
-end
+  local g = { nodes = list, edges = edges, cols = last + 1, byKey = res.caseDe, all = all, up = up, down = down,
+    groups = res.blocs, groupOf = res.blocDe, livraisons = res.livraisons }
 
----------------------------------------------------------------------------------------------------
--- Qui fabrique quoi. La liste des artisans est pour l'instant tes persos ; plus tard une guilde ou des amis
--- (synchronisés quand ils sont connectés), sous la même forme : { key, name, ranks = { [métier] = niveau },
--- known = { [recette] = true } }. Ton perso connecté passe en premier.
-function ns.crafters()
-  local list, me, byKey = {}, ns.charKey(), {}
-  local function entry(key) -- un perso peut avoir ses recettes relevées sans fiche (ou l'inverse)
-    if not byKey[key] then
-      byKey[key] = { key = key, name = key:match("^[^%s%-]+"), ranks = {}, known = {} }
-      list[#list + 1] = byKey[key]
-    end
-    return byKey[key]
-  end
-  for key, c in pairs(ns.chars()) do
-    local e = entry(key)
-    for _, p in pairs(c.professions or {}) do
-      if type(p) == "table" and p.name then e.ranks[p.name] = math.max(e.ranks[p.name] or 0, p.rank or 0) end
-    end
-  end
-  for key, metiers in pairs(ns.knownRecipes()) do
-    local e = entry(key)
-    for prof, p in pairs(metiers) do
-      e.ranks[prof] = math.max(e.ranks[prof] or 0, p.rank or 0)
-      for k in pairs(p.known or {}) do e.known[k] = true end
-    end
-  end
-  table.sort(list, function(a, b)
-    if (a.key == me) ~= (b.key == me) then return a.key == me end
-    return a.key < b.key
-  end)
-  return list
-end
-
--- Les cases fabriquées sont groupées PAR MÉTIER (une bande, un rectangle chacun), puis on regarde qui, dans la liste
--- des artisans, a ce métier : son niveau et combien de ces recettes il connaît. g.groups = { { key (le métier),
--- index (sa couleur), level (niveau requis le plus haut), recipes = { { key, name, level, known = { noms } } },
--- crafters = { { name, rank, known } }, best (celui qui en connaît le plus), label, nodes, cards } }.
--- Chaque case garde aussi n.who (qui connaît sa recette, sinon qui a le métier, sinon false) pour son infobulle.
--- ponytail: qui fait quoi reste automatique ; le choix à la main viendra avec les listes d'amis.
-function ns.assignCrafters(g, crafters)
-  local groups, byKey = {}, {}
-  for _, n in ipairs(g.nodes) do
-    if n.made > 0 and n.recipe then
-      local prof = n.recipe.profession or "Métier inconnu"
-      local grp = byKey[prof]
-      if not grp then
-        grp = { key = prof, level = 0, recipes = {}, seen = {}, nodes = {} }
-        byKey[prof], groups[#groups + 1] = grp, grp
-      end
-      grp.nodes[#grp.nodes + 1] = n
-      local found, knows
-      for _, c in ipairs(crafters) do
-        if n.recipeKey and c.known[n.recipeKey] then found, knows = c, true break end
-        if not found and c.ranks[prof] then found = c end
-      end
-      n.who, n.whoKnows = found and found.name or false, knows or false
-      local rk = n.recipeKey or n.id
-      if not grp.seen[rk] then
-        local r = { key = n.recipeKey, name = n.recipe.name or ns.itemLabel(n.id), level = ns.recipeLevel(n.recipeKey, n.recipe), known = {} }
-        for _, c in ipairs(crafters) do if n.recipeKey and c.known[n.recipeKey] then r.known[#r.known + 1] = c.name end end
-        grp.seen[rk], grp.recipes[#grp.recipes + 1] = true, r
-        grp.level = math.max(grp.level, r.level or 0)
-      end
-    end
-  end
-  for _, grp in ipairs(groups) do
-    grp.crafters = {}
-    for _, c in ipairs(crafters) do
-      if c.ranks[grp.key] then
-        local k = 0
-        for _, r in ipairs(grp.recipes) do if r.key and c.known[r.key] then k = k + 1 end end
-        grp.crafters[#grp.crafters + 1] = { name = c.name, rank = c.ranks[grp.key], known = k }
-      end
-    end
-    table.sort(grp.crafters, function(a, b) if a.known ~= b.known then return a.known > b.known end return a.rank > b.rank end)
-    grp.best = grp.crafters[1] and grp.crafters[1].name or nil
-    local who = {}
-    for _, c in ipairs(grp.crafters) do who[#who + 1] = ("%s %d (%d/%d)"):format(c.name, c.rank, c.known, #grp.recipes) end
-    grp.label = ("%s%s · %s"):format(grp.key, grp.level > 0 and (" · niv. " .. grp.level .. " requis") or "",
-      #who > 0 and table.concat(who, ", ") or "personne de ta liste")
-  end
-  g.groups = groups
-  -- Bandes : un métier = ses cases + ce qui n'est pas fabriqué sous elles (rattaché à son premier parent), puis le
-  -- reste (acheté ou en stock sans fabrication).
   local sorted = {}
-  for _, n in ipairs(g.all) do sorted[#sorted + 1] = n end
+  for _, n in ipairs(all) do sorted[#sorted + 1] = n end
   table.sort(sorted, function(x, y) return x.col < y.col end)
   for _, n in ipairs(sorted) do
     if n.made and n.made > 0 and n.recipe then n.band = n.recipe.profession or "Métier inconnu"
     else
       n.band = "reste"
-      for _, p in ipairs(g.up[n]) do if p.band ~= nil then n.band = p.band break end end
+      for _, p in ipairs(up[n]) do if p.band ~= nil then n.band = p.band break end end
     end
   end
-  -- Commandes entre métiers : tout ce que le métier B fabrique pour une case du métier A = UNE commande B -> A (une
-  -- par sens). Ses liens sont dessinés comme un seul ; e.order les marque.
-  -- g.orders = { { maker, client (métiers ou "reste"), player (qui fait B), lines = { id… }, qty = { [id] }, edges } }.
-  local orders, byPair = {}, {}
-  for _, e in ipairs(g.edges) do
-    if e.to.made > 0 and e.to.recipe and e.from.band ~= e.to.band then
-      local k = e.to.band .. ">" .. e.from.band
-      local o = byPair[k]
-      if not o then
-        o = { maker = e.to.band, client = e.from.band, player = byKey[e.to.band] and byKey[e.to.band].best, lines = {}, qty = {}, edges = {} }
-        byPair[k], orders[#orders + 1] = o, o
-      end
-      if not o.qty[e.to.id] then o.lines[#o.lines + 1] = e.to.id end
-      o.qty[e.to.id] = (o.qty[e.to.id] or 0) + e.qty
-      o.edges[#o.edges + 1], e.order = e, o
-    end
-  end
-  g.orders, g.groupOf = orders, byKey
-  -- Un bloc = une commande. grp.deliver / grp.qty = ce qu'il livre (aux autres blocs, et les objets commandés qu'il
-  -- fabrique) ; grp.inputs = ce qu'il reçoit des autres blocs (ses apports, « je le fournis », quand on le commande).
-  -- Étape = 1 + la plus haute étape de ses fournisseurs : on commande du bas vers le haut.
-  for _, grp in ipairs(groups) do grp.deliver, grp.qty, grp.inputs = {}, {}, {} end
-  local function give(grp, id, q)
-    if not grp.qty[id] then grp.deliver[#grp.deliver + 1] = id end
-    grp.qty[id] = (grp.qty[id] or 0) + q
-  end
-  for _, n in ipairs(g.nodes) do
-    if n.kind == "target" and byKey[n.band] then give(byKey[n.band], n.id, n.qty) end
-  end
-  for _, o in ipairs(orders) do
-    for _, id in ipairs(o.lines) do
-      give(byKey[o.maker], id, o.qty[id])
-      if byKey[o.client] then byKey[o.client].inputs[id] = true end
-    end
-  end
-  local busy = {}
-  local function step(grp)
-    if grp.step then return grp.step end
-    if busy[grp] then return 1 end -- boucle entre métiers : coupée
-    busy[grp] = true
-    local st = 1
-    for _, o in ipairs(orders) do
-      if o.client == grp.key and byKey[o.maker] then st = math.max(st, step(byKey[o.maker]) + 1) end
-    end
-    busy[grp], grp.step = nil, st
-    return st
-  end
-  for _, grp in ipairs(groups) do grp.label = ("Étape %d · %s"):format(step(grp), grp.label) end
-  -- Ordre des bandes : la dernière étape en haut (les objets commandés), puis en descendant ; à étape égale, les métiers
-  -- que quelqu'un a d'abord, puis par nom. Re-placement : chaque métier dans son rectangle.
-  table.sort(groups, function(a, b)
-    if a.step ~= b.step then return a.step > b.step end
-    if (#a.crafters > 0) ~= (#b.crafters > 0) then return #a.crafters > 0 end
-    return a.key < b.key
-  end)
-  for i, grp in ipairs(groups) do grp.index = i end
   local order = {}
-  for _, grp in ipairs(groups) do order[#order + 1] = grp.key end
-  order[#order + 1] = "reste"
-  for _, grp in ipairs(groups) do
+  for i, grp in ipairs(g.groups) do
+    grp.index, order[#order + 1] = i, grp.key
+    local who = {}
+    for _, c in ipairs(grp.crafters) do who[#who + 1] = ("%s %d (%d/%d)"):format(c.name, c.rank, c.known, #grp.recipes) end
+    grp.label = ("Étape %d · %s%s · %s"):format(grp.step, grp.key, grp.level > 0 and (" · niv. " .. grp.level .. " requis") or "",
+      #who > 0 and table.concat(who, ", ") or "personne de ta liste")
     grp.cards = {}
-    for _, n in ipairs(g.nodes) do if n.band == grp.key then grp.cards[#grp.cards + 1] = n end end
+    for _, n in ipairs(list) do if n.band == grp.key then grp.cards[#grp.cards + 1] = n end end
   end
+  order[#order + 1] = "reste"
   ns.layoutGraph(g, order)
   return g
 end
@@ -447,7 +260,7 @@ end
 -- Ce que fait un clic sur la case : revenir au calcul si le choix était forcé, sinon forcer l'inverse.
 local function toggleOf(n)
   if n.apport > 0 then return end -- fourni par toi : Ctrl+clic pour le reprendre
-  if forced()[n.id] then return "reset" end
+  if n.choix then return "reset" end
   if n.made > 0 then return "acheter" end
   if n.craftable then return "fabriquer" end -- même en stock : « + » le fabrique au lieu de le prendre
 end
@@ -486,8 +299,8 @@ local function newCard()
   local x = c.qty:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); x:SetPoint("LEFT", 2, 0); x:SetText("×")
   local function setQty(q)
     local n = c.node
-    if not (n and n.kind == "target") or replying() then return end
-    if q and q >= 1 then targets()[n.index].qty = math.min(q, 9999) end
+    if not (n and n.kind == "target") then return end
+    ns.projetQuantite(projet(), n.index, q)
     ns.refreshCraftWindow()
   end
   c.qty:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
@@ -547,19 +360,15 @@ local function newCard()
   c:SetScript("OnClick", function(self, button)
     local n = self.node
     if button == "RightButton" then
-      if n.kind ~= "target" or replying() then return end
-      table.remove(targets(), n.index)
+      if n.kind ~= "target" or not ns.projetRetirer(projet(), n.index) then return end
     elseif IsShiftKeyDown() then
       return openRecipe(n)
     elseif IsControlKeyDown() and n.kind ~= "target" then -- « je le fournis » : apport de la demande
-      local o = ns.currentOrder()
-      o.apports = o.apports or {}
-      o.apports[n.id] = not o.apports[n.id] or nil
-      if not next(o.apports) then o.apports = nil end
+      ns.projetApport(projet(), n.id, n.apport == 0)
     else
       local t = toggleOf(n)
       if not t then return end
-      forced()[n.id] = t ~= "reset" and t or nil
+      ns.projetChoix(projet(), n.id, t ~= "reset" and t or nil)
     end
     ns.refreshCraftWindow()
     if self:IsMouseOver() then self:GetScript("OnEnter")(self) end
@@ -647,8 +456,8 @@ end
 
 local function refresh()
   if not (frame and frame:IsShown()) then return end
-  local res = ns.computeOrder(ns.currentOrder())
-  local roots, market, total, incomplete, g = res.roots, res.market, res.total, res.incomplete, res.graph
+  local res = ns.projetArbre(projet())
+  local roots, market, total, incomplete, g = res.roots, res.market, res.total, res.incomplete, ns.dessinArbre(res)
   if frame.syncOrder then frame.syncOrder() end
   if ns.refreshNeeds then ns.refreshNeeds(res) end
 
@@ -665,8 +474,8 @@ local function refresh()
   if #roots == 0 then
     header(1, 0, "|cff999999Tape un nom (suggestions), dépose un objet, ou Maj+clic sur un lien, puis Ajouter ; ou Importer une liste reçue.|r")
   else
-    local o, cost = ns.currentOrder(), ns.moneyShort(total) .. (incomplete and " |cffe64d4d+ ?|r" or "")
-    if o.reply then -- ma part, mon prix, ce qui reste pour mon travail
+    local o, cost = projet(), ns.moneyShort(total) .. (incomplete and " |cffe64d4d+ ?|r" or "")
+    if o.reponse then -- ma part, mon prix, ce qui reste pour mon travail
       local price = o.tip or 0
       header(1, 0, ("Ma part · %s · mon prix %s · travail %s"):format(cost, ns.moneyShort(price), ns.moneySigned(price - total)))
     else
@@ -693,7 +502,7 @@ local function refresh()
     c.sub:SetPoint("TOPLEFT", target and 80 or 40, -20)
     local t = toggleOf(n)
     local sign = (n.made > 0 and "–") or (t and "+") or ""
-    c.toggle:SetText(forced()[n.id] and ("|cffa98fff" .. sign .. "|r") or sign)
+    c.toggle:SetText(n.choix and ("|cffa98fff" .. sign .. "|r") or sign)
     bar(c, n)
     c:Show()
   end
@@ -757,12 +566,9 @@ local function refresh()
       end)
       b.cmd:SetScript("OnLeave", function() GameTooltip:Hide() end)
       b.cmd:SetScript("OnClick", function()
-        local grp, lines, apports = b.grp, {}, nil
-        for _, id in ipairs(grp.deliver) do lines[#lines + 1] = { id = id, qty = grp.qty[id] } end
-        for id in pairs(grp.inputs) do apports = apports or {}; apports[id] = true end
-        local o = ns.newOrder({ name = ("%s : %s%s"):format(grp.key, ns.itemLabel(lines[1].id):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""),
-          #lines > 1 and (" +" .. (#lines - 1)) or ""), player = grp.best, lines = lines, apports = apports })
-        print(("Commandes : « %s » créée (%d objet%s) ; < et > pour revenir à la précédente."):format(o.name, #lines, #lines > 1 and "s" or ""))
+        local o = ns.projetDuBloc(projet(), b.grp)
+        local n = #o.lines
+        print(("Commandes : « %s » créée (%d objet%s) ; < et > pour revenir à la précédente."):format(o.name, n, n > 1 and "s" or ""))
         ns.refreshCraftWindow()
       end)
       boxes[usedBoxes] = b
@@ -785,8 +591,8 @@ local function refresh()
   -- pas de croisement au départ, et les quantités ne se marchent pas dessus.
   -- ponytail: au-delà de 3 courbes sur un même bord, les quantités se rapprochent trop ; agrandir NODE_H si ça arrive
   local outs, ins, drawn = {}, {}, {}
-  for _, e in ipairs(g.edges) do -- une commande entre artisans : un seul lien (le premier), épais
-    if not e.order or e.order.edges[1] == e then drawn[#drawn + 1] = e end
+  for _, e in ipairs(g.edges) do -- une livraison entre blocs : un seul lien (le premier), épais
+    if not e.livraison or e.livraison.edges[1] == e then drawn[#drawn + 1] = e end
   end
   for _, e in ipairs(drawn) do
     outs[e.from] = outs[e.from] or {}
@@ -809,9 +615,9 @@ local function refresh()
   local usedTags = 0
   for _, e in ipairs(drawn) do
     local k = stateColor(e.to)
-    local thick = e.order and 4 or 2
-    if e.order then
-      local grp = g.groupOf[e.order.maker]
+    local thick = e.livraison and 4 or 2
+    if e.livraison then
+      local grp = g.groupOf[e.livraison.maker]
       k = #grp.crafters > 0 and CRAFTER_COLORS[(grp.index - 1) % #CRAFTER_COLORS + 1] or COLORS.none
     end
     local px, py = x(e.from) + NODE_W, e.from.y + TOP + e.dy1
@@ -823,12 +629,12 @@ local function refresh()
       px, py = x(r) + NODE_W, ry
     end
     local ex, ey = x(e.to), e.to.y + TOP + e.dy2
-    curve(px, py, ex, ey, k, not e.order and e.qty or nil, thick)
+    curve(px, py, ex, ey, k, not e.livraison and e.qty or nil, thick)
   end
   -- Étiquettes des commandes : sur la ligne de titre du rectangle du métier qui fabrique, à la suite du titre (jamais
   -- sur une case ni sur le titre ; elles peuvent dépasser à droite du rectangle, la ligne de titre y est libre).
   local shelf = {}
-  for _, o in ipairs(g.orders or {}) do
+  for _, o in ipairs(g.livraisons) do
     local b = boxOf[o.maker]
     if b then
       usedTags = usedTags + 1
@@ -859,11 +665,9 @@ ns.refreshCraftWindow = refresh
 ---------------------------------------------------------------------------------------------------
 local function track(id, qty)
   if not id then return end
-  if replying() then return print("Commandes : c'est sa demande, ce qu'il veut ne change pas ici (Nouvelle pour une commande à toi).") end
-  for _, t in ipairs(targets()) do
-    if t.id == id then t.qty = qty; return refresh() end
+  if not ns.projetAjouter(projet(), id, qty) then
+    return print("Commandes : c'est sa demande, ce qu'il veut ne change pas ici (Nouvelle pour une commande à toi).")
   end
-  table.insert(targets(), { id = id, qty = qty })
   refresh()
 end
 
@@ -975,34 +779,34 @@ local function build()
     return t
   end
 
-  -- La commande affichée : nom, joueur d'en face, pourboire, qui fournit les composants.
+  -- Le projet affiché (Projet.lua) : < et >, nom, joueur d'en face, offre.
   local function switch(d)
-    HandshakeDB.current = (HandshakeDB.current or 1) + d
+    ns.changerProjet(d)
     refresh()
   end
   local prevB = button("<", 24, function() switch(-1) end)
   prevB:SetPoint("TOPLEFT", 14, -40)
-  local orderName = input(190, function(v) ns.currentOrder().name = v end)
+  local orderName = input(190, function(v) ns.projetRenommer(projet(), v) end)
   orderName:SetPoint("LEFT", prevB, "RIGHT", 10, 0)
   local nextB = button(">", 24, function() switch(1) end)
   nextB:SetPoint("LEFT", orderName, "RIGHT", 4, 0)
   local count = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   count:SetPoint("LEFT", nextB, "RIGHT", 6, 0)
-  local newB = button("Nouvelle", 80, function() ns.newOrder(); refresh() end)
+  local newB = button("Nouvelle", 80, function() ns.nouveauProjet(); refresh() end)
   newB:SetPoint("LEFT", nextB, "RIGHT", 44, 0)
   local delB = button("Supprimer", 84, function()
     if not IsShiftKeyDown() then return print("Commandes : Maj+clic sur « Supprimer » pour effacer cette commande.") end
-    table.remove(HandshakeDB.orders, HandshakeDB.current)
+    ns.supprimerProjet()
     refresh()
   end)
   delB:SetPoint("LEFT", newB, "RIGHT", 4, 0)
   local playerL = label("Joueur", delB, 16)
-  local player = input(120, function(v) ns.currentOrder().player = v ~= "" and v or nil end)
+  local player = input(120, function(v) ns.projetArtisan(projet(), v) end)
   player:SetPoint("LEFT", playerL, "RIGHT", 10, 0)
   local tipL = label("Offre", player, 14)
   local tip = input(48, function(v)
     local n = tonumber((v:gsub(",", ".")))
-    ns.currentOrder().tip = n and math.floor(n * 10000 + 0.5) or nil
+    ns.projetOffre(projet(), n and math.floor(n * 10000 + 0.5) or nil)
     if replying() then return refresh() end -- l'en-tête montre ce qui reste pour mon travail
     if ns.refreshNeeds then ns.refreshNeeds() end
   end)
@@ -1013,15 +817,15 @@ local function build()
   hint:SetText("Ctrl+clic sur une case : je la fournis")
   local contractB -- plus bas, sur la ligne d'ajout
   frame.syncOrder = function()
-    local o = ns.currentOrder()
+    local o = projet()
     if not orderName:HasFocus() then orderName:SetText(o.name or "") end
     if not player:HasFocus() then player:SetText(o.player or "") end
     if not tip:HasFocus() then tip:SetText(o.tip and o.tip > 0 and (ns.poText(o.tip):gsub(" po$", "")) or "") end
-    count:SetText(("%d/%d"):format(HandshakeDB.current, #HandshakeDB.orders))
-    tipL:SetText(o.reply and "Mon prix" or "Offre")
-    if frame.apportLegend then frame.apportLegend:SetText(o.reply and "fourni par lui" or "fourni par toi") end
-    contractB:SetText(o.reply and "Contre-proposer" or "Préparer la demande")
-    hint:SetText(o.reply and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
+    count:SetText(("%d/%d"):format(ns.numeroProjet()))
+    tipL:SetText(o.reponse and "Mon prix" or "Offre")
+    if frame.apportLegend then frame.apportLegend:SetText(o.reponse and "fourni par lui" or "fourni par toi") end
+    contractB:SetText(o.reponse and "Contre-proposer" or "Préparer la demande")
+    hint:SetText(o.reponse and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
   end
 
   -- Ligne d'ajout : déposer un objet sur la case, ou taper son nom.
@@ -1046,13 +850,13 @@ local function build()
   add:SetScript("OnClick", submit)
   local needsB = button("Besoins", 90, function() ns.toggleNeeds() end)
   needsB:SetPoint("TOPRIGHT", -14, -75)
-  local sendB = button("En clair", 90, function() ns.sendOrder(ns.currentOrder()) end)
+  local sendB = button("En clair", 90, function() ns.sendOrder(projet()) end)
   sendB:SetPoint("RIGHT", needsB, "LEFT", -6, 0)
   local importB = button("Importer", 90, function() ns.openImport() end)
   importB:SetPoint("RIGHT", sendB, "LEFT", -6, 0)
   contractB = button("Préparer la demande", 150, function()
-    local o = ns.currentOrder()
-    if not o.reply then return ns.ctDraftFromDemande() end
+    local o = projet()
+    if not o.reponse then return ns.ctDraftFromDemande() end
     local n, err = ns.ctReplyFromOrder(o)
     if not n then return print("|cffe64d4dContrats :|r " .. err .. ".") end
     ns.openContracts(ns.ctKey(n))
@@ -1178,8 +982,8 @@ if HandleModifiedItemClick then
       if not made then return print("Commandes : je ne trouve pas l'objet que fabrique " .. link .. ".") end
       id = made
     end
-    if ns.currentOrder().reply then ns.newOrder() end -- la demande d'un autre ne change pas : une commande à toi
-    for _, l in ipairs(ns.currentOrder().lines) do
+    if ns.projetCourant().reponse then ns.nouveauProjet() end -- la demande d'un autre ne change pas : un projet à toi
+    for _, l in ipairs(ns.projetCourant().lines) do
       if l.id == id then return ns.openCraftWindow() end -- déjà dedans : sa quantité ne bouge pas
     end
     ns.openCraftWindow(id, 1)

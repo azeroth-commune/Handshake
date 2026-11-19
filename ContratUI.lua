@@ -291,7 +291,7 @@ local function build()
   -- Actions (bas de la fenêtre)
   frame.accept = button("Signer", 110, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)
   frame.refuse = button("Refuser", 90, function(c) ns.ctRefuse(c) end)
-  frame.reply = button("Répondre dans l'arbre", 160, function(c) ns.replyOrder(c); ns.openCraftWindow() end)
+  frame.reply = button("Répondre dans l'arbre", 160, function(c) ns.projetReponse(c); ns.openCraftWindow() end)
   frame.send = button("Envoyer la proposition", 170, function(c) ns.ctPropose(c) end)
   frame.withdraw = button("Retirer", 90, function(c) ns.ctWithdraw(c) end)
   frame.manual = button("Il a dit oui (sans addon)", 180, function(c)
@@ -367,7 +367,7 @@ end
 
 -- Depuis la fenêtre des commandes : la demande (ce que je veux, ce que j'apporte, mon offre) en brouillon de contrat.
 function ns.ctDraftFromDemande()
-  local c, err = ns.ctFromDemande(ns.currentOrder(), 3)
+  local c, err = ns.ctFromDemande(ns.projetCourant(), 3)
   if not c then return print("|cffe64d4dContrats :|r " .. err .. ".") end
   c.status = "brouillon"
   ns.ctStore()[ns.ctKey(c)] = c
