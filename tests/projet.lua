@@ -109,6 +109,15 @@ test("Une commande envoyée signale l'écart et repart en nouvelle version sur u
     HandshakeContratsFrame:Hide()
     local ct = HandshakeDB.contracts[p.commandes[1].contrat]
     assertEquals("envoye", ct.status)
+    -- Écart de prix (#18) : avec un apport, la caution contre mon estimation, en %, ou « estimation incomplète ».
+    local m = ct.m
+    ct.m = { { id = 2589, qty = 1, unit = 1 } } -- (comme si j'apportais un tissu, caution 1 pc)
+    commandes()[1]:Click()
+    local prix = commandes()[1]:GetText()
+    assertTrue(prix:find("caution |cff%x+[+-]%d+ %%") ~= nil or prix:find("estimation incomplète", 1, true) ~= nil, prix)
+    ct.m = m
+    commandes()[1]:Click()
+    assertTrue(commandes()[1]:GetText():find("caution |cff", 1, true) == nil, "rien d'apporté : pas de caution")
     assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "rien n'a changé")
     p.lines[1].qty = p.lines[1].qty + 1 -- une ligne de plus à fabriquer : la part de « tout le projet » change
     commandes()[1]:Click()
