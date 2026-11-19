@@ -60,7 +60,9 @@ local cards, lines, labels = {}, {}, {}
 
 local function opts() return HandshakeDB.options end
 local function projet() return ns.projetCourant() end
+-- Affichage seulement (« il le fournit », « mon prix ») : ce qui se modifie, la fenêtre le demande au projet (ns.projetPeut).
 local function replying() return projet().reponse ~= nil end -- « je réponds » : la demande d'un autre
+local function lignes() return (ns.projetPeut(projet(), "lignes")) end -- ajouter, retirer, changer une quantité
 -- La commande choisie dans le projet affiché (1 = tout le projet) : Joueur, Offre, « Préparer la demande » et « En clair »
 -- portent sur elle. Un autre projet affiché : retour à 1.
 local choisie = {}
@@ -300,7 +302,8 @@ local function newCard()
   c.sub:SetPoint("RIGHT", -6, 0)
   c.sub:SetJustifyH("LEFT")
   c.sub:SetWordWrap(false)
-  -- Quantité commandée (cases de la colonne 0) : à taper, ou molette (Maj = par 10). Figée dans une réponse.
+  -- Quantité commandée (cases de la colonne 0) : à taper, ou molette (Maj = par 10). Grisée si le projet
+  -- ne permet pas de changer ses lignes (une réponse).
   c.qty = CreateFrame("EditBox", nil, c)
   c.qty:SetSize(36, 14); c.qty:SetPoint("TOPLEFT", 40, -19)
   c.qty:SetFontObject(GameFontHighlightSmall); c.qty:SetAutoFocus(false); c.qty:SetNumeric(true); c.qty:SetMaxLetters(4)
@@ -363,7 +366,7 @@ local function newCard()
     local who = replying() and "Il le fournit" or "Tu le fournis"
     if n.apport > 0 then GameTooltip:AddLine(("%s : %d (Ctrl+clic pour le reprendre)"):format(who, n.apport), 0.3, 0.8, 0.85)
     elseif n.kind ~= "target" then GameTooltip:AddLine("Ctrl+clic : " .. who:lower(), 0.6, 0.6, 0.6) end
-    if n.kind == "target" and not replying() then GameTooltip:AddLine("Clic droit : ne plus suivre", 0.6, 0.6, 0.6) end
+    if n.kind == "target" and lignes() then GameTooltip:AddLine("Clic droit : ne plus suivre", 0.6, 0.6, 0.6) end
     GameTooltip:Show()
   end)
   c:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(1, 1, 1, 0.08); GameTooltip:Hide() end)
@@ -485,7 +488,7 @@ local function refresh()
     header(1, 0, "|cff999999Tape un nom (suggestions), dépose un objet, ou Maj+clic sur un lien, puis Ajouter ; ou Importer une liste reçue.|r")
   else
     local o, cost = projet(), ns.moneyShort(total) .. (incomplete and " |cffe64d4d+ ?|r" or "")
-    if o.reponse then -- ma part, mon prix, ce qui reste pour mon travail
+    if replying() then -- ma part, mon prix, ce qui reste pour mon travail
       local price = ns.projetCommande(o).tip or 0
       header(1, 0, ("Ma part · %s · mon prix %s · travail %s"):format(cost, ns.moneyShort(price), ns.moneySigned(price - total)))
     else
@@ -507,7 +510,7 @@ local function refresh()
     c.name:SetText(ns.itemLabel(n.id))
     c.sub:SetText((subText(n):gsub("^ ", "")))
     local target = n.kind == "target"
-    c.qty:SetShown(target); c.qty:SetEnabled(target and not replying())
+    c.qty:SetShown(target); c.qty:SetEnabled(target and lignes())
     if target and not c.qty:HasFocus() then c.qty:SetText(n.qty) end
     c.sub:SetPoint("TOPLEFT", target and 80 or 40, -20)
     local t = toggleOf(n)
@@ -678,9 +681,8 @@ function ns.syncCommandes() if frame and frame:IsShown() then frame.syncOrder() 
 ---------------------------------------------------------------------------------------------------
 local function track(id, qty)
   if not id then return end
-  if not ns.projetAjouter(projet(), id, qty) then
-    return print("Commandes : c'est sa demande, ce qu'il veut ne change pas ici (Nouvelle pour un projet à toi).")
-  end
+  local ok, raison = ns.projetAjouter(projet(), id, qty)
+  if not ok then return print("Commandes : " .. raison .. " (Nouvelle pour un projet à toi).") end
   refresh()
 end
 
@@ -859,9 +861,9 @@ local function build()
     player:SetEnabled(not c.fige); tip:SetEnabled(not c.fige) -- envoyée : son artisan et son offre sont ceux du contrat
     count:SetText(("%d/%d"):format(ns.numeroProjet()))
     tipL:SetText(c.reponse and "Mon prix" or "Offre")
-    if frame.apportLegend then frame.apportLegend:SetText(o.reponse and "fourni par lui" or "fourni par toi") end
+    if frame.apportLegend then frame.apportLegend:SetText(replying() and "fourni par lui" or "fourni par toi") end
     contractB:SetText(c.reponse and "Contre-proposer" or c.fige and "Voir la demande" or "Préparer la demande")
-    hint:SetText(o.reponse and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
+    hint:SetText(replying() and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
     local prev = cmdL
     for i, v in ipairs(vues) do
       local b = cmdB[i]
@@ -1052,7 +1054,7 @@ if HandleModifiedItemClick then
       if not made then return print("Commandes : je ne trouve pas l'objet que fabrique " .. link .. ".") end
       id = made
     end
-    if ns.projetCourant().reponse then ns.nouveauProjet() end -- la demande d'un autre ne change pas : un projet à toi
+    if not ns.projetPeut(ns.projetCourant(), "lignes") then ns.nouveauProjet() end -- sa demande ne change pas : un projet à toi
     for _, l in ipairs(ns.projetCourant().lines) do
       if l.id == id then return ns.openCraftWindow() end -- déjà dedans : sa quantité ne bouge pas
     end

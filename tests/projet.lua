@@ -132,3 +132,28 @@ test("Une commande envoyée signale l'écart et repart en nouvelle version sur u
     assertTrue(commandes()[nb + 1]:GetText():find("tout le projet", 1, true) ~= nil, commandes()[nb + 1]:GetText())
     assertTrue(commandes()[nb + 1]:GetText():find("pas envoyée", 1, true) ~= nil, "une commande vivante")
 end) end)
+
+-- Règles de la réponse (#10) : la fenêtre demande au projet ce qui se modifie. Dans une réponse, la quantité de ce qu'il
+-- veut est grisée ; dans un projet à moi, elle se tape. (Une réponse à un contrat qui n'existe pas : seul compte qu'elle
+-- en soit une.) Le projet redevient le mien même si une vérification échoue.
+-- Les champs de quantité des cases de la colonne 0 (une case porte son nœud).
+local function quantites()
+    return tous(HandshakeFrame, function(c) return c:GetObjectType() == "EditBox" and c:IsVisible() and c:GetParent().node ~= nil end)
+end
+test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le projet", function()
+    SlashCmdList.HANDSHAKE("demo ceinture")
+    local p = HandshakeDB.projets[#HandshakeDB.projets]
+    local ok, err = pcall(function()
+        assertTrue(#quantites() > 0, "une case par objet du projet")
+        for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
+        p.reponse = "Bob-R#1"
+        bouton("<"):Click(); bouton(">"):Click() -- redessiné
+        assertEquals(p, HandshakeDB.projets[HandshakeDB.courant])
+        assertTrue(#quantites() > 0, "toujours affichée")
+        for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
+        assertTrue(bouton("Contre-proposer") ~= nil, "une réponse se contre-propose")
+    end)
+    p.reponse = nil
+    HandshakeFrame:Hide()
+    if not ok then error(err, 0) end
+end)
