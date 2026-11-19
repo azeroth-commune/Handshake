@@ -1054,7 +1054,7 @@ if HandleModifiedItemClick then
       if not made then return print("Commandes : je ne trouve pas l'objet que fabrique " .. link .. ".") end
       id = made
     end
-    if not ns.projetPeut(ns.projetCourant(), "lignes") then ns.nouveauProjet() end -- sa demande ne change pas : un projet à toi
+    if not lignes() then ns.nouveauProjet() end -- sa demande ne change pas : un projet à toi
     for _, l in ipairs(ns.projetCourant().lines) do
       if l.id == id then return ns.openCraftWindow() end -- déjà dedans : sa quantité ne bouge pas
     end

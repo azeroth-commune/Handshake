@@ -93,7 +93,7 @@ function ns.projetPeut(p, quoi)
   return true
 end
 
--- Chaque modification renvoie true, ou false, raison (projetCommander : nil, raison).
+-- Chaque modification de la table renvoie true, ou false, raison (projetCommander : nil, raison).
 function ns.projetAjouter(p, id, qty)
   local ok, raison = ns.projetPeut(p, "lignes")
   if not ok then return false, raison end
