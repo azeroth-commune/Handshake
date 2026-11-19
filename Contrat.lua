@@ -411,7 +411,9 @@ function ns.ctFromDemande(order, days)
   if #order.lines == 0 then return nil, "la commande est vide" end
   local m, o = demandeTerms(order)
   if not m then return nil, o end
-  return { origin = me, id = tostring(now()), v = "1", parent = "0", client = me, artisan = artisan, m = m, o = o,
+  local id = now() -- plusieurs commandes d'un projet peuvent partir dans la même seconde : une clé chacune
+  while store()[me .. "#" .. id] do id = id + 1 end
+  return { origin = me, id = tostring(id), v = "1", parent = "0", client = me, artisan = artisan, m = m, o = o,
     clientGUID = ns.myGUID(), artisanGUID = ns.knownGUID[artisan] or "0", d = now() + math.floor((days or 3) * 86400) }
 end
 

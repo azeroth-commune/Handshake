@@ -603,6 +603,56 @@ ns.containers, HandshakeDB.options = sacsAvant, optionsAvant
 assert(ok, err)
 print("Handshake : commandes sur l'arbre de la demande OK")
 
+-- Envoyer une commande (#7) : « Préparer la demande » en fait un brouillon de contrat, qui la suit encore ; envoyée, elle
+-- devient une demande (contrat v1) : ses termes sont ceux du contrat et ne bougent plus avec le projet, son état se lit
+-- dans le contrat.
+as(BOB)
+do
+  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  ns.projetChoix(p, 2841, "fabriquer")
+  local i = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
+  ns.projetArtisan(p, "Belegard", i)
+  ns.projetOffre(p, 8000, i)
+  local function cmd() return ns.projetCommande(p, i) end
+  local function termes(v) -- ce que la commande demande : lignes, apports, offre, artisan
+    local t = {}
+    for _, l in ipairs(v.lines) do t[#t + 1] = l.id .. "x" .. l.qty end
+    table.sort(t)
+    local a = {}
+    for id in pairs(v.apports or {}) do a[#a + 1] = id end
+    table.sort(a)
+    return table.concat(t, ",") .. " / " .. table.concat(a, ",") .. " / " .. tostring(v.tip) .. " / " .. tostring(v.player)
+  end
+  assert(cmd().etat == "pas envoyée", "pas encore de contrat")
+  local ct = assert(ns.projetEnvoyer(p, i))
+  assert(ct.status == "brouillon" and cmd().etat == "pas envoyée", "brouillon : pas envoyée")
+  ns.projetOffre(p, 9000, i)
+  ct = assert(ns.projetEnvoyer(p, i))
+  assert(ns.ctTotal(ct.o) - ns.ctTotal(ct.m) == 9000, "préparée de nouveau : le brouillon suit la commande")
+  ns.ctPropose(ct)
+  assert(cmd().etat == "demande envoyée", "envoyée : son état vient du contrat")
+  assert(ns.ctKey(ct) ~= key1 and bases[BEL].contracts[ns.ctKey(ct)].hash == ct.hash, "même seconde qu'une autre demande : une autre clé, arrivée chez Belegard")
+  local envoyee = termes(cmd())
+  assert(envoyee == "2870x1,5541x1 / 2841 / 9000 / Belegard", envoyee)
+  ns.projetChoix(p, 2841, "acheter")
+  ns.projetApport(p, 5500, true)
+  ns.projetAjouter(p, 5541, 3)
+  ns.projetOffre(p, 1, i)
+  ns.projetArtisan(p, "Cid", i)
+  assert(termes(cmd()) == envoyee, "le projet change : la demande ne bouge pas")
+  assert(ns.projetEnvoyer(p, i) == ct, "une demande envoyée n'est pas refaite")
+  -- Belegard contre-propose (+ 10 pa), Bob signe : la commande suit son contrat, pas le projet.
+  as(BEL)
+  local chez = HandshakeDB.contracts[ns.ctKey(ct)]
+  ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000)
+  as(BOB)
+  assert(cmd().etat == "contre-proposée", "contre-proposée")
+  local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
+  assert(ns.ctAccept(v2, v2.hash))
+  assert(cmd().etat == "signée" and cmd().tip == 10000, "signée, au prix de la version signée")
+end
+print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
+
 -- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
 GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end

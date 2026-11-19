@@ -3,7 +3,7 @@
 -- qui peut les faire). Toute modification d'un projet passe par ce module ; la fenêtre (Fenetre.lua) ne fait que dessiner.
 -- Enregistrés dans HandshakeDB.projets[i] = { name, lines = { { id, qty } }, choix = { [id] = "fabriquer" | "acheter" },
 --   apports = { [id] = true }, commandes = { { bloc (le métier ; nil = tout le projet, toujours la 1re), player
---   (l'artisan), tip (l'offre, en cuivre) } }, reponse (clé du contrat dont il est la réponse), reponseHash, created } ;
+--   (l'artisan), tip (l'offre, en cuivre), contrat (clé de son contrat, une fois préparée) } }, reponse (clé du contrat dont il est la réponse), reponseHash, created } ;
 --   HandshakeDB.courant = le projet affiché.
 local _, ns = ...
 
@@ -130,9 +130,30 @@ end
 -- = ce qui entre dans le bloc (les livraisons des autres blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de
 -- la demande (dem = ns.projetDemande(p), aucun stock déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que
 -- soit le stock affiché dans la fenêtre. Si le bloc a disparu (tout acheté…), elle reste, vide.
+-- Envoyée (#7), elle est une demande : figée, son contenu est celui de son contrat (c.contrat = sa clé, ns.ctKey), à
+-- sa dernière version ; v.fige, v.contrat. Son état (v.etat) se lit toujours dans le contrat, jamais saisi à part.
+-- Un brouillon (« Préparer la demande », pas encore parti) ne la fige pas : elle suit encore le projet.
+local function envoyee(c)
+  local ct = c.contrat and ns.ctStore()[c.contrat]
+  return ct and ct.status ~= "brouillon" and ct or nil
+end
+local ETATS = { envoye = "demande envoyée", a_signer = "contre-proposée", signe = "signée", clos = "livrée",
+  echu = "échue", refuse = "refusée", retire = "retirée" }
+local function etat(ct)
+  if not ct then return "pas envoyée" end
+  local s = ns.ctStatus(ct)
+  if s == "envoye" and ct.v ~= "1" then return "contre-proposée" end -- j'ai répondu à sa contre-proposition
+  return ETATS[s] or s
+end
+
 local function vue(p, c, dem)
-  local v = { part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix }
-  if not c.bloc then
+  local v = { part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
+  local ct = envoyee(c)
+  if ct then
+    v.fige, v.player, v.tip, v.lines, v.apports = true, ct.artisan:match("^[^%-]+"), math.max(0, ns.ctTotal(ct.o) - ns.ctTotal(ct.m)), {}, {}
+    for _, l in ipairs(ct.o) do v.lines[#v.lines + 1] = { id = l.id, qty = l.qty } end
+    for _, l in ipairs(ct.m) do v.apports[l.id] = true end
+  elseif not c.bloc then
     v.lines, v.apports, v.reponse = p.lines, p.apports, p.reponse
   else
     v.lines, v.apports = {}, {}
@@ -144,6 +165,7 @@ local function vue(p, c, dem)
     end
   end
   v.vide = #v.lines == 0
+  if not v.reponse then v.etat = etat(ct) end
   return v
 end
 
@@ -157,6 +179,20 @@ end
 function ns.projetCommande(p, i)
   local c = commandes(p)[i or 1]
   return c and vue(p, c, demandeDe(p))
+end
+
+-- « Préparer la demande » : la commande i en brouillon de contrat (moi client, son artisan), lié à elle ; préparée de
+-- nouveau, le brouillon est refait d'après le projet. Déjà envoyée : son contrat, inchangé. Renvoie le contrat, ou nil,
+-- raison.
+function ns.projetEnvoyer(p, i)
+  local c = commandes(p)[i or 1]
+  if envoyee(c) then return envoyee(c) end
+  local ct, err = ns.ctFromDemande(ns.projetCommande(p, i), 3)
+  if not ct then return nil, err end
+  if c.contrat then ns.ctStore()[c.contrat] = nil end -- l'ancien brouillon
+  ct.status, c.contrat = "brouillon", ns.ctKey(ct)
+  ns.ctStore()[c.contrat] = ct
+  return ct
 end
 
 function ns.projetCommandes(p)
