@@ -764,7 +764,7 @@ do
   assert(cmd(m).ecartPrix == nil and not cmd(m).incomplet, "rien d'apporté : pas de caution à estimer")
   -- Ma perle (apport) sous les cases de la forge : la part de la forge change, pas celle du minage.
   ns.projetApport(p, 5500, true)
-  assert(cmd(f).ecart == "ne correspond plus à la demande", "apport dans la forge : écart signalé, sans cause")
+  assert(cmd(f).ecart == "ne correspond plus au contrat", "apport dans la forge : écart signalé, sans cause")
   assert(not cmd(m).ecart, "changement ailleurs : rien pour le minage")
   -- Aucune version ne part d'elle-même : le projet a beau changer et la page se redessiner, Belegard a toujours la v1.
   ns.projetCommandes(p)
@@ -793,7 +793,7 @@ do
   assert(cmd(f).etat == "contre-proposée" and not cmd(f).ecart, "il change son prix : pas d'écart")
   -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
   ns.projetQuantite(p, 2, 2)
-  assert(cmd(m).ecart == "ne correspond plus à la demande" and cmd(f).ecart == cmd(m).ecart, "quantité : les deux, même libellé")
+  assert(cmd(m).ecart == "ne correspond plus au contrat" and cmd(f).ecart == cmd(m).ecart, "quantité : les deux, même libellé")
   -- Belegard refuse le minage : figé, pas de nouvelle version, mais il se commande de nouveau (une commande vivante,
   -- reprise tant qu'elle n'est pas partie).
   as(BEL)

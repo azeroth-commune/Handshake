@@ -122,7 +122,7 @@ test("Une commande envoyée signale l'écart et repart en nouvelle version sur u
     p.lines[1].qty = p.lines[1].qty + 1 -- une ligne de plus à fabriquer : la part de « tout le projet » change
     commandes()[1]:Click()
     local texte = commandes()[1]:GetText()
-    assertTrue(texte:find("ne correspond plus à la demande", 1, true) ~= nil, texte) -- constaté, sans cause supposée (#18)
+    assertTrue(texte:find("ne correspond plus au contrat", 1, true) ~= nil, texte) -- constaté, sans cause supposée (#18)
     assertEquals("1", ct.v, "rien ne part sans clic")
     bouton("Nouvelle version"):Click()
     local v2 = HandshakeDB.contracts[p.commandes[1].contrat]

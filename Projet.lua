@@ -246,7 +246,7 @@ local function vue(p, c, dem)
     for _, l in ipairs(ct.m) do v.apports[l.id] = true end
     local s = ns.ctStatus(ct)
     if (s == "envoye" or s == "a_signer") and ecart(part(p, c, dem, { choix = p.choix }), ct) then
-      v.ecart = "ne correspond plus à la demande"
+      v.ecart = "ne correspond plus au contrat"
     end
     if #ct.m > 0 then
       local e = ns.ctEstimation(ct, ns.me())
