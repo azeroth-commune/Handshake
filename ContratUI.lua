@@ -367,6 +367,5 @@ function ns.openContracts(key)
   refresh()
 end
 
-
 SLASH_HANDSHAKECONTRAT1 = "/contrat"
 SlashCmdList.HANDSHAKECONTRAT = function() ns.openContracts() end
