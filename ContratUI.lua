@@ -2,7 +2,8 @@
 -- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
 -- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
--- « Contrat » dans la fenêtre des commandes crée un brouillon depuis la commande : rien ne part avant « Envoyer ».
+-- « Préparer la demande » dans la fenêtre des projets crée un brouillon depuis la commande (ns.projetEnvoyer) : rien ne
+-- part avant « Envoyer ».
 local _, ns = ...
 
 local W, H = 620, 600
@@ -188,6 +189,7 @@ local function sorted()
 end
 
 local function refresh()
+  if ns.syncCommandes then ns.syncCommandes() end -- l'état des commandes se lit dans leur contrat
   if not (frame and frame:IsShown()) then return end
   list = sorted()
   pos = math.min(math.max(1, pos), math.max(1, #list))
@@ -365,15 +367,6 @@ function ns.openContracts(key)
   refresh()
 end
 
--- Depuis la fenêtre des projets : une commande (ns.projetCommande : ce que je veux, ce que j'apporte, mon offre) en
--- brouillon de contrat.
-function ns.ctDraftFromDemande(commande)
-  local c, err = ns.ctFromDemande(commande, 3)
-  if not c then return print("|cffe64d4dContrats :|r " .. err .. ".") end
-  c.status = "brouillon"
-  ns.ctStore()[ns.ctKey(c)] = c
-  ns.openContracts(ns.ctKey(c))
-end
 
 SLASH_HANDSHAKECONTRAT1 = "/contrat"
 SlashCmdList.HANDSHAKECONTRAT = function() ns.openContracts() end
