@@ -835,7 +835,20 @@ local function build()
   local cmdL = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   cmdL:SetPoint("TOPLEFT", 14, -164)
   cmdL:SetText("Commandes :")
-  local cmdB = {}
+  local cmdB, actB = {}, {}
+  -- À côté d'une commande : « Nouvelle version » (envoyée, sa part du projet a changé ; elle part sur ce clic, jamais
+  -- d'office) ou « Commander de nouveau » (refusée, retirée, échue).
+  local function agir(self)
+    local o = projet()
+    if ns.projetCommande(o, self.i).recommander then
+      choisie.p, choisie.i = o, ns.projetRecommander(o, self.i)
+      return frame.syncOrder()
+    end
+    local n, err = ns.projetNouvelleVersion(o, self.i)
+    if not n then return print("|cffe64d4dContrats :|r " .. err .. ".") end
+    frame.syncOrder()
+    ns.openContracts(ns.ctKey(n))
+  end
   frame.syncOrder = function()
     local o, sel = projet(), laCommande()
     local vues = ns.projetCommandes(o)
@@ -849,22 +862,35 @@ local function build()
     if frame.apportLegend then frame.apportLegend:SetText(o.reponse and "fourni par lui" or "fourni par toi") end
     contractB:SetText(c.reponse and "Contre-proposer" or c.fige and "Voir la demande" or "Préparer la demande")
     hint:SetText(o.reponse and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
+    local prev = cmdL
     for i, v in ipairs(vues) do
       local b = cmdB[i]
       if not b then
         b = button("", 60, function(self) choisie.p, choisie.i = projet(), self.i; frame.syncOrder() end)
-        b:SetPoint("LEFT", i == 1 and cmdL or cmdB[i - 1], "RIGHT", 6, 0)
-        cmdB[i] = b
+        cmdB[i], actB[i] = b, button("", 60, agir)
       end
       b.i = i
+      b:ClearAllPoints()
+      b:SetPoint("LEFT", prev, "RIGHT", 6, 0)
       -- ponytail: une seule ligne ; au-delà de 4 ou 5 commandes elle dépasse à droite, passer à deux lignes alors
       local text = ("%s · %s%s%s"):format(v.reponse and "réponse" or v.part, v.vide and "vide" or (v.player or "artisan ?"),
         not v.vide and v.tip and v.tip > 0 and (" · " .. ns.moneyShort(v.tip)) or "", v.etat and (" · " .. v.etat) or "")
-      b:SetText(i == sel and ("|cffa98fff" .. text .. "|r") or text)
+      b:SetText((i == sel and ("|cffa98fff" .. text .. "|r") or text) .. (v.ecart and (" · |cffe6994d" .. v.ecart .. "|r") or ""))
       b:SetWidth(b:GetTextWidth() + 24)
       b:Show()
+      prev = b
+      local a, act = actB[i], v.fige and v.ecart and "Nouvelle version" or v.recommander and "Commander de nouveau"
+      a.i = i
+      a:SetShown(act and true or false)
+      if act then
+        a:SetText(act)
+        a:SetWidth(a:GetTextWidth() + 24)
+        a:ClearAllPoints()
+        a:SetPoint("LEFT", b, "RIGHT", 2, 0)
+        prev = a
+      end
     end
-    for i = #vues + 1, #cmdB do cmdB[i]:Hide() end
+    for i = #vues + 1, #cmdB do cmdB[i]:Hide(); actB[i]:Hide() end
   end
 
   -- Ligne d'ajout : déposer un objet sur la case, ou taper son nom.
