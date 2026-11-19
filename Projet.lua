@@ -146,12 +146,59 @@ function ns.projetCommander(p, bloc)
   return #commandes(p)
 end
 
+-- La part du projet que vise la commande c, telle que le projet la fait maintenant : ses lignes et ses apports, rangés dans
+-- v. Une commande de bloc livre ce que le bloc produit ; ses apports = ce qui entre dans le bloc (les livraisons des autres
+-- blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de la demande (dem = ns.projetDemande(p), aucun stock
+-- déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que soit le stock affiché dans la fenêtre. Si le bloc a
+-- disparu (tout acheté…), elle reste, vide.
+local function part(p, c, dem, v)
+  if not c.bloc then
+    v.lines, v.apports, v.reponse = p.lines, p.apports, p.reponse
+    return v
+  end
+  v.lines, v.apports = {}, {}
+  local bloc = dem().blocDe[c.bloc]
+  for _, id in ipairs(bloc and bloc.deliver or {}) do v.lines[#v.lines + 1] = { id = id, qty = bloc.qty[id] } end
+  for id in pairs(bloc and bloc.inputs or {}) do v.apports[id] = true end
+  for _, n in ipairs(bloc and bloc.cases or {}) do
+    for _, k in ipairs(n.children) do if k.apport > 0 then v.apports[k.id] = true end end
+  end
+  return v
+end
+
+-- Écart (#8) : la part que le projet fait maintenant (order) ne demande plus ce que dit le contrat ct : d'autres lignes ou
+-- quantités, d'autres apports. Comparé objet par objet, quantité par quantité, comme le contrat les range : ni le marché ni
+-- l'arrondi des prix par objet n'en créent un. Un choix de case se voit quand il change ces lignes ou ces apports ;
+-- sinon il ne regarde que l'artisan (sa part, il la fabrique ou l'achète comme il veut).
+local function ecart(order, ct)
+  local function differe(list, t)
+    for _, l in ipairs(list) do
+      if t[l.id] ~= l.qty then return true end
+      t[l.id] = nil
+    end
+    return next(t) ~= nil
+  end
+  local o, m = {}, {}
+  for _, l in ipairs(order.lines) do o[l.id] = (o[l.id] or 0) + l.qty end
+  for _, a in ipairs(ns.demandeApports(ns.projetDemande(order))) do m[a.id] = a.qty end
+  return differe(ct.o, o) or differe(ct.m, m)
+end
+-- Un brouillon ne suit pas le projet non plus : il diffère aussi par l'artisan ou l'offre (à l'arrondi près, ½ pc par
+-- objet livré, voir ns.ctFromDemande).
+local function brouillonEcart(v, ct)
+  local arrondi = 0
+  for _, l in ipairs(ct.o) do arrondi = arrondi + l.qty / 2 end
+  return ns.fullName(v.player or "") ~= ct.artisan or math.abs((v.tip or 0) - (ns.ctTotal(ct.o) - ns.ctTotal(ct.m))) > arrondi
+    or ecart(v, ct)
+end
+
 -- Une commande telle qu'elle partirait : { part ("tout le projet" ou le métier), bloc, player, tip, lines, apports,
 -- choix, reponse, vide }, la forme qu'attendent ns.ctFromDemande et ns.sendOrder. Pas envoyée, elle est une vue sur le
--- projet, recalculée à chaque appel, rien n'est recopié. Une commande de bloc livre ce que le bloc produit ; ses apports
--- = ce qui entre dans le bloc (les livraisons des autres blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de
--- la demande (dem = ns.projetDemande(p), aucun stock déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que
--- soit le stock affiché dans la fenêtre. Si le bloc a disparu (tout acheté…), elle reste, vide.
+-- projet (part), recalculée à chaque appel, rien n'est recopié.
+-- Envoyée, tant que son contrat prend une nouvelle version (envoyé, contre-proposé), v.ecart dit si sa part du projet a
+-- changé depuis ; un brouillon, s'il ne suit plus le projet. Refusée, retirée ou échue : v.recommander, elle se commande
+-- de nouveau (ns.projetRecommander).
+local FINIE = { refuse = true, retire = true, echu = true }
 local function vue(p, c, dem)
   local v = { id = c.id, part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
   local ct = envoyee(c)
@@ -159,16 +206,15 @@ local function vue(p, c, dem)
     v.fige, v.player, v.tip, v.lines, v.apports = true, ct.artisan:match("^[^%-]+"), math.max(0, ns.ctTotal(ct.o) - ns.ctTotal(ct.m)), {}, {}
     for _, l in ipairs(ct.o) do v.lines[#v.lines + 1] = { id = l.id, qty = l.qty } end
     for _, l in ipairs(ct.m) do v.apports[l.id] = true end
-  elseif not c.bloc then
-    v.lines, v.apports, v.reponse = p.lines, p.apports, p.reponse
-  else
-    v.lines, v.apports = {}, {}
-    local bloc = dem().blocDe[c.bloc]
-    for _, id in ipairs(bloc and bloc.deliver or {}) do v.lines[#v.lines + 1] = { id = id, qty = bloc.qty[id] } end
-    for id in pairs(bloc and bloc.inputs or {}) do v.apports[id] = true end
-    for _, n in ipairs(bloc and bloc.cases or {}) do
-      for _, k in ipairs(n.children) do if k.apport > 0 then v.apports[k.id] = true end end
+    local s = ns.ctStatus(ct)
+    if (s == "envoye" or s == "a_signer") and ecart(part(p, c, dem, { choix = p.choix }), ct) then
+      v.ecart = s == "envoye" and "a changé depuis la demande" or "diffère de sa contre-proposition"
     end
+    v.recommander = FINIE[s]
+  else
+    part(p, c, dem, v)
+    local brouillon = c.contrat and ns.ctStore()[c.contrat]
+    if brouillon and not v.reponse and brouillonEcart(v, brouillon) then v.ecart = "brouillon à refaire" end
   end
   v.vide = #v.lines == 0
   if not v.reponse then v.etat = etat(ct) end
@@ -199,6 +245,28 @@ function ns.projetEnvoyer(p, i)
   ct.status, c.contrat = "brouillon", ns.ctKey(ct)
   ns.ctStore()[c.contrat] = ct
   return ct
+end
+
+-- « Nouvelle version » (#8) : la commande envoyée i, dont la part du projet a changé, repart en contre-proposition
+-- (Contrat : nouvelle version, l'artisan voit le différentiel, accepte ou refuse) avec ce que sa part est maintenant. Son
+-- offre reste celle du contrat : le différentiel = l'écart. Seulement sur un clic du joueur, jamais d'office. Renvoie la
+-- nouvelle version, ou nil, raison.
+function ns.projetNouvelleVersion(p, i)
+  local c = commandes(p)[i or 1]
+  local ct = envoyee(c)
+  if not ct then return nil, "cette commande n'est pas envoyée" end
+  local order = part(p, c, demandeDe(p), { choix = p.choix, tip = math.max(0, ns.ctTotal(ct.o) - ns.ctTotal(ct.m)) })
+  if not ecart(order, ct) then return nil, "sa part du projet n'a pas changé" end
+  return ns.ctVersionDemande(ct, order)
+end
+
+-- Une commande refusée, retirée ou échue se commande de nouveau : une commande vivante pour la même part, au même artisan
+-- (la règle de « Commander » : celle qui n'est pas partie est reprise). Tout le projet aussi. Renvoie son rang, ou nil.
+function ns.projetRecommander(p, i)
+  local c = commandes(p)[i]
+  local ct = c and envoyee(c)
+  if not (ct and FINIE[ns.ctStatus(ct)]) then return nil end
+  return ns.projetCommander(p, { key = c.bloc, best = c.player })
 end
 
 function ns.projetCommandes(p)

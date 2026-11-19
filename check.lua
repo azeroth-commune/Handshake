@@ -675,6 +675,90 @@ do
 end
 print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
 
+-- Écart et nouvelle version (#8) : une commande envoyée ne bouge jamais d'elle-même ; quand la part du projet qu'elle vise
+-- change, l'écart est signalé (pas quand le changement est ailleurs) ; « Nouvelle version » la renvoie en contre-
+-- proposition, dont le différentiel est l'écart. Refusée, retirée ou échue, elle se commande de nouveau.
+as(BOB)
+do
+  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  ns.projetChoix(p, 2841, "fabriquer")
+  local blocs = ns.projetArbre(p, TOUT).blocDe
+  local f, m = ns.projetCommander(p, blocs.Forge), ns.projetCommander(p, blocs.Minage)
+  local function cmd(i) return ns.projetCommande(p, i) end
+  local function envoyer(i)
+    ns.projetArtisan(p, "Belegard", i)
+    return assert(ns.projetEnvoyer(p, i))
+  end
+  local cf = envoyer(f)
+  assert(not cmd(f).ecart, "brouillon tout juste préparé : pas d'écart")
+  ns.projetOffre(p, 5000, f)
+  assert(cmd(f).ecart == "brouillon à refaire", "l'offre change après « Préparer la demande » : le brouillon est à refaire")
+  cf = envoyer(f)
+  assert(not cmd(f).ecart, "préparé de nouveau : il suit le projet")
+  assert(ns.ctPropose(cf))
+  local cm = envoyer(m)
+  assert(ns.ctPropose(cm))
+  assert(not cmd(f).ecart and not cmd(m).ecart, "envoyées, projet inchangé : pas d'écart")
+  -- Ma perle (apport) sous les cases de la forge : la part de la forge change, pas celle du minage.
+  ns.projetApport(p, 5500, true)
+  assert(cmd(f).ecart == "a changé depuis la demande", "apport dans la forge : écart signalé")
+  assert(not cmd(m).ecart, "changement ailleurs : rien pour le minage")
+  -- Aucune version ne part d'elle-même : le projet a beau changer et la page se redessiner, Belegard a toujours la v1.
+  ns.projetCommandes(p)
+  local chez = bases[BEL].contracts
+  assert(chez[ns.ctKey(cf)].v == "1" and chez[ns.ctKey(cm)].v == "1" and cf.v == "1", "rien ne part sans clic")
+  assert(not ns.projetNouvelleVersion(p, m), "pas d'écart, pas de nouvelle version")
+  -- « Nouvelle version » : v2 chez Belegard, avec la v1 pour le différentiel ; il porte sur l'écart seulement.
+  local v2 = assert(ns.projetNouvelleVersion(p, f))
+  as(BEL)
+  local recu = HandshakeDB.contracts[ns.ctKey(cf)]
+  assert(recu.v == "2" and recu.status == "a_signer" and recu.prev.v == "1" and recu.hash == v2.hash, "contre-proposition reçue")
+  local function qtes(list) local t = {} for _, l in ipairs(list) do t[#t + 1] = l.id .. "x" .. l.qty end return table.concat(t, ",") end
+  assert(qtes(recu.prev.o) == qtes(recu.o) and qtes(recu.o) == "2870x1,5541x1", "ce qu'il livre : inchangé")
+  assert(qtes(recu.prev.m) == "2841x30" and qtes(recu.m) == "2841x30,5500x1", "ses apports : la perle (du marteau) en plus")
+  assert(recu.m[1].unit == recu.prev.m[1].unit, "la caution déjà au contrat reste")
+  local offre = function(c) return ns.ctTotal(c.o) - ns.ctTotal(c.m) end
+  assert(math.abs(offre(recu) - offre(recu.prev)) <= 1, "l'offre reste celle du contrat (à l'arrondi près)")
+  C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
+  local diff = ns.ctDescribe(recu, BEL)
+  assert(diff:find("Changé depuis la v1") and diff:find("absent %-> 1"), "le différentiel montre la perle ajoutée")
+  as(BOB)
+  assert(not cmd(f).ecart and cmd(f).etat == "contre-proposée", "nouvelle version partie : plus d'écart")
+  -- Sa contre-proposition qui ne change que le prix : rien à signaler (la part du projet n'a pas bougé).
+  as(BEL)
+  ns.ctCounter(recu, nil, ns.ctTotal(recu.o) + 1000)
+  as(BOB)
+  assert(cmd(f).etat == "contre-proposée" and not cmd(f).ecart, "il change son prix : pas d'écart")
+  -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
+  ns.projetQuantite(p, 2, 2)
+  assert(cmd(m).ecart == "a changé depuis la demande" and cmd(f).ecart == "diffère de sa contre-proposition", "quantité : les deux")
+  -- Belegard refuse le minage : figé, pas de nouvelle version, mais il se commande de nouveau (une commande vivante,
+  -- reprise tant qu'elle n'est pas partie).
+  as(BEL)
+  ns.ctRefuse(HandshakeDB.contracts[ns.ctKey(cm)])
+  as(BOB)
+  assert(cmd(m).etat == "refusée" and not cmd(m).ecart and cmd(m).recommander, "refusée : à commander de nouveau")
+  local _, err = ns.projetNouvelleVersion(p, m)
+  assert(err, "refusée : pas de nouvelle version")
+  local m2 = ns.projetRecommander(p, m)
+  assert(m2 and m2 ~= m and not cmd(m2).fige and cmd(m2).part == "Minage" and cmd(m2).player == "Belegard", "une nouvelle commande du minage")
+  assert(ns.projetRecommander(p, m) == m2, "la commande vivante est reprise")
+  assert(not ns.projetRecommander(p, f), "en cours : pas à recommander")
+  -- Tout le projet, retiré : il se commande de nouveau aussi.
+  local t = envoyer(1)
+  assert(ns.ctPropose(t))
+  ns.ctWithdraw(t)
+  assert(cmd(1).etat == "retirée" and cmd(1).recommander)
+  local t2 = ns.projetRecommander(p, 1)
+  assert(t2 and t2 ~= 1 and cmd(t2).part == "tout le projet" and not cmd(t2).fige and #cmd(t2).lines == 2, "tout le projet, de nouveau")
+  -- Ce qui part reste dans les bornes que vérifie celui qui reçoit (n° 15) : 1001 cuirasses ne partent pas.
+  ns.projetQuantite(p, 2, 1001)
+  local _, trop = ns.projetNouvelleVersion(p, f)
+  assert(trop and trop:find("bornes"), "hors bornes : rien n'est envoyé")
+  assert(bases[BEL].contracts[ns.ctKey(cf)].v == "3", "Belegard a toujours la v3 (son prix)")
+end
+print("Handshake : écart et nouvelle version d'une commande envoyée OK")
+
 -- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
 GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
