@@ -650,6 +650,13 @@ do
   local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
   assert(ns.ctAccept(v2, v2.hash))
   assert(cmd().etat == "signée" and cmd().tip == 10000, "signée, au prix de la version signée")
+  -- Le bloc de la forge commandé de nouveau : sa commande est figée, une nouvelle commande vivante (son identité à elle) ;
+  -- commandé encore une fois : la même, tant qu'elle n'est pas partie.
+  local j = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
+  assert(j ~= i and not ns.projetCommande(p, j).fige and ns.projetCommande(p, j).etat == "pas envoyée", "une nouvelle commande de la forge")
+  assert(ns.projetCommande(p, j).id ~= cmd().id, "chaque commande a son identité")
+  assert(ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge) == j, "la commande vivante est reprise")
+  assert(termes(cmd()) ~= termes(ns.projetCommande(p, j)), "la nouvelle suit le projet, l'envoyée non")
 end
 print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
 

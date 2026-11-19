@@ -3,7 +3,8 @@
 -- qui peut les faire). Toute modification d'un projet passe par ce module ; la fenêtre (Fenetre.lua) ne fait que dessiner.
 -- Enregistrés dans HandshakeDB.projets[i] = { name, lines = { { id, qty } }, choix = { [id] = "fabriquer" | "acheter" },
 --   apports = { [id] = true }, commandes = { { bloc (le métier ; nil = tout le projet, toujours la 1re), player
---   (l'artisan), tip (l'offre, en cuivre), contrat (clé de son contrat, une fois préparée) } }, reponse (clé du contrat dont il est la réponse), reponseHash, created } ;
+--   (l'artisan), tip (l'offre, en cuivre), contrat (clé de son contrat, une fois préparée), id } }, seq, reponse (clé
+--   du contrat dont il est la réponse), reponseHash, created } ;
 --   HandshakeDB.courant = le projet affiché.
 local _, ns = ...
 
@@ -14,8 +15,12 @@ end
 
 -- Les commandes d'un projet. Un projet d'avant (19/11/2026) portait un artisan et une offre : ils deviennent sa
 -- commande « tout le projet » (nouveauProjet accepte encore player et tip, pour la même raison).
+-- Chaque commande a son identité (c.id, unique dans son projet ; p.seq = la dernière donnée), même celles d'avant.
 local function commandes(p)
   if not p.commandes then p.commandes, p.player, p.tip = { { player = p.player, tip = p.tip } }, nil, nil end
+  for _, c in ipairs(p.commandes) do
+    if not c.id then p.seq = (p.seq or 0) + 1; c.id = p.seq end
+  end
   return p.commandes
 end
 
@@ -112,24 +117,6 @@ function ns.projetRenommer(p, name) p.name = name end
 -- Commandes (CONTEXT.md) : des parts du projet, chacune à un artisan, avec son offre. i = son rang (1 = tout le
 -- projet, par défaut). Dans une réponse, la 1re est la réponse elle-même (son artisan = le demandeur, son offre = mon
 -- prix) ; commander un de ses blocs, c'est le sous-traiter.
-function ns.projetArtisan(p, name, i) commandes(p)[i or 1].player = name ~= "" and name or nil end
-function ns.projetOffre(p, cuivre, i) commandes(p)[i or 1].tip = cuivre end
-
--- « Commander » un bloc (res.blocs) : une commande de plus dans ce projet, à celui qui en connaît le plus ; le même
--- bloc commandé deux fois redonne la même. Renvoie son rang.
-function ns.projetCommander(p, bloc)
-  local list = commandes(p)
-  for i, c in ipairs(list) do if c.bloc == bloc.key then return i end end
-  list[#list + 1] = { bloc = bloc.key, player = bloc.best }
-  return #list
-end
-
--- Une commande telle qu'elle partirait : { part ("tout le projet" ou le métier), bloc, player, tip, lines, apports,
--- choix, reponse, vide }, la forme qu'attendent ns.ctFromDemande et ns.sendOrder. Pas envoyée, elle est une vue sur le
--- projet, recalculée à chaque appel, rien n'est recopié. Une commande de bloc livre ce que le bloc produit ; ses apports
--- = ce qui entre dans le bloc (les livraisons des autres blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de
--- la demande (dem = ns.projetDemande(p), aucun stock déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que
--- soit le stock affiché dans la fenêtre. Si le bloc a disparu (tout acheté…), elle reste, vide.
 -- Envoyée (#7), elle est une demande : figée, son contenu est celui de son contrat (c.contrat = sa clé, ns.ctKey), à
 -- sa dernière version ; v.fige, v.contrat. Son état (v.etat) se lit toujours dans le contrat, jamais saisi à part.
 -- Un brouillon (« Préparer la demande », pas encore parti) ne la fige pas : elle suit encore le projet.
@@ -146,8 +133,27 @@ local function etat(ct)
   return ETATS[s] or s
 end
 
+function ns.projetArtisan(p, name, i) commandes(p)[i or 1].player = name ~= "" and name or nil end
+function ns.projetOffre(p, cuivre, i) commandes(p)[i or 1].tip = cuivre end
+
+-- « Commander » un bloc (res.blocs) : une commande de plus dans ce projet, à celui qui en connaît le plus ; le même
+-- bloc commandé deux fois redonne la même, tant qu'elle n'est pas envoyée (figée, une nouvelle la remplace pour la
+-- suite). Renvoie son rang.
+function ns.projetCommander(p, bloc)
+  local list = commandes(p)
+  for i, c in ipairs(list) do if c.bloc == bloc.key and not envoyee(c) then return i end end
+  list[#list + 1] = { bloc = bloc.key, player = bloc.best }
+  return #commandes(p)
+end
+
+-- Une commande telle qu'elle partirait : { part ("tout le projet" ou le métier), bloc, player, tip, lines, apports,
+-- choix, reponse, vide }, la forme qu'attendent ns.ctFromDemande et ns.sendOrder. Pas envoyée, elle est une vue sur le
+-- projet, recalculée à chaque appel, rien n'est recopié. Une commande de bloc livre ce que le bloc produit ; ses apports
+-- = ce qui entre dans le bloc (les livraisons des autres blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de
+-- la demande (dem = ns.projetDemande(p), aucun stock déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que
+-- soit le stock affiché dans la fenêtre. Si le bloc a disparu (tout acheté…), elle reste, vide.
 local function vue(p, c, dem)
-  local v = { part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
+  local v = { id = c.id, part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
   local ct = envoyee(c)
   if ct then
     v.fige, v.player, v.tip, v.lines, v.apports = true, ct.artisan:match("^[^%-]+"), math.max(0, ns.ctTotal(ct.o) - ns.ctTotal(ct.m)), {}, {}
