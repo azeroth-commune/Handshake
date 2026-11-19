@@ -779,7 +779,7 @@ local function build()
     return t
   end
 
-  -- La commande affichée : nom, joueur d'en face, pourboire, qui fournit les composants.
+  -- Le projet affiché (Projet.lua) : < et >, nom, joueur d'en face, offre.
   local function switch(d)
     ns.changerProjet(d)
     refresh()
