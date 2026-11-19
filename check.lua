@@ -11,8 +11,19 @@ date, time = os.date, os.time
 GetTime = function() return 0 end
 GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
 GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {} }, { items = {} }, {}
-GameDataAPI = {}
-HandshakeDB = { recipes = {}, chars = {}, items = {}, market = {} }
+-- GameData installé : la lib commune lit ses recettes par GameDataAPI.recettesConnues (même forme que GameData).
+GameDataAPI = { recettesConnues = function()
+  local persos = {}
+  for k, c in pairs(GameDataDB.chars) do persos[k] = c.recipes end
+  return { recettes = GameDataDB.recipes, persos = persos }
+end }
+HandshakeDB = { chars = {}, items = {}, market = {} }
+-- La lib commune (dépôt voisin, chargée avant Handshake comme dans le jeu) ; son cadre garde son script d'événements.
+local libCadre
+CreateFrame = function() local f = setmetatable({}, stubMT); f.SetScript = function(self, _, fn) self.onEvent = fn end; libCadre = f; return f end
+assert(loadfile("LibCommune/LibStub.lua"))()
+assert(loadfile("LibCommune/LibCommune.lua"))()
+CreateFrame = function() return setmetatable({}, stubMT) end
 local ns = {}
 for _, f in ipairs({ "Donnees", "Calcul", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
   assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
@@ -449,11 +460,51 @@ UnitName = function() return "Belegard", "Marteaudefer" end
 assert(ns.me() == BEL, "moi = prénom + royaume, pas le nom de famille")
 print("Handshake : noms à la Forever OK")
 
--- Handshake seul (sans GameData) : ses propres tables servent.
+-- Avec GameData : les recettes connues de tous ses persos, par la lib commune.
+GameDataDB.chars = { ["Alt Dupont-R"] = { recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } } }, ["Sans-R"] = {} }
+assert(ns.knownRecipes()["Alt Dupont-R"].Forge.known[9] and not ns.knownRecipes()["Sans-R"], "recettes connues de GameData")
+local alt
+for _, e in ipairs(ns.crafters()) do if e.key == "Alt Dupont-R" then alt = e end end
+assert(alt and alt.name == "Alt" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData")
+GameDataDB.chars = {}
+print("Handshake : recettes connues avec GameData OK")
+
+-- Handshake seul (sans GameData) : les recettes viennent du relevé de repli de la lib (fenêtre de métier ouverte),
+-- jamais écrites dans HandshakeDB ; les autres données (objets, HV) restent dans ses propres tables.
 GameDataAPI = nil
-HandshakeDB.recipes = { [5] = { name = "Fonte du cuivre", output = 2840, reagents = { { id = 2770, qty = 1 } } } }
+-- Relevés sauvegardés par un Handshake d'avant (recettes, recettes connues des persos) : purgés au chargement (ADR 0001).
+HandshakeDB.recipes = { [1] = { name = "vieux relevé" } }
+HandshakeDB.chars = { ["Vieux-Perso"] = { recipes = { Forge = { known = { [1] = 1 } } }, bags = { [2770] = 3 } } }
+ns.purgerAnciensReleves()
+assert(HandshakeDB.recipes == nil and HandshakeDB.chars["Vieux-Perso"].recipes == nil, "anciens relevés de recettes purgés")
+assert(HandshakeDB.chars["Vieux-Perso"].bags[2770] == 3, "le reste des persos (sacs) n'est pas touché")
+HandshakeDB.chars = {}
+assert(not ns.recipes()[5] and not next(ns.knownRecipes()), "rien de relevé cette session")
+UnitName = function() return "Belegard", "Marteaudefer" end
+Enum = Enum or {}
+C_TradeSkillUI = {
+  GetBaseProfessionInfo = function() return { professionName = "Minage", skillLevel = 75, maxSkillLevel = 150 } end,
+  GetAllRecipeIDs = function() return { 5, 6 } end,
+  GetRecipeInfo = function(id) return { name = id == 5 and "Fonte du cuivre" or "Fonte du bronze", learned = id == 5, relativeDifficulty = 1 } end,
+  GetRecipeSchematic = function(id) return { outputItemID = id == 5 and 2840 or 2841, quantityMin = 1, quantityMax = 1,
+    reagentSlotSchematics = { { reagents = { { itemID = id == 5 and 2770 or 2840 } }, quantityRequired = 1, required = true } } } end,
+}
+C_Timer.After = function(_, fn) fn() end
+libCadre.onEvent(libCadre, "TRADE_SKILL_LIST_UPDATE")
+C_Timer.After = noop
+-- Les noms des produits et composants des recettes relevées sont demandés au serveur (comme l'ancien relevé de Handshake).
+local demandes = {}
+C_Item.RequestLoadItemDataByID = function(id) demandes[id] = true end
+ns.recipes()
+assert(demandes[2840] and demandes[2770] and demandes[2841], "noms des produits et composants demandés au serveur")
+C_Item.RequestLoadItemDataByID = nil
 HandshakeDB.items = { [2840] = { name = "Barre de cuivre" } }
-assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "données propres")
+assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "relevé de repli")
+assert(ns.knownRecipes()[ns.charKey()].Minage.known[5] and not ns.knownRecipes()[ns.charKey()].Minage.known[6], "recettes connues du perso")
+assert(HandshakeDB.recipes == nil, "rien écrit dans HandshakeDB.recipes")
+assert(next(HandshakeDB.chars) == nil, "rien écrit dans HandshakeDB.chars (recettes connues comprises)")
+local moi = ns.crafters()[1]
+assert(moi.key == ns.charKey() and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
 local agg = ns.aggregate({ { id = 2770, count = 20, buyout = 2000 }, { id = 2770, count = 5, buyout = 400 } })
 assert(agg[2770].min == 80 and agg[2770].qty == 25 and agg[2770].tiers[1].price == 80, "HV agrégé")
 -- Réserve Classic : ajoutée pour les objets sans recette scannée, jamais par-dessus une recette scannée du même objet.
@@ -463,11 +514,9 @@ local merged = ns.recipes()
 assert(merged[5] and not merged[9001], "barre de cuivre déjà scannée : la recette Classic ne la double pas")
 assert(merged[9002] and merged[9002].output == 4255 and merged[9002].reagents[1].qty == 9, "armure verte en cuir : recette Classic")
 HandshakeClassicRecipes = nil
-HandshakeDB.recipes[6] = { name = "Fonte du bronze", profession = "Minage", output = 2841, reagents = { { id = 2840, qty = 1 } } }
 local demo = ns.demoOrder("hasard")
 assert(demo.name == "Essai : au hasard" and #demo.lines == 1 and demo.lines[1].id == 2841, "essai : le bronze (son cuivre se fabrique)")
 assert(#ns.demoOrder().lines == 3 and ns.demoOrder("ceinture").lines[1].id == 10721, "essais choisis : le set, les ceintures")
-HandshakeDB.recipes[6] = nil
 print("Handshake : sans GameData OK")
 
 -- Identité complète : prénom, nom de famille (lu au serveur, jamais dans un message), royaume, identifiant.

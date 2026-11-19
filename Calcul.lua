@@ -1,7 +1,7 @@
 -- Handshake, « acheter ou fabriquer » : pour un objet et une quantité, le moins cher entre l'acheter (marchand
 -- ou hôtel des ventes) et le fabriquer, en redescendant dans les composants (barre de fer -> minerai de fer).
 --   /handshake ou /commande <lien, nom ou ID d'objet> [quantité] [tout]
--- Ouvre la fenêtre (Fenetre.lua). Les données : Donnees.lua (GameData s'il est là, sinon les siennes). Par défaut seules les recettes connues d'un de tes persos comptent ; « tout » ajoute celles vues mais pas apprises.
+-- Ouvre la fenêtre (Fenetre.lua). Les données : Donnees.lua (recettes par LibCommune ; le reste : GameData s'il est là, sinon les siennes). Par défaut seules les recettes connues d'un de tes persos comptent ; « tout » ajoute celles vues mais pas apprises.
 -- Les prix de l'HV suivent les paliers du dernier scan : 20 barres coûtent les moins chères, puis les suivantes.
 local _, ns = ...
 
@@ -46,8 +46,8 @@ ns.buyCost = buyCost
 
 local function knownRecipes()
   local known = {}
-  for _, c in pairs(ns.chars()) do
-    for _, p in pairs(c.recipes or {}) do
+  for _, metiers in pairs(ns.knownRecipes()) do
+    for _, p in pairs(metiers) do
       for key in pairs(p.known or {}) do known[key] = true end
     end
   end
