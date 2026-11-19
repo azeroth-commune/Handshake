@@ -25,8 +25,18 @@ local function house() return GetRealmName() .. "-" .. UnitFactionGroup("player"
 -- Recettes : celles relevées dans les fenêtres de métier (par la lib commune), complétées par la réserve Classic
 -- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
 local classic -- la réserve, mise en forme une fois
+local nomsDemandes = {} -- recettes dont on a déjà demandé les noms d'objets
 function ns.recipes()
   local own = recettesConnues().recettes
+  if not gd() then -- sans GameData, personne d'autre ne demande ces noms au serveur
+    for k, r in pairs(own) do
+      if not nomsDemandes[k] then
+        nomsDemandes[k] = true
+        if r.output then ns.rememberItem(r.output) end
+        for _, rg in ipairs(r.reagents or {}) do ns.rememberItem(rg.id) end
+      end
+    end
+  end
   if not HandshakeClassicRecipes then return own end
   if not classic then
     classic = {}
@@ -216,6 +226,12 @@ local function readReplicate()
   step()
 end
 
+-- Les recettes relevées ne se sauvegardent plus ici (ADR 0001 de l'atelier) : on purge celles d'un Handshake d'avant.
+function ns.purgerAnciensReleves()
+  HandshakeDB.recipes = nil
+  for _, c in pairs(HandshakeDB.chars or {}) do c.recipes = nil end
+end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:SetScript("OnEvent", function(_, event, a1)
@@ -223,6 +239,7 @@ f:SetScript("OnEvent", function(_, event, a1)
     if a1 ~= "Handshake" then return end
     HandshakeDB = HandshakeDB or {}
     for _, k in ipairs({ "chars", "items", "market" }) do HandshakeDB[k] = HandshakeDB[k] or {} end -- plus de « recipes » : la lib
+    ns.purgerAnciensReleves()
     if gd() then return end -- GameData lit tout ça pour nous
     for _, e in ipairs({ "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
       "REPLICATE_ITEM_LIST_UPDATE", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED", "ITEM_DATA_LOAD_RESULT" }) do

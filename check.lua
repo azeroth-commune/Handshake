@@ -472,8 +472,12 @@ print("Handshake : recettes connues avec GameData OK")
 -- Handshake seul (sans GameData) : les recettes viennent du relevé de repli de la lib (fenêtre de métier ouverte),
 -- jamais écrites dans HandshakeDB ; les autres données (objets, HV) restent dans ses propres tables.
 GameDataAPI = nil
-local anciennes = { [1] = { name = "vieux relevé" } }
-HandshakeDB.recipes = anciennes -- relevé sauvegardé par un Handshake d'avant : laissé tel quel, plus lu
+-- Relevés sauvegardés par un Handshake d'avant (recettes, recettes connues des persos) : purgés au chargement (ADR 0001).
+HandshakeDB.recipes = { [1] = { name = "vieux relevé" } }
+HandshakeDB.chars = { ["Vieux-Perso"] = { recipes = { Forge = { known = { [1] = 1 } } }, bags = { [2770] = 3 } } }
+ns.purgerAnciensReleves()
+assert(HandshakeDB.recipes == nil and HandshakeDB.chars["Vieux-Perso"].recipes == nil, "anciens relevés de recettes purgés")
+assert(HandshakeDB.chars["Vieux-Perso"].bags[2770] == 3, "le reste des persos (sacs) n'est pas touché")
 HandshakeDB.chars = {}
 assert(not ns.recipes()[5] and not next(ns.knownRecipes()), "rien de relevé cette session")
 UnitName = function() return "Belegard", "Marteaudefer" end
@@ -488,10 +492,16 @@ C_TradeSkillUI = {
 C_Timer.After = function(_, fn) fn() end
 libCadre.onEvent(libCadre, "TRADE_SKILL_LIST_UPDATE")
 C_Timer.After = noop
+-- Les noms des produits et composants des recettes relevées sont demandés au serveur (comme l'ancien relevé de Handshake).
+local demandes = {}
+C_Item.RequestLoadItemDataByID = function(id) demandes[id] = true end
+ns.recipes()
+assert(demandes[2840] and demandes[2770] and demandes[2841], "noms des produits et composants demandés au serveur")
+C_Item.RequestLoadItemDataByID = nil
 HandshakeDB.items = { [2840] = { name = "Barre de cuivre" } }
 assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "relevé de repli")
 assert(ns.knownRecipes()[ns.charKey()].Minage.known[5] and not ns.knownRecipes()[ns.charKey()].Minage.known[6], "recettes connues du perso")
-assert(HandshakeDB.recipes == anciennes and not anciennes[5] and not anciennes[6], "rien écrit dans HandshakeDB.recipes")
+assert(HandshakeDB.recipes == nil, "rien écrit dans HandshakeDB.recipes")
 assert(next(HandshakeDB.chars) == nil, "rien écrit dans HandshakeDB.chars (recettes connues comprises)")
 local moi = ns.crafters()[1]
 assert(moi.key == ns.charKey() and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
