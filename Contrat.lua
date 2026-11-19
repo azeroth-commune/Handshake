@@ -154,19 +154,19 @@ end
 --   manquants : combien n'ont pas de prix (estimation incomplète) ; ecart : caution − composants, en % des composants ;
 --   alerte : au-delà de 10 % dans le sens où je perds (client : caution trop basse ; artisan : trop haute) ; perte : ce
 --   que je perds au plus si l'autre disparaît après l'étape 1 ; valeur : ce que valent les objets livrés (hors sans prix).
-local function estimate(list, items)
+local function estimate(list, items, vendors)
   local total, missing = 0, 0
   for _, l in ipairs(list) do
-    local cost = ns.buyCost(l.id, l.qty, items)
+    local cost = ns.buyCost(l.id, l.qty, items, vendors)
     if cost then total = total + cost else missing = missing + 1 end
   end
   return total, missing
 end
 function ns.ctEstimation(c, me)
   local m = ns.market()
-  local items, artisan, caution = m and m.items, me == c.artisan, ns.ctTotal(c.m)
-  local e = { scanned = m and m.scanned, valeur = (estimate(c.o, items)) }
-  e.composants, e.manquants = estimate(c.m, items)
+  local items, artisan, caution, vendors = m and m.items, me == c.artisan, ns.ctTotal(c.m), ns.vendorPrices()
+  local e = { scanned = m and (m.scanned or m.source), valeur = (estimate(c.o, items, vendors)) }
+  e.composants, e.manquants = estimate(c.m, items, vendors)
   e.ecart = e.composants > 0 and (caution - e.composants) / e.composants * 100 or 0
   e.alerte = artisan and e.ecart > 10 or not artisan and e.ecart < -10
   e.perte = math.max(0, artisan and caution - e.composants or e.composants - caution)
@@ -414,10 +414,10 @@ end
 local function demandeTerms(order, keep)
   local res = ns.projetDemande(order)
   local market = ns.market()
-  local items = market and market.items
+  local items, vendors = market and market.items, ns.vendorPrices()
   local m, unit = {}, {}
   for _, a in ipairs(ns.demandeApports(res)) do
-    local cost = ns.buyCost(a.id, a.qty, items)
+    local cost = ns.buyCost(a.id, a.qty, items, vendors)
     unit[a.id] = keep and keep[a.id] or cost and math.floor(cost / a.qty + 0.5) or 0
     m[#m + 1] = { id = a.id, qty = a.qty, unit = unit[a.id] }
   end

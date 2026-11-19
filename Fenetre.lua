@@ -671,7 +671,8 @@ local function refresh()
   for i = usedLines + 1, #lines do lines[i]:Hide() end
   for i = usedLabels + 1, #labels do labels[i]:Hide() end
 
-  frame.status:SetText((market and ("HV du " .. market.scanned) or "HV jamais scanné : ouvre l'hôtel des ventes")
+  frame.apportGameData:SetText(ns.apportGameData() or "")
+  frame.status:SetText(ns.texteHV(market)
     .. " · « + » décompose, « – » achète tout fait (violet = ton choix) · molette : zoom, glisser : déplacer, clic milieu : ajuster")
 end
 ns.refreshCraftWindow = refresh
@@ -960,6 +961,12 @@ local function build()
     cb:SetScript("OnClick", function(self) opts()[o[1]] = self:GetChecked() and true or false; refresh() end)
     prev = cb
   end
+  -- Sans GameData : ce qu'il apporterait (rerolls, banque, HV), à la suite des options.
+  frame.apportGameData = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  frame.apportGameData:SetPoint("LEFT", prev.label, "RIGHT", 16, 0)
+  frame.apportGameData:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+  frame.apportGameData:SetJustifyH("LEFT")
+  frame.apportGameData:SetWordWrap(true)
 
   -- Légende des couleurs
   local legend = { { COLORS.target, "commandé" }, { COLORS.apport, "fourni par toi" }, { COLORS.fabriquer, "à fabriquer" }, { COLORS[1], "sacs" }, { COLORS[2], "banque" },

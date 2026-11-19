@@ -1,33 +1,38 @@
 -- Handshake, « acheter ou fabriquer » : pour un objet et une quantité, le moins cher entre l'acheter (marchand
 -- ou hôtel des ventes) et le fabriquer, en redescendant dans les composants (barre de fer -> minerai de fer).
 --   /handshake ou /commande <lien, nom ou ID d'objet> [quantité] [tout]
--- Ouvre la fenêtre (Fenetre.lua). Les données : Donnees.lua (recettes par LibCommune ; le reste : GameData s'il est là, sinon les siennes). Par défaut seules les recettes connues d'un de tes persos comptent ; « tout » ajoute celles vues mais pas apprises.
+-- Ouvre la fenêtre (Fenetre.lua). Les données : Donnees.lua (toutes par LibCommune, avec ou sans GameData). Par défaut seules les recettes connues d'un de tes persos comptent ; « tout » ajoute celles vues mais pas apprises.
 -- Les prix de l'HV suivent les paliers du dernier scan : 20 barres coûtent les moins chères, puis les suivantes.
 local _, ns = ...
 
 local MAX_DEPTH = 10 -- garde-fou ; les boucles (A fait B fait A) sont coupées par path
 
 
--- Prix d'achat de qty objets : le marchand le moins cher (stock illimité, payé en or), sinon l'HV palier par palier.
--- Renvoie coût, source, et « partial » si l'HV n'en a pas assez (le reste est compté au dernier prix vu).
-local function vendorUnit(id)
-  local best
+-- Le prix unitaire marchand le plus bas de chaque objet (stock illimité, payé en or) : { [id] = prix }. Lu une fois
+-- par calcul et passé à buyCost (la lib refait la liste des marchands à chaque lecture).
+function ns.vendorPrices()
+  local best = {}
   for _, v in pairs(ns.vendors()) do
     for _, it in ipairs(v.items or {}) do
-      if it.id == id and it.price and it.price > 0 and not it.limited and not it.cost_items then
+      if it.id and it.price and it.price > 0 and not it.limited and not it.cost_items then
         local unit = it.price / math.max(1, it.stack or 1)
-        if not best or unit < best then best = unit end
+        if not best[it.id] or unit < best[it.id] then best[it.id] = unit end
       end
     end
   end
   return best
 end
 
-local function buyCost(id, qty, market)
-  local v = vendorUnit(id)
+-- Prix d'achat de qty objets : le marchand le moins cher, sinon l'HV palier par palier (sans paliers, un fournisseur
+-- comme Auctionator : son prix le plus bas pour tout). Renvoie coût, source, et « partial » si l'HV n'en a pas assez
+-- (le reste est compté au dernier prix vu). vendors : ns.vendorPrices() (lu ici s'il manque).
+local function buyCost(id, qty, market, vendors)
+  local v = (vendors or ns.vendorPrices())[id]
   local m = market and market[id]
   local ah, partial
-  if m and m.tiers then
+  if m and not m.tiers and m.min then
+    ah, partial = m.min * qty, m.qty ~= nil and m.qty < qty
+  elseif m and m.tiers then
     ah, partial = 0, false
     local left = qty
     for _, t in ipairs(m.tiers) do
@@ -103,7 +108,7 @@ local function plan(id, qty, ctx, depth, path)
   else have, need = take(ctx.stock, id, qty) end
   local node = { id = id, qty = qty, have = have, need = need }
   if need == 0 then node.cost, node.how, node.craftable = 0, "stock", canCraft or nil return node end
-  local cost, how, partial = buyCost(id, need, ctx.market)
+  local cost, how, partial = buyCost(id, need, ctx.market, ctx.vendors)
   node.cost, node.how, node.partial, node.buy = cost, how, partial, cost
   if depth >= MAX_DEPTH or path[id] or not ctx.by[id] then return node end
   node.craftable = true
@@ -158,7 +163,8 @@ local function shopping(p, out)
 end
 ns.shopping = shopping
 
--- Le stock selon les options : mes sacs (lus à l'instant), ma banque (dernier passage), mes autres persos.
+-- Le stock selon les options : mes sacs (lus à l'instant), ma banque (dernier passage ; sans GameData, vue cette
+-- session), mes autres persos (GameData).
 local function buildStock(opts)
   if not (opts.bags or opts.bank or opts.alts) then return nil end
   local stock = {}
@@ -172,11 +178,11 @@ local function buildStock(opts)
       end
     end
   end
-  local me = ns.charKey()
-  if opts.bags then add(ns.containers(ns.isBag), 1) end
-  if opts.bank then add(ns.chars()[me] and ns.chars()[me].bank, 2) end
+  local me, inv = ns.charKey(), ns.inventaires()
+  if opts.bags then add(ns.mesSacs(), 1) end
+  if opts.bank then add(inv[me] and inv[me].bank, 2) end
   if opts.alts then
-    for key, c in pairs(ns.chars()) do
+    for key, c in pairs(inv) do
       if key ~= me then add(c.bags, 3); add(c.bank, 3) end
     end
   end
@@ -185,12 +191,12 @@ end
 
 -- Calcul complet d'une ligne d'un projet (Projet.lua), avec ses apports et ses choix de case.
 -- stock : celui laissé par la ligne précédente (nil = le construire) ; il est renvoyé pour la suivante.
-function ns.craftPlan(id, qty, opts, stock, apports, choix)
+function ns.craftPlan(id, qty, opts, stock, apports, choix, vendors)
   local market = ns.market()
   local ctx = { market = market and market.items, by = recipesByOutput(true, knownRecipes()), unlearned = opts.unlearned, stock = stock or buildStock(opts),
-    force = choix, apports = apports }
+    force = choix, apports = apports, vendors = vendors or ns.vendorPrices() }
   local node = plan(id, qty, ctx, 0, {})
-  return node, market, ctx.stock
+  return node, market, ctx.stock, ctx.vendors
 end
 
 function ns.costCommand(args)
