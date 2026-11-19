@@ -126,18 +126,17 @@ end
 
 -- Une commande telle qu'elle partirait : { part ("tout le projet" ou le métier), bloc, player, tip, lines, apports,
 -- choix, reponse, vide }, la forme qu'attendent ns.ctFromDemande et ns.sendOrder. Pas envoyée, elle est une vue sur le
--- projet, recalculée à chaque appel, rien n'est recopié : res = ns.projetArbre(p) à jour (calculé sinon). Une commande
--- de bloc livre ce que le bloc produit ; ses apports = ce qui entre dans le bloc (les livraisons des autres blocs) et
--- mes apports sous ses cases. Si le bloc a disparu (tout acheté…), elle reste, vide.
-function ns.projetCommande(p, i, res)
-  local c = commandes(p)[i or 1]
-  if not c then return nil end
+-- projet, recalculée à chaque appel, rien n'est recopié. Une commande de bloc livre ce que le bloc produit ; ses apports
+-- = ce qui entre dans le bloc (les livraisons des autres blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de
+-- la demande (dem = ns.projetDemande(p), aucun stock déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que
+-- soit le stock affiché dans la fenêtre. Si le bloc a disparu (tout acheté…), elle reste, vide.
+local function vue(p, c, dem)
   local v = { part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix }
   if not c.bloc then
     v.lines, v.apports, v.reponse = p.lines, p.apports, p.reponse
   else
     v.lines, v.apports = {}, {}
-    local bloc = (res or ns.projetArbre(p)).blocDe[c.bloc]
+    local bloc = dem().blocDe[c.bloc]
     for _, id in ipairs(bloc and bloc.deliver or {}) do v.lines[#v.lines + 1] = { id = id, qty = bloc.qty[id] } end
     for id in pairs(bloc and bloc.inputs or {}) do v.apports[id] = true end
     for _, n in ipairs(bloc and bloc.cases or {}) do
@@ -148,9 +147,21 @@ function ns.projetCommande(p, i, res)
   return v
 end
 
-function ns.projetCommandes(p, res)
-  local out = {}
-  for i in ipairs(commandes(p)) do out[i] = ns.projetCommande(p, i, res) end
+-- L'arbre de la demande, calculé au plus une fois et seulement si une commande de bloc le lit.
+-- ponytail: recalculé à chaque appel (quelques ms) ; un cache le jour où la fenêtre rame
+local function demandeDe(p)
+  local dem
+  return function() dem = dem or ns.projetDemande(p) return dem end
+end
+
+function ns.projetCommande(p, i)
+  local c = commandes(p)[i or 1]
+  return c and vue(p, c, demandeDe(p))
+end
+
+function ns.projetCommandes(p)
+  local out, dem = {}, demandeDe(p)
+  for i, c in ipairs(commandes(p)) do out[i] = vue(p, c, dem) end
   return out
 end
 

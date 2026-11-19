@@ -68,9 +68,7 @@ local function laCommande()
   if choisie.p ~= projet() then choisie.p, choisie.i = projet(), 1 end
   return choisie.i
 end
-local dernier = {} -- le dernier arbre calculé (res) et son projet (p) : les commandes de bloc s'y lisent
-local function arbre() return dernier.p == projet() and dernier.res or nil end
-local function commande() return ns.projetCommande(projet(), laCommande(), arbre()) end
+local function commande() return ns.projetCommande(projet(), laCommande()) end
 
 ---------------------------------------------------------------------------------------------------
 -- Hauteurs. Chaque case (ou relais) vise le milieu de ses voisins, sans chevauchement (de gauche à droite, puis retour).
@@ -469,7 +467,6 @@ end
 local function refresh()
   if not (frame and frame:IsShown()) then return end
   local res = ns.projetArbre(projet())
-  dernier.p, dernier.res = projet(), res
   local roots, market, total, incomplete, g = res.roots, res.market, res.total, res.incomplete, ns.dessinArbre(res)
   if frame.syncOrder then frame.syncOrder() end
   if ns.refreshNeeds then ns.refreshNeeds(res) end
@@ -839,7 +836,7 @@ local function build()
   local cmdB = {}
   frame.syncOrder = function()
     local o, sel = projet(), laCommande()
-    local vues = ns.projetCommandes(o, arbre())
+    local vues = ns.projetCommandes(o)
     local c = vues[sel]
     if not orderName:HasFocus() then orderName:SetText(o.name or "") end
     if not player:HasFocus() then player:SetText(c.player or "") end
