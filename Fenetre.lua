@@ -833,7 +833,7 @@ local function build()
   hint:SetText("Ctrl+clic sur une case : je la fournis")
   local contractB -- plus bas, sur la ligne d'ajout
   -- Les commandes du projet, une par bouton : sa part, son artisan et son offre, ou « vide » (son bloc a disparu), puis
-  -- son état (lu dans son contrat) ; clic = la choisir.
+  -- son état (lu dans son contrat), l'écart de sa caution à mon estimation (P8, rouge au-delà du seuil) ; clic = la choisir.
   local cmdL = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   cmdL:SetPoint("TOPLEFT", 14, -164)
   cmdL:SetText("Commandes :")
@@ -877,7 +877,9 @@ local function build()
       -- ponytail: une seule ligne ; au-delà de 4 ou 5 commandes elle dépasse à droite, passer à deux lignes alors
       local text = ("%s · %s%s%s"):format(v.reponse and "réponse" or v.part, v.vide and "vide" or (v.player or "artisan ?"),
         not v.vide and v.tip and v.tip > 0 and (" · " .. ns.moneyShort(v.tip)) or "", v.etat and (" · " .. v.etat) or "")
-      b:SetText((i == sel and ("|cffa98fff" .. text .. "|r") or text) .. (v.ecart and (" · |cffe6994d" .. v.ecart .. "|r") or ""))
+      local prix = v.incomplet and " · |cffe6994destimation incomplète|r"
+        or v.ecartPrix and (" · caution %s%+.0f %%|r"):format(v.alertePrix and "|cffe64d4d" or "|cff59cc73", v.ecartPrix) or ""
+      b:SetText((i == sel and ("|cffa98fff" .. text .. "|r") or text) .. prix .. (v.ecart and (" · |cffe6994d" .. v.ecart .. "|r") or ""))
       b:SetWidth(b:GetTextWidth() + 24)
       b:Show()
       prev = b

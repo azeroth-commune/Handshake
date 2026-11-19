@@ -230,9 +230,12 @@ end
 -- Une commande telle qu'elle partirait : { part ("tout le projet" ou le métier), bloc, player, tip, lines, apports,
 -- choix, reponse, vide }, la forme qu'attendent ns.ctFromDemande et ns.sendOrder. Pas envoyée, elle est une vue sur le
 -- projet (part), recalculée à chaque appel, rien n'est recopié.
--- Envoyée, tant que son contrat prend une nouvelle version (envoyé, contre-proposé), v.ecart dit si sa part du projet a
--- changé depuis ; un brouillon, s'il ne suit plus le projet. Refusée, retirée ou échue : v.recommander, elle se commande
--- de nouveau (ns.projetRecommander).
+-- Envoyée, tant que son contrat prend une nouvelle version (envoyé, contre-proposé), v.ecart dit si sa part du projet ne
+-- correspond plus au contrat ; un brouillon, s'il ne suit plus le projet. L'écart est constaté, jamais expliqué (#18) : le
+-- marché, l'autre joueur ou moi, la page ne peut pas savoir. Envoyée avec des apports : sa caution contre MON estimation
+-- actuelle (P8, ns.ctEstimation, la même que la fiche du contrat) : v.ecartPrix en %, v.alertePrix au-delà du seuil, ou
+-- v.incomplet (un composant sans prix connu : pas de pourcentage faux). Refusée, retirée ou échue : v.recommander, elle se
+-- commande de nouveau (ns.projetRecommander).
 local FINIE = { refuse = true, retire = true, echu = true }
 local function vue(p, c, dem)
   local v = { id = c.id, part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
@@ -243,7 +246,12 @@ local function vue(p, c, dem)
     for _, l in ipairs(ct.m) do v.apports[l.id] = true end
     local s = ns.ctStatus(ct)
     if (s == "envoye" or s == "a_signer") and ecart(part(p, c, dem, { choix = p.choix }), ct) then
-      v.ecart = s == "envoye" and "a changé depuis la demande" or "diffère de sa contre-proposition"
+      v.ecart = "ne correspond plus à la demande"
+    end
+    if #ct.m > 0 then
+      local e = ns.ctEstimation(ct, ns.me())
+      v.incomplet = e.manquants > 0
+      if not v.incomplet then v.ecartPrix, v.alertePrix = e.ecart, e.alerte end
     end
     v.recommander = FINIE[s]
   else

@@ -722,7 +722,10 @@ print("Handshake : envoyer une commande (demande figée, état lu dans le contra
 -- Écart et nouvelle version (#8) : une commande envoyée ne bouge jamais d'elle-même ; quand la part du projet qu'elle vise
 -- change, l'écart est signalé (pas quand le changement est ailleurs) ; « Nouvelle version » la renvoie en contre-
 -- proposition, dont le différentiel est l'écart. Refusée, retirée ou échue, elle se commande de nouveau.
+-- L'écart est constaté, jamais expliqué (#18) : un libellé neutre, et l'écart de prix chiffré contre mon scan.
 as(BOB)
+C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
+GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [2841] = { tiers = { { price = 100, qty = 999 } } } } } }
 do
   local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
   ns.projetChoix(p, 2841, "fabriquer")
@@ -743,9 +746,25 @@ do
   local cm = envoyer(m)
   assert(ns.ctPropose(cm))
   assert(not cmd(f).ecart and not cmd(m).ecart, "envoyées, projet inchangé : pas d'écart")
+  -- Écart de prix (#18) : la caution du contrat contre MON estimation actuelle, celle de la fiche (P8). Le marché bouge,
+  -- le pourcentage suit, sans que le projet change ; un composant sans prix connu : pas de pourcentage.
+  local barres = GameDataMarket["R-Alliance"].items[2841]
+  assert(cmd(f).ecartPrix == 0 and not cmd(f).alertePrix and not cmd(f).incomplet, "caution = mon estimation : 0 %")
+  barres.tiers[1].price = 150
+  assert(math.floor(cmd(f).ecartPrix + 0.5) == -33 and cmd(f).alertePrix, "le marché monte : caution trop basse pour moi, en rouge")
+  assert(not cmd(f).ecart, "le prix n'est pas un écart de contenu")
+  assert(ns.ctDescribe(cf, BOB):find(("caution |cffe64d4d%+.0f %%|r"):format(cmd(f).ecartPrix), 1, true), "le même chiffre que la fiche")
+  barres.tiers[1].price = 105
+  assert(math.floor(cmd(f).ecartPrix + 0.5) == -5 and not cmd(f).alertePrix, "sous le seuil de 10 % : pas d'alerte")
+  GameDataMarket["R-Alliance"].items[2841] = nil
+  assert(cmd(f).incomplet and cmd(f).ecartPrix == nil, "sans prix connu : estimation incomplète, pas de pourcentage")
+  assert(ns.ctDescribe(cf, BOB):find("1 composant(s) sans prix connu", 1, true), "la fiche le dit aussi")
+  GameDataMarket["R-Alliance"].items[2841] = barres
+  barres.tiers[1].price = 100
+  assert(cmd(m).ecartPrix == nil and not cmd(m).incomplet, "rien d'apporté : pas de caution à estimer")
   -- Ma perle (apport) sous les cases de la forge : la part de la forge change, pas celle du minage.
   ns.projetApport(p, 5500, true)
-  assert(cmd(f).ecart == "a changé depuis la demande", "apport dans la forge : écart signalé")
+  assert(cmd(f).ecart == "ne correspond plus à la demande", "apport dans la forge : écart signalé, sans cause")
   assert(not cmd(m).ecart, "changement ailleurs : rien pour le minage")
   -- Aucune version ne part d'elle-même : le projet a beau changer et la page se redessiner, Belegard a toujours la v1.
   ns.projetCommandes(p)
@@ -763,7 +782,6 @@ do
   assert(recu.m[1].unit == recu.prev.m[1].unit, "la caution déjà au contrat reste")
   local offre = function(c) return ns.ctTotal(c.o) - ns.ctTotal(c.m) end
   assert(math.abs(offre(recu) - offre(recu.prev)) <= 1, "l'offre reste celle du contrat (à l'arrondi près)")
-  C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
   local diff = ns.ctDescribe(recu, BEL)
   assert(diff:find("Changé depuis la v1") and diff:find("absent %-> 1"), "le différentiel montre la perle ajoutée")
   as(BOB)
@@ -775,7 +793,7 @@ do
   assert(cmd(f).etat == "contre-proposée" and not cmd(f).ecart, "il change son prix : pas d'écart")
   -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
   ns.projetQuantite(p, 2, 2)
-  assert(cmd(m).ecart == "a changé depuis la demande" and cmd(f).ecart == "diffère de sa contre-proposition", "quantité : les deux")
+  assert(cmd(m).ecart == "ne correspond plus à la demande" and cmd(f).ecart == cmd(m).ecart, "quantité : les deux, même libellé")
   -- Belegard refuse le minage : figé, pas de nouvelle version, mais il se commande de nouveau (une commande vivante,
   -- reprise tant qu'elle n'est pas partie).
   as(BEL)
