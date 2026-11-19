@@ -94,3 +94,41 @@ test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat
     assertTrue(commandes()[2]:GetText():find("pas envoyée", 1, true) ~= nil, "l'autre commande n'est pas partie")
     assertTrue(bouton("Voir la demande") ~= nil, "envoyée : on la revoit, on ne la refait pas")
 end) end)
+
+-- Écart (#8) : la part d'une commande envoyée change, l'écart s'affiche à côté d'elle avec « Nouvelle version », qui la
+-- renvoie (v2) seulement sur ce clic. Retirée, elle se commande de nouveau.
+test("Une commande envoyée signale l'écart et repart en nouvelle version sur un clic", function() sansRecettes(function()
+    SlashCmdList.HANDSHAKE("demo ceinture")
+    local p = HandshakeDB.projets[#HandshakeDB.projets]
+    p.commandes[1].player = "Bel"
+    commandes()[1]:Click()
+    bouton("Préparer la demande"):Click()
+    for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
+        if c.GetText and c:GetText() == "Envoyer la proposition" then c:Click() end
+    end
+    HandshakeContratsFrame:Hide()
+    local ct = HandshakeDB.contracts[p.commandes[1].contrat]
+    assertEquals("envoye", ct.status)
+    assertTrue(commandes()[1]:GetText():find("a changé", 1, true) == nil, "rien n'a changé")
+    p.lines[1].qty = p.lines[1].qty + 1 -- une ligne de plus à fabriquer : la part de « tout le projet » change
+    commandes()[1]:Click()
+    local texte = commandes()[1]:GetText()
+    assertTrue(texte:find("a changé depuis la demande", 1, true) ~= nil, texte)
+    assertEquals("1", ct.v, "rien ne part sans clic")
+    bouton("Nouvelle version"):Click()
+    local v2 = HandshakeDB.contracts[p.commandes[1].contrat]
+    assertEquals("2", v2.v)
+    assertEquals("1", v2.prev.v)
+    assertTrue(HandshakeContratsFrame:IsShown(), "la nouvelle version s'ouvre dans les contrats, différentiel compris")
+    HandshakeContratsFrame:Hide()
+    assertTrue(commandes()[1]:GetText():find("a changé", 1, true) == nil, "partie : plus d'écart")
+    local nv = bouton("Nouvelle version")
+    assertTrue(nv == nil or not nv:IsShown(), "plus de « Nouvelle version »")
+    v2.status = "retire" -- (comme si je l'avais retirée dans les contrats)
+    commandes()[1]:Click()
+    local nb = #commandes()
+    bouton("Commander de nouveau"):Click()
+    assertEquals(nb + 1, #commandes())
+    assertTrue(commandes()[nb + 1]:GetText():find("tout le projet", 1, true) ~= nil, commandes()[nb + 1]:GetText())
+    assertTrue(commandes()[nb + 1]:GetText():find("pas envoyée", 1, true) ~= nil, "une commande vivante")
+end) end)

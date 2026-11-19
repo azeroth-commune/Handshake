@@ -306,12 +306,26 @@ function ns.ctReceive(sender, body)
 end
 
 -- Mes actions
+-- Tout ce qui part (v1, contre-proposition, nouvelle version) passe d'abord nos propres bornes (n° 11, 14, 15) : les listes
+-- relues par la lecture stricte, montants, version et échéance comme les vérifie celui qui reçoit.
+local function horsBornes(c)
+  local m, o = parseList(listText(c.m)), parseList(listText(c.o))
+  if not (m and o) or #o == 0 then return "termes hors bornes (30 lignes, 1000 par ligne au plus)" end
+  if ns.ctTotal(m) > MAX_TOTAL or ns.ctTotal(o) > MAX_TOTAL then return "montant trop élevé" end
+  if tonumber(c.v) > 99 then return "trop de versions" end
+  if c.d < now() or c.d > now() + MAX_DAYS * 86400 then return "échéance dépassée ou à plus de 30 jours" end
+end
+
+-- Renvoie le contrat envoyé, ou nil, raison (rien n'est enregistré ni envoyé).
 function ns.ctPropose(c)
+  local err = horsBornes(c)
+  if err then return nil, err end
   c.hash, c.author, c.status = ns.ctHash(ns.ctCanonical(c)), ns.me(), "envoye"
   local otherGUID = c.client == ns.me() and c.artisanGUID or c.clientGUID
   if otherGUID ~= "0" and not c.peer then c.peer = { guid = otherGUID, verified = ns.knownGUID[ns.other(c, ns.me())] == otherGUID or nil } end
   store()[key(c)] = c
   send(ns.other(c, ns.me()), ns.ctCanonical(c))
+  return c
 end
 
 function ns.ctAccept(c, shownHash)
@@ -352,8 +366,7 @@ local function newVersion(c, m, o, d)
   local n = { origin = c.origin, id = c.id, v = tostring(tonumber(c.v) + 1), parent = c.hash, client = c.client, artisan = c.artisan,
     clientGUID = c.client == me and ns.myGUID() or peerGUID, artisanGUID = c.artisan == me and ns.myGUID() or peerGUID, peer = c.peer,
     m = m, o = o, d = d, prev = snapshot(c) }
-  ns.ctPropose(n)
-  return n
+  return ns.ctPropose(n)
 end
 function ns.ctCounter(c, caution, delivery, days)
   return newVersion(c, caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
@@ -429,6 +442,19 @@ function ns.ctReplyFromOrder(order)
   local m, o = demandeTerms(order, keep)
   if not m then return nil, o end
   if listText(m) == listText(c.m) and listText(o) == listText(c.o) then return nil, "rien n'a changé : signe-le dans Contrats" end
+  return newVersion(c, m, o, c.d)
+end
+
+-- « Nouvelle version » de ma demande c (#8, moi client) : ce que la commande order demande maintenant (ses lignes, ses
+-- apports, son offre), en contre-proposition. Les cautions déjà au contrat restent ; un apport ajouté est estimé à mon
+-- prix de marché.
+function ns.ctVersionDemande(c, order)
+  if c.client ~= ns.me() or (c.status ~= "envoye" and c.status ~= "a_signer") then return nil, "ce contrat ne prend plus de nouvelle version" end
+  if #order.lines == 0 then return nil, "la commande est vide : retire (ou refuse) la demande dans Contrats" end
+  local keep = {}
+  for _, l in ipairs(c.m) do keep[l.id] = l.unit end
+  local m, o = demandeTerms(order, keep)
+  if not m then return nil, o end
   return newVersion(c, m, o, c.d)
 end
 
