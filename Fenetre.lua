@@ -1,4 +1,4 @@
--- Handshake, la fenêtre (/commande) : un projet en haut (Projet.lua), son arbre par étages dessous.
+-- Handshake, la fenêtre (/commande) : un projet en haut (Projet.lua), la liste de ses commandes, son arbre par étages dessous.
 -- Colonne 0 : ce qu'on suit. Étage 1 : ce qu'il faut pour le fabriquer. Étage 2 : ce qu'il faut pour ces
 -- composants, etc. Une seule case par objet : la barre de bronze du marteau et de la dague, c'est la même case,
 -- rangée à l'étage le plus profond où elle sert.
@@ -61,6 +61,16 @@ local cards, lines, labels = {}, {}, {}
 local function opts() return HandshakeDB.options end
 local function projet() return ns.projetCourant() end
 local function replying() return projet().reponse ~= nil end -- « je réponds » : la demande d'un autre
+-- La commande choisie dans le projet affiché (1 = tout le projet) : Joueur, Offre, « Préparer la demande » et « En clair »
+-- portent sur elle. Un autre projet affiché : retour à 1.
+local choisie = {}
+local function laCommande()
+  if choisie.p ~= projet() then choisie.p, choisie.i = projet(), 1 end
+  return choisie.i
+end
+local dernier = {} -- le dernier arbre calculé (res) et son projet (p) : les commandes de bloc s'y lisent
+local function arbre() return dernier.p == projet() and dernier.res or nil end
+local function commande() return ns.projetCommande(projet(), laCommande(), arbre()) end
 
 ---------------------------------------------------------------------------------------------------
 -- Hauteurs. Chaque case (ou relais) vise le milieu de ses voisins, sans chevauchement (de gauche à droite, puis retour).
@@ -161,11 +171,13 @@ function ns.dessinArbre(res)
   local g = { nodes = list, edges = edges, cols = last + 1, byKey = res.caseDe, all = all, up = up, down = down,
     groups = res.blocs, groupOf = res.blocDe, livraisons = res.livraisons }
 
+  local blocOf = {}
+  for _, grp in ipairs(res.blocs) do for _, n in ipairs(grp.cases) do blocOf[n] = grp.key end end
   local sorted = {}
   for _, n in ipairs(all) do sorted[#sorted + 1] = n end
   table.sort(sorted, function(x, y) return x.col < y.col end)
   for _, n in ipairs(sorted) do
-    if n.made and n.made > 0 and n.recipe then n.band = n.recipe.profession or "Métier inconnu"
+    if blocOf[n] then n.band = blocOf[n]
     else
       n.band = "reste"
       for _, p in ipairs(up[n]) do if p.band ~= nil then n.band = p.band break end end
@@ -457,6 +469,7 @@ end
 local function refresh()
   if not (frame and frame:IsShown()) then return end
   local res = ns.projetArbre(projet())
+  dernier.p, dernier.res = projet(), res
   local roots, market, total, incomplete, g = res.roots, res.market, res.total, res.incomplete, ns.dessinArbre(res)
   if frame.syncOrder then frame.syncOrder() end
   if ns.refreshNeeds then ns.refreshNeeds(res) end
@@ -476,10 +489,10 @@ local function refresh()
   else
     local o, cost = projet(), ns.moneyShort(total) .. (incomplete and " |cffe64d4d+ ?|r" or "")
     if o.reponse then -- ma part, mon prix, ce qui reste pour mon travail
-      local price = o.tip or 0
+      local price = ns.projetCommande(o).tip or 0
       header(1, 0, ("Ma part · %s · mon prix %s · travail %s"):format(cost, ns.moneyShort(price), ns.moneySigned(price - total)))
     else
-      header(1, 0, "Commande · " .. cost)
+      header(1, 0, "Projet · " .. cost)
     end
     for c = 1, g.cols - 1 do header(c + 1, spacing * c, "Étage " .. c) end
   end
@@ -544,7 +557,8 @@ local function refresh()
         GameTooltip:Show()
       end)
       b.hit:SetScript("OnLeave", function() GameTooltip:Hide() end)
-      -- « Commander » : tout le bloc en une commande — ce qu'il livre, et ce qu'il reçoit des autres blocs en apport.
+      -- « Commander » : tout le bloc en une commande du projet — ce qu'il livre, et ce qu'il reçoit des autres blocs en
+      -- apport. Elle s'ajoute à la liste des commandes, sur la même page.
       b.cmd = CreateFrame("Button", nil, b, "BackdropTemplate")
       b.cmd:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
       b.cmd:SetBackdropColor(0.16, 0.15, 0.25, 0.95)
@@ -561,14 +575,14 @@ local function refresh()
         local brought = {}
         for id in pairs(grp.inputs) do brought[#brought + 1] = ns.itemLabel(id) end
         if #brought > 0 then GameTooltip:AddLine("Tu fournis : " .. table.concat(brought, ", "), 0.3, 0.8, 0.85, true) end
-        GameTooltip:AddLine("Clic : une nouvelle commande avec tout ça (< et > pour revenir)", 0.66, 0.56, 1)
+        GameTooltip:AddLine("Clic : une commande de ce bloc, ajoutée aux commandes du projet", 0.66, 0.56, 1)
         GameTooltip:Show()
       end)
       b.cmd:SetScript("OnLeave", function() GameTooltip:Hide() end)
+      b.cmd:SetFontString(b.cmd.text) -- (GetText, pour les tests du simulateur)
       b.cmd:SetScript("OnClick", function()
-        local o = ns.projetDuBloc(projet(), b.grp)
-        local n = #o.lines
-        print(("Commandes : « %s » créée (%d objet%s) ; < et > pour revenir à la précédente."):format(o.name, n, n > 1 and "s" or ""))
+        choisie.p, choisie.i = projet(), ns.projetCommander(projet(), b.grp)
+        print(("Commandes : le bloc %s est dans les commandes du projet."):format(b.grp.key))
         ns.refreshCraftWindow()
       end)
       boxes[usedBoxes] = b
@@ -666,7 +680,7 @@ ns.refreshCraftWindow = refresh
 local function track(id, qty)
   if not id then return end
   if not ns.projetAjouter(projet(), id, qty) then
-    return print("Commandes : c'est sa demande, ce qu'il veut ne change pas ici (Nouvelle pour une commande à toi).")
+    return print("Commandes : c'est sa demande, ce qu'il veut ne change pas ici (Nouvelle pour un projet à toi).")
   end
   refresh()
 end
@@ -795,19 +809,20 @@ local function build()
   local newB = button("Nouvelle", 80, function() ns.nouveauProjet(); refresh() end)
   newB:SetPoint("LEFT", nextB, "RIGHT", 44, 0)
   local delB = button("Supprimer", 84, function()
-    if not IsShiftKeyDown() then return print("Commandes : Maj+clic sur « Supprimer » pour effacer cette commande.") end
+    if not IsShiftKeyDown() then return print("Commandes : Maj+clic sur « Supprimer » pour effacer ce projet.") end
     ns.supprimerProjet()
     refresh()
   end)
   delB:SetPoint("LEFT", newB, "RIGHT", 4, 0)
   local playerL = label("Joueur", delB, 16)
-  local player = input(120, function(v) ns.projetArtisan(projet(), v) end)
+  local player = input(120, function(v) ns.projetArtisan(projet(), v, laCommande()); frame.syncOrder() end)
   player:SetPoint("LEFT", playerL, "RIGHT", 10, 0)
   local tipL = label("Offre", player, 14)
   local tip = input(48, function(v)
     local n = tonumber((v:gsub(",", ".")))
-    ns.projetOffre(projet(), n and math.floor(n * 10000 + 0.5) or nil)
-    if replying() then return refresh() end -- l'en-tête montre ce qui reste pour mon travail
+    ns.projetOffre(projet(), n and math.floor(n * 10000 + 0.5) or nil, laCommande())
+    if replying() and laCommande() == 1 then return refresh() end -- l'en-tête montre ce qui reste pour mon travail
+    frame.syncOrder()
     if ns.refreshNeeds then ns.refreshNeeds() end
   end)
   tip:SetPoint("LEFT", tipL, "RIGHT", 10, 0)
@@ -816,16 +831,40 @@ local function build()
   hint:SetPoint("LEFT", poL, "RIGHT", 12, 0)
   hint:SetText("Ctrl+clic sur une case : je la fournis")
   local contractB -- plus bas, sur la ligne d'ajout
+  -- Les commandes du projet, une par bouton : sa part, son artisan et son offre, ou « vide » (son bloc a disparu) ;
+  -- clic = la choisir.
+  local cmdL = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  cmdL:SetPoint("TOPLEFT", 14, -164)
+  cmdL:SetText("Commandes :")
+  local cmdB = {}
   frame.syncOrder = function()
-    local o = projet()
+    local o, sel = projet(), laCommande()
+    local vues = ns.projetCommandes(o, arbre())
+    local c = vues[sel]
     if not orderName:HasFocus() then orderName:SetText(o.name or "") end
-    if not player:HasFocus() then player:SetText(o.player or "") end
-    if not tip:HasFocus() then tip:SetText(o.tip and o.tip > 0 and (ns.poText(o.tip):gsub(" po$", "")) or "") end
+    if not player:HasFocus() then player:SetText(c.player or "") end
+    if not tip:HasFocus() then tip:SetText(c.tip and c.tip > 0 and (ns.poText(c.tip):gsub(" po$", "")) or "") end
     count:SetText(("%d/%d"):format(ns.numeroProjet()))
-    tipL:SetText(o.reponse and "Mon prix" or "Offre")
+    tipL:SetText(c.reponse and "Mon prix" or "Offre")
     if frame.apportLegend then frame.apportLegend:SetText(o.reponse and "fourni par lui" or "fourni par toi") end
-    contractB:SetText(o.reponse and "Contre-proposer" or "Préparer la demande")
+    contractB:SetText(c.reponse and "Contre-proposer" or "Préparer la demande")
     hint:SetText(o.reponse and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
+    for i, v in ipairs(vues) do
+      local b = cmdB[i]
+      if not b then
+        b = button("", 60, function(self) choisie.p, choisie.i = projet(), self.i; frame.syncOrder() end)
+        b:SetPoint("LEFT", i == 1 and cmdL or cmdB[i - 1], "RIGHT", 6, 0)
+        cmdB[i] = b
+      end
+      b.i = i
+      -- ponytail: une seule ligne ; au-delà de 5 ou 6 blocs commandés elle dépasse à droite, passer à deux lignes alors
+      local text = ("%s · %s%s"):format(v.reponse and "réponse" or v.part, v.vide and "vide" or (v.player or "artisan ?"),
+        not v.vide and v.tip and v.tip > 0 and (" · " .. ns.moneyShort(v.tip)) or "")
+      b:SetText(i == sel and ("|cffa98fff" .. text .. "|r") or text)
+      b:SetWidth(b:GetTextWidth() + 24)
+      b:Show()
+    end
+    for i = #vues + 1, #cmdB do cmdB[i]:Hide() end
   end
 
   -- Ligne d'ajout : déposer un objet sur la case, ou taper son nom.
@@ -850,14 +889,14 @@ local function build()
   add:SetScript("OnClick", submit)
   local needsB = button("Besoins", 90, function() ns.toggleNeeds() end)
   needsB:SetPoint("TOPRIGHT", -14, -75)
-  local sendB = button("En clair", 90, function() ns.sendOrder(projet()) end)
+  local sendB = button("En clair", 90, function() ns.sendOrder(commande()) end)
   sendB:SetPoint("RIGHT", needsB, "LEFT", -6, 0)
   local importB = button("Importer", 90, function() ns.openImport() end)
   importB:SetPoint("RIGHT", sendB, "LEFT", -6, 0)
   contractB = button("Préparer la demande", 150, function()
-    local o = projet()
-    if not o.reponse then return ns.ctDraftFromDemande() end
-    local n, err = ns.ctReplyFromOrder(o)
+    local c = commande()
+    if not c.reponse then return ns.ctDraftFromDemande(c) end
+    local n, err = ns.ctReplyFromOrder(c)
     if not n then return print("|cffe64d4dContrats :|r " .. err .. ".") end
     ns.openContracts(ns.ctKey(n))
   end)
@@ -905,7 +944,7 @@ local function build()
 
   -- La zone de dessin : molette = zoom autour du curseur, glisser le fond = déplacer, clic du milieu = vue ajustée.
   scroll = CreateFrame("Frame", nil, frame)
-  scroll:SetPoint("TOPLEFT", 14, -156)
+  scroll:SetPoint("TOPLEFT", 14, -180)
   scroll:SetPoint("BOTTOMRIGHT", -14, 30)
   scroll:SetClipsChildren(true)
   content = CreateFrame("Frame", nil, scroll)

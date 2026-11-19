@@ -2,8 +2,9 @@
 -- (décomposer, acheter) et mes apports ; son arbre fusionné en cases (une par objet) et ses blocs (un par métier, avec
 -- qui peut les faire). Toute modification d'un projet passe par ce module ; la fenêtre (Fenetre.lua) ne fait que dessiner.
 -- Enregistrés dans HandshakeDB.projets[i] = { name, lines = { { id, qty } }, choix = { [id] = "fabriquer" | "acheter" },
---   apports = { [id] = true }, player (l'artisan), tip (l'offre, en cuivre), reponse (clé du contrat dont il est la
---   réponse), reponseHash, created } ; HandshakeDB.courant = le projet affiché.
+--   apports = { [id] = true }, commandes = { { bloc (le métier ; nil = tout le projet, toujours la 1re), player
+--   (l'artisan), tip (l'offre, en cuivre) } }, reponse (clé du contrat dont il est la réponse), reponseHash, created } ;
+--   HandshakeDB.courant = le projet affiché.
 local _, ns = ...
 
 local function db()
@@ -11,9 +12,17 @@ local function db()
   return HandshakeDB
 end
 
+-- Les commandes d'un projet. Un projet d'avant (19/11/2026) portait un artisan et une offre : ils deviennent sa
+-- commande « tout le projet » (nouveauProjet accepte encore player et tip, pour la même raison).
+local function commandes(p)
+  if not p.commandes then p.commandes, p.player, p.tip = { { player = p.player, tip = p.tip } }, nil, nil end
+  return p.commandes
+end
+
 function ns.nouveauProjet(p)
   p = p or {}
   p.lines = p.lines or {}
+  commandes(p)
   p.name = p.name or ("Projet du " .. date("%d/%m %H:%M"))
   p.created = time()
   local d = db()
@@ -51,11 +60,12 @@ function ns.projetReponse(c)
   for i, x in ipairs(db().projets) do if x.reponse == key then p, db().courant = x, i end end
   p = p or ns.nouveauProjet({ reponse = key })
   if p.reponseHash == c.hash then return p end -- même version : on garde ce que tu as changé
-  p.reponseHash, p.name, p.player = c.hash, "Réponse à " .. c.client:match("^[^%-]+"), c.client
+  local tout = commandes(p)[1]
+  p.reponseHash, p.name, tout.player = c.hash, "Réponse à " .. c.client:match("^[^%-]+"), c.client
   p.lines, p.apports = {}, nil
   for _, l in ipairs(c.o) do p.lines[#p.lines + 1] = { id = l.id, qty = l.qty } end
   for _, l in ipairs(c.m) do p.apports = p.apports or {}; p.apports[l.id] = true end
-  p.tip = math.max(0, ns.ctTotal(c.o) - ns.ctTotal(c.m))
+  tout.tip = math.max(0, ns.ctTotal(c.o) - ns.ctTotal(c.m))
   return p
 end
 
@@ -97,19 +107,51 @@ function ns.projetApport(p, id, oui)
 end
 
 function ns.projetRenommer(p, name) p.name = name end
-function ns.projetArtisan(p, name) p.player = name ~= "" and name or nil end
-function ns.projetOffre(p, cuivre) p.tip = cuivre end
 
--- « Commander » un bloc : un nouveau projet avec ce qu'il livre, ce qu'il reçoit des autres blocs en apports, et les
--- choix de case du projet d'où il vient.
-function ns.projetDuBloc(p, bloc)
-  local lines, apports, choix = {}, nil, nil
-  for _, id in ipairs(bloc.deliver) do lines[#lines + 1] = { id = id, qty = bloc.qty[id] } end
-  for id in pairs(bloc.inputs) do apports = apports or {}; apports[id] = true end
-  for id, c in pairs(p.choix or {}) do choix = choix or {}; choix[id] = c end
-  local nom = ns.itemLabel(lines[1].id):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-  return ns.nouveauProjet({ name = ("%s : %s%s"):format(bloc.key, nom, #lines > 1 and (" +" .. (#lines - 1)) or ""),
-    player = bloc.best, lines = lines, apports = apports, choix = choix })
+---------------------------------------------------------------------------------------------------
+-- Commandes (CONTEXT.md) : des parts du projet, chacune à un artisan, avec son offre. i = son rang (1 = tout le
+-- projet, par défaut). Dans une réponse, la 1re est la réponse elle-même (son artisan = le demandeur, son offre = mon
+-- prix) ; commander un de ses blocs, c'est le sous-traiter.
+function ns.projetArtisan(p, name, i) commandes(p)[i or 1].player = name ~= "" and name or nil end
+function ns.projetOffre(p, cuivre, i) commandes(p)[i or 1].tip = cuivre end
+
+-- « Commander » un bloc (res.blocs) : une commande de plus dans ce projet, à celui qui en connaît le plus ; le même
+-- bloc commandé deux fois redonne la même. Renvoie son rang.
+function ns.projetCommander(p, bloc)
+  local list = commandes(p)
+  for i, c in ipairs(list) do if c.bloc == bloc.key then return i end end
+  list[#list + 1] = { bloc = bloc.key, player = bloc.best }
+  return #list
+end
+
+-- Une commande telle qu'elle partirait : { part ("tout le projet" ou le métier), bloc, player, tip, lines, apports,
+-- choix, reponse, vide }, la forme qu'attendent ns.ctFromDemande et ns.sendOrder. Pas envoyée, elle est une vue sur le
+-- projet, recalculée à chaque appel, rien n'est recopié : res = ns.projetArbre(p) à jour (calculé sinon). Une commande
+-- de bloc livre ce que le bloc produit ; ses apports = ce qui entre dans le bloc (les livraisons des autres blocs) et
+-- mes apports sous ses cases. Si le bloc a disparu (tout acheté…), elle reste, vide.
+function ns.projetCommande(p, i, res)
+  local c = commandes(p)[i or 1]
+  if not c then return nil end
+  local v = { part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix }
+  if not c.bloc then
+    v.lines, v.apports, v.reponse = p.lines, p.apports, p.reponse
+  else
+    v.lines, v.apports = {}, {}
+    local bloc = (res or ns.projetArbre(p)).blocDe[c.bloc]
+    for _, id in ipairs(bloc and bloc.deliver or {}) do v.lines[#v.lines + 1] = { id = id, qty = bloc.qty[id] } end
+    for id in pairs(bloc and bloc.inputs or {}) do v.apports[id] = true end
+    for _, n in ipairs(bloc and bloc.cases or {}) do
+      for _, k in ipairs(n.children) do if k.apport > 0 then v.apports[k.id] = true end end
+    end
+  end
+  v.vide = #v.lines == 0
+  return v
+end
+
+function ns.projetCommandes(p, res)
+  local out = {}
+  for i in ipairs(commandes(p)) do out[i] = ns.projetCommande(p, i, res) end
+  return out
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -327,7 +369,8 @@ function ns.projetDemande(p) return ns.projetArbre(p, { unlearned = true }) end
 
 ---------------------------------------------------------------------------------------------------
 -- Migration des SavedVariables (19/11/2026) : chaque commande enregistrée devient un projet (artisan et offre repris
--- tels quels), une commande liée à un contrat devient une réponse, la table globale des choix (« force ») est jetée.
+-- tels quels, puis rangés dans sa commande « tout le projet » à la première lecture, voir commandes), une commande liée
+-- à un contrat devient une réponse, la table globale des choix (« force ») est jetée.
 -- old = GameDataDB d'avant le module (ses suivis deviennent un projet).
 function ns.migrerProjets(d, old)
   if not d.projets then

@@ -368,7 +368,8 @@ function ns.ctEditDraft(c, caution, delivery, days)
   if days then c.d = now() + math.floor(days * 86400) end
 end
 
--- Les termes d'une demande (CONCEPTION.md), calculés avec les choix de case de ce projet seulement :
+-- Les termes d'une demande (CONCEPTION.md) ; order = une commande (ns.projetCommande), calculée avec les choix de case
+-- de son projet seulement :
 --   m = les apports (case entière), unité = keep[id] (caution déjà au contrat) sinon leur prix de marché (mon scan) ;
 --   o = ce qui est voulu, payé par objet : sa part de caution + sa part de l'offre (order.tip), au prorata de
 --       l'estimation de la part de l'artisan pour chaque ligne.
@@ -414,7 +415,8 @@ function ns.ctFromDemande(order, days)
     clientGUID = ns.myGUID(), artisanGUID = ns.knownGUID[artisan] or "0", d = now() + math.floor((days or 3) * 86400) }
 end
 
--- « Je réponds » (l'artisan, depuis l'arbre de sa réponse) : ses apports et son prix, envoyés en nouvelle version.
+-- « Je réponds » (l'artisan, depuis l'arbre de sa réponse ; order = sa 1re commande) : ses apports et son prix, envoyés
+-- en nouvelle version.
 -- Les cautions déjà au contrat restent ; un apport qu'il ajoute est estimé à son prix de marché.
 function ns.ctReplyFromOrder(order)
   local c = order.reponse and store()[order.reponse]

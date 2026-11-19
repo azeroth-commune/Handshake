@@ -151,9 +151,38 @@ assert(forge.step == 2 and forge.qty[5541] == 1 and forge.qty[2870] == 1 and for
 local o = res.livraisons[1]
 assert(#res.livraisons == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt", "une livraison Minage -> Forge")
 assert(#o.lines == 1 and o.lines[1] == 2841 and o.qty[2841] == 30 and #o.edges == 2, "30 barres de bronze, deux liens regroupés")
--- « Commander » le bloc de la forge : un nouveau projet, le bronze en apport, à Bel.
-local cmd = ns.projetDuBloc(ns.projetCourant(), forge)
-assert(#cmd.lines == 2 and cmd.apports[2841] and cmd.player == "Bel" and ns.projetCourant() == cmd, "le bloc commandé devient le projet affiché")
+-- Commandes (#6) : « Commander » un bloc ajoute une commande au projet affiché, pas un nouveau projet. Elle livre ce
+-- que le bloc produit ; ses apports = ce qui entre dans le bloc (le bronze) + mes apports dans sa part (la perle).
+do
+  local p = ns.nouveauProjet({ player = "Moi", lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  ns.projetChoix(p, 2841, "fabriquer")
+  ns.projetApport(p, 5500, true)
+  local nb = select(2, ns.numeroProjet())
+  local function arbre() return ns.projetArbre(p, TOUT) end
+  local function vue(i) return ns.projetCommande(p, i, arbre()) end
+  local function qte(v, id) for _, l in ipairs(v.lines) do if l.id == id then return l.qty end end end
+  local function nbApports(v) local k = 0 for _ in pairs(v.apports or {}) do k = k + 1 end return k end
+  local tout = vue(1)
+  assert(tout.part == "tout le projet" and tout.player == "Moi" and #tout.lines == 2 and tout.apports[5500], "le projet entier : sa 1re commande")
+  local i = ns.projetCommander(p, arbre().blocDe.Forge)
+  assert(i == 2 and ns.projetCourant() == p and select(2, ns.numeroProjet()) == nb, "la commande s'ajoute au projet affiché")
+  local cf = vue(i)
+  assert(cf.part == "Forge" and cf.player == "Bel" and not cf.vide, "le bloc de la forge, à Bel")
+  assert(#cf.lines == 2 and qte(cf, 5541) == 1 and qte(cf, 2870) == 1, "il livre le marteau et la cuirasse")
+  assert(nbApports(cf) == 2 and cf.apports[2841] and cf.apports[5500], "apports : le bronze qui entre, ma perle")
+  local cm = vue(ns.projetCommander(p, arbre().blocDe.Minage))
+  assert(cm.part == "Minage" and cm.player == "Alt" and #cm.lines == 1 and qte(cm, 2841) == 30 and nbApports(cm) == 0, "le minage livre 30 bronzes")
+  assert(ns.projetCommander(p, arbre().blocDe.Forge) == 2, "le même bloc commandé deux fois : la même commande")
+  ns.projetArtisan(p, "Cid", 2)
+  ns.projetOffre(p, 700, 2)
+  assert(vue(2).player == "Cid" and vue(2).tip == 700 and vue(1).player == "Moi" and not vue(1).tip, "artisan et offre par commande")
+  -- Vue vivante : le bronze acheté dans le projet, sans rien recopier. Le bloc du minage disparaît, sa commande reste,
+  -- vide ; la forge n'a plus le bronze en apport (son artisan l'achète).
+  ns.projetChoix(p, 2841, "acheter")
+  local vide = vue(3)
+  assert(vide.part == "Minage" and vide.vide and #vide.lines == 0 and #ns.projetCommandes(p, arbre()) == 3, "commande du minage : vide, toujours là")
+  assert(nbApports(vue(2)) == 1 and vue(2).apports[5500], "la forge suit le choix de case du projet")
+end
 bronzeR.profession = "Couture"
 res = both({ [2841] = "fabriquer" })
 assert(res.caseDe.I2841.who == false and res.blocs[2].key == "Couture", "personne ne fait la couture : son bloc vient après")
@@ -287,13 +316,22 @@ local reponse = ns.projetCourant()
 assert(not ns.projetAjouter(reponse, 2841, 1) and #reponse.lines == 1, "la commande liée est une réponse : ce qu'il veut est figé")
 assert(ns.projetReponse({ origin = "Bob-R", id = "1", hash = "abc" }) == reponse, "la réponse retrouvée par son contrat, même version gardée")
 local mien = ns.changerProjet(-1)
-assert(mien.name == "Ma commande" and mien.player == "Bel" and mien.tip == 500 and mien.apports[5500], "artisan, offre et apports repris")
+local tout = ns.projetCommande(mien)
+assert(mien.name == "Ma commande" and tout.player == "Bel" and tout.tip == 500 and mien.apports[5500], "artisan, offre et apports repris")
+assert(#ns.projetCommandes(mien) == 1 and tout.part == "tout le projet", "artisan et offre : sa commande « tout le projet »")
 assert(ns.projetAjouter(mien, 2841, 1), "un projet à moi se modifie")
 assert(HandshakeDB.force == nil and HandshakeDB.orders == nil and HandshakeDB.current == nil, "l'ancienne table des choix et les commandes disparaissent")
+-- Un projet enregistré avant les commandes (#5 : artisan et offre sur le projet) : ils deviennent sa commande « tout le projet ».
+HandshakeDB = { projets = { { name = "Projet #5", player = "Bel", tip = 900, lines = { { id = 5541, qty = 1 } } } }, courant = 1 }
+loader(nil, "ADDON_LOADED", "Handshake")
+local p5 = ns.projetCourant()
+assert(ns.projetCommande(p5).player == "Bel" and ns.projetCommande(p5).tip == 900, "projet #5 : artisan et offre repris")
+ns.projetArtisan(p5, "Cid")
+assert(ns.projetCommande(p5).player == "Cid", "puis fixés sur sa commande")
 ns.openCraftWindow = noop -- pas d'interface hors jeu
 ns.importText(msgs[1] .. " " .. msgs[2]:gsub("^.-: ", ""), "Bob")
 pos, nb = ns.numeroProjet()
-assert(nb == 3 and pos == 3 and ns.projetCourant().player == "Bob", "commande importée affichée")
+assert(nb == 2 and pos == 2 and ns.projetCommande(ns.projetCourant()).player == "Bob", "commande importée affichée")
 print("Handshake : reprise, migration et import OK")
 
 -- /commande essai : la commande affichée revient comme un chuchotement de soi-même, sans réseau.
@@ -459,18 +497,18 @@ local dres = ns.projetDemande(demande)
 local brought = ns.demandeApports(dres)
 assert(#brought == 1 and brought[1].id == 4234 and brought[1].qty == 4, "apport : le cuir, case entière")
 assert(dres.roots[1].how == "fabriquer" and dres.roots[1].cost == 30 * 200, "part de l'artisan : le minerai seulement")
-local v1 = ns.ctFromDemande(demande, 3)
+local v1 = ns.ctFromDemande(ns.projetCommande(demande), 3)
 assert(v1.client == BOB and v1.artisan == BEL and v1.clientGUID == GBOB, "moi client, l'autre artisan")
 assert(#v1.m == 1 and v1.m[1].id == 4234 and v1.m[1].unit == 500 and v1.o[1].unit == 4 * 500 + 30000, "caution sur l'apport + offre")
 assert(ns.ctParse(ns.ctCanonical(v1), BOB, BEL, clock), "ce qu'on envoie passe notre propre lecture stricte")
 -- Sans apport : vente simple (pas de caution).
-local simple = ns.ctFromDemande(ns.nouveauProjet({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } }), 3)
+local simple = ns.ctFromDemande(ns.projetCommande(ns.nouveauProjet({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } })), 3)
 assert(#simple.m == 0 and simple.o[1].unit == 30000, "vente simple")
 -- En clair : « Commande : 1x[Claymore] · j'apporte 4x[Cuir lourd] · offre 3 po », relu à l'identique.
 popups = {}
 local realWhisper = ns.whisper
 ns.whisper = function(msg) ns.onChat("CHAT_MSG_WHISPER", msg, BOB) end
-ns.sendOrder(demande)
+ns.sendOrder(ns.projetCommande(demande))
 ns.whisper = realWhisper
 assert(#popups == 1, "commande reçue")
 local wanted, kindR, offer, apportsR = ns.parseList(popups[1].data.text)
@@ -478,7 +516,7 @@ assert(#wanted == 1 and wanted[1].id == 7963 and #apportsR == 1 and apportsR[1].
   "ce qu'il veut, ce qu'il apporte, son offre")
 ns.openCraftWindow = noop
 ns.importText(popups[1].data.text, "Bob")
-assert(ns.projetCourant().apports and ns.projetCourant().apports[4234] and ns.projetCourant().tip == 30000, "demande importée avec ses apports")
+assert(ns.projetCourant().apports and ns.projetCourant().apports[4234] and ns.projetCommande(ns.projetCourant()).tip == 30000, "demande importée avec ses apports")
 print("Handshake : demande (apports, offre, vente simple, en clair) OK")
 
 -- Je réponds (l'artisan) : Belegard ouvre la demande dans son arbre, demande aussi le minerai et chiffre 5 po.
@@ -488,12 +526,13 @@ local key1 = ns.ctKey(v1)
 local recu = HandshakeDB.contracts[key1]
 assert(recu and ns.ctStatus(recu) == "a_signer", "demande reçue par l'artisan")
 local rep = ns.projetReponse(recu)
-assert(rep.reponse == key1 and rep.apports[4234] and rep.tip == 30000 and rep.lines[1].id == 7963 and rep.player == BOB, "sa demande dans mon arbre")
-assert(select(2, ns.ctReplyFromOrder(rep)):find("rien n'a changé"), "rien changé : rien ne part")
+local function reponse1() return ns.projetCommande(rep) end -- la réponse elle-même : sa commande « tout le projet »
+assert(rep.reponse == key1 and rep.apports[4234] and reponse1().tip == 30000 and rep.lines[1].id == 7963 and reponse1().player == BOB, "sa demande dans mon arbre")
+assert(select(2, ns.ctReplyFromOrder(reponse1())):find("rien n'a changé"), "rien changé : rien ne part")
 ns.projetApport(rep, 3858, true)
 ns.projetOffre(rep, 50000)
 assert(ns.projetReponse(recu) == rep and rep.apports[3858], "même version rouverte : mes changements restent")
-local v2 = ns.ctReplyFromOrder(rep)
+local v2 = ns.ctReplyFromOrder(reponse1())
 assert(v2.v == "2" and #v2.m == 2 and v2.m[1].id == 3858 and v2.m[1].unit == 200 and v2.m[2].unit == 500,
   "minerai ajouté au prix de mon scan, cuir à la caution du contrat")
 assert(v2.o[1].unit == 30 * 200 + 4 * 500 + 50000, "livraison = cautions + mon prix")
@@ -522,8 +561,8 @@ do
   local pa = ns.nouveauProjet({ player = "Belegard", tip = 8000, lines = lignes() })
   local pb = ns.nouveauProjet({ player = "Belegard", tip = 8000, lines = lignes() })
   ns.projetApport(pb, 5500, true)
-  local function termes(p)
-    local c = assert(ns.ctFromDemande(p, 3))
+  local function termes(p, i) -- les termes de la commande i (1 = tout le projet : ceux du projet seul, d'avant les commandes)
+    local c = assert(ns.ctFromDemande(ns.projetCommande(p, i, ns.projetArbre(p, TOUT)), 3))
     local function txt(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x.id .. ":" .. x.qty .. ":" .. x.unit end return table.concat(t, ",") end
     return txt(c.m) .. " / " .. txt(c.o)
   end
@@ -534,6 +573,13 @@ do
   assert(ns.projetArbre(pa, TOUT).caseDe.I2841.made == 0, "projet A : le bronze acheté")
   assert(termes(pb) == avantB, "projet B : caution et prix par objet inchangés")
   assert(ns.projetArbre(pb, TOUT).caseDe.I2841.made == 30, "projet B : le bronze toujours fondu")
+  -- Commande du bloc de la forge (#6) : le bronze du minage en caution à côté de ma perle ; la part de l'artisan ne
+  -- coûte plus rien, l'offre se partage par moitié.
+  local i = ns.projetCommander(pb, ns.projetArbre(pb, TOUT).blocDe.Forge)
+  ns.projetArtisan(pb, "Belegard", i)
+  ns.projetOffre(pb, 8000, i)
+  assert(termes(pb, i) == "2841:30:100,5500:1:500 / 2870:1:6000,5541:1:5500", termes(pb, i))
+  assert(termes(pb) == avantB, "la commande « tout le projet » n'a pas bougé")
 end
 print("Handshake : choix de case propres à chaque projet OK")
 

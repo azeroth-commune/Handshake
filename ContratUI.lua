@@ -365,9 +365,10 @@ function ns.openContracts(key)
   refresh()
 end
 
--- Depuis la fenêtre des commandes : la demande (ce que je veux, ce que j'apporte, mon offre) en brouillon de contrat.
-function ns.ctDraftFromDemande()
-  local c, err = ns.ctFromDemande(ns.projetCourant(), 3)
+-- Depuis la fenêtre des projets : une commande (ns.projetCommande : ce que je veux, ce que j'apporte, mon offre) en
+-- brouillon de contrat.
+function ns.ctDraftFromDemande(commande)
+  local c, err = ns.ctFromDemande(commande, 3)
   if not c then return print("|cffe64d4dContrats :|r " .. err .. ".") end
   c.status = "brouillon"
   ns.ctStore()[ns.ctKey(c)] = c
