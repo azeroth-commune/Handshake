@@ -1,10 +1,20 @@
 -- Handshake, la base : fenêtres, montants, noms d'objets, et les données dont le calcul a besoin.
--- Si GameData est installé, on prend ses données (plus riches) ; sinon Handshake lit lui-même, sans rien demander :
---   recettes et recettes connues : quand tu ouvres une fenêtre de métier ;
+-- Recettes et recettes connues : lues par la lib commune (LibCommune), avec ou sans GameData ; sans lui, c'est son
+-- relevé de repli (le perso connecté, fenêtre de métier ouverte, en mémoire le temps de la session), jamais sauvegardé ici.
+-- Le reste : si GameData est installé, on prend ses données (plus riches) ; sinon Handshake lit lui-même :
 --   prix de l'hôtel des ventes   : à l'ouverture de l'HV (scan complet du jeu, au plus un par 15 min) ;
 --   sacs et banque               : à chaque changement de sac, et quand la banque est ouverte.
--- Tout va dans HandshakeDB (SavedVariables), écrit au /reload ou à la déconnexion.
+-- Ça va dans HandshakeDB (SavedVariables), écrit au /reload ou à la déconnexion.
 local _, ns = ...
+
+local lib = LibStub and LibStub("LibCommune-1.0", true)
+if lib then lib:Demander("recettes connues") end
+-- Recettes connues de tous les persos relevés (sans GameData : le perso connecté) et recettes vues, ou rien.
+local function recettesConnues()
+  return lib and lib:Lire("recettes connues", "tous") or { recettes = {}, persos = {} }
+end
+-- { [perso] = { [métier] = { rank, max, known = { [clé] = difficulté } } } }
+function ns.knownRecipes() return recettesConnues().persos end
 
 local function gd() return GameDataAPI ~= nil and GameDataDB ~= nil end
 local function db() return HandshakeDB end
@@ -12,11 +22,11 @@ local function db() return HandshakeDB end
 ---------------------------------------------------------------------------------------------------
 -- Accès aux données (GameData d'abord)
 local function house() return GetRealmName() .. "-" .. UnitFactionGroup("player") end
--- Recettes : celles scannées dans les fenêtres de métier (GameData ou Handshake), complétées par la réserve Classic
+-- Recettes : celles relevées dans les fenêtres de métier (par la lib commune), complétées par la réserve Classic
 -- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
 local classic -- la réserve, mise en forme une fois
 function ns.recipes()
-  local own = (gd() and GameDataDB.recipes) or db().recipes or {}
+  local own = recettesConnues().recettes
   if not HandshakeClassicRecipes then return own end
   if not classic then
     classic = {}
@@ -154,48 +164,10 @@ end
 
 ---------------------------------------------------------------------------------------------------
 -- Lecture des données quand GameData n'est pas là.
-local DIFFICULTY = { [0] = "optimal", [1] = "medium", [2] = "easy", [3] = "trivial" }
-
 local function myChar()
   local key = ns.charKey()
   db().chars[key] = db().chars[key] or {}
   return db().chars[key]
-end
-
--- Métiers (API moderne C_TradeSkillUI de Forever) : toutes les recettes du métier ouvert, apprises ou non.
-local function scanTradeSkill()
-  local T = C_TradeSkillUI
-  local p = T and T.GetBaseProfessionInfo and T.GetBaseProfessionInfo()
-  local prof = p and p.professionName
-  if not prof or prof == "" then return end
-  if (T.IsTradeSkillLinked and T.IsTradeSkillLinked()) or (T.IsTradeSkillGuild and T.IsTradeSkillGuild())
-    or (T.IsNPCCrafting and T.IsNPCCrafting()) then return end -- le métier d'un autre, ou d'un PNJ
-  local list = T.GetAllRecipeIDs and T.GetAllRecipeIDs() or T.GetFilteredRecipeIDs()
-  if not list or #list == 0 then return end
-  local known = {}
-  for _, id in ipairs(list) do
-    pcall(function()
-      local r = T.GetRecipeInfo(id)
-      if not r or r.isDummyRecipe then return end
-      local s = T.GetRecipeSchematic(id, false)
-      local reagents = {}
-      for _, slot in ipairs(s and s.reagentSlotSchematics or {}) do
-        local rg = slot.reagents and slot.reagents[1]
-        local basic = not Enum.CraftingReagentType or slot.reagentType == nil or slot.reagentType == Enum.CraftingReagentType.Basic
-        if rg and basic and slot.required ~= false then
-          reagents[#reagents + 1] = { id = rg.itemID, qty = slot.quantityRequired }
-          if rg.itemID then remember(rg.itemID) end
-        end
-      end
-      db().recipes[id] = { profession = prof, name = r.name, output = s and s.outputItemID, reagents = reagents,
-        made_min = s and s.quantityMin, made_max = s and s.quantityMax ~= s.quantityMin and s.quantityMax or nil }
-      if s and s.outputItemID then remember(s.outputItemID) end
-      if r.learned then known[id] = DIFFICULTY[r.relativeDifficulty] or true end
-    end)
-  end
-  local c = myChar()
-  c.recipes = c.recipes or {}
-  c.recipes[prof] = { rank = p.skillLevel, max = p.maxSkillLevel, known = known }
 end
 
 -- Hôtel des ventes : scan complet du jeu (C_AuctionHouse.ReplicateItems), lu par paquets de 2 000 pour ne pas
@@ -244,23 +216,18 @@ local function readReplicate()
   step()
 end
 
-local scanToken = 0
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:SetScript("OnEvent", function(_, event, a1)
   if event == "ADDON_LOADED" then
     if a1 ~= "Handshake" then return end
     HandshakeDB = HandshakeDB or {}
-    for _, k in ipairs({ "recipes", "chars", "items", "market" }) do HandshakeDB[k] = HandshakeDB[k] or {} end
+    for _, k in ipairs({ "chars", "items", "market" }) do HandshakeDB[k] = HandshakeDB[k] or {} end -- plus de « recipes » : la lib
     if gd() then return end -- GameData lit tout ça pour nous
-    for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
+    for _, e in ipairs({ "AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED",
       "REPLICATE_ITEM_LIST_UPDATE", "BAG_UPDATE_DELAYED", "BANKFRAME_OPENED", "PLAYERBANKSLOTS_CHANGED", "ITEM_DATA_LOAD_RESULT" }) do
       pcall(f.RegisterEvent, f, e)
     end
-  elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_LIST_UPDATE" then
-    scanToken = scanToken + 1 -- ces événements arrivent en rafale : un seul scan, une demi-seconde après
-    local mine = scanToken
-    C_Timer.After(0.5, function() if mine == scanToken then scanTradeSkill() end end)
   elseif event == "AUCTION_HOUSE_SHOW" then
     ahOpen = true
     if GetTime() - lastRequest >= COOLDOWN then lastRequest = GetTime(); C_AuctionHouse.ReplicateItems() end

@@ -46,8 +46,8 @@ ns.buyCost = buyCost
 
 local function knownRecipes()
   local known = {}
-  for _, c in pairs(ns.chars()) do
-    for _, p in pairs(c.recipes or {}) do
+  for _, metiers in pairs(ns.knownRecipes()) do
+    for _, p in pairs(metiers) do
       for key in pairs(p.known or {}) do known[key] = true end
     end
   end

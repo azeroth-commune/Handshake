@@ -217,17 +217,26 @@ end
 -- (synchronisés quand ils sont connectés), sous la même forme : { key, name, ranks = { [métier] = niveau },
 -- known = { [recette] = true } }. Ton perso connecté passe en premier.
 function ns.crafters()
-  local list, me = {}, ns.charKey()
+  local list, me, byKey = {}, ns.charKey(), {}
+  local function entry(key) -- un perso peut avoir ses recettes relevées sans fiche (ou l'inverse)
+    if not byKey[key] then
+      byKey[key] = { key = key, name = key:match("^[^%s%-]+"), ranks = {}, known = {} }
+      list[#list + 1] = byKey[key]
+    end
+    return byKey[key]
+  end
   for key, c in pairs(ns.chars()) do
-    local e = { key = key, name = key:match("^[^%s%-]+"), ranks = {}, known = {} }
+    local e = entry(key)
     for _, p in pairs(c.professions or {}) do
       if type(p) == "table" and p.name then e.ranks[p.name] = math.max(e.ranks[p.name] or 0, p.rank or 0) end
     end
-    for prof, p in pairs(c.recipes or {}) do
+  end
+  for key, metiers in pairs(ns.knownRecipes()) do
+    local e = entry(key)
+    for prof, p in pairs(metiers) do
       e.ranks[prof] = math.max(e.ranks[prof] or 0, p.rank or 0)
       for k in pairs(p.known or {}) do e.known[k] = true end
     end
-    list[#list + 1] = e
   end
   table.sort(list, function(a, b)
     if (a.key == me) ~= (b.key == me) then return a.key == me end
@@ -420,8 +429,7 @@ end
 local function openRecipe(n)
   local key = n.recipeKey
   if type(key) ~= "number" then return print("Commandes : pas de recette à ouvrir pour " .. ns.itemLabel(n.id) .. ".") end
-  local mine = ns.chars()[ns.charKey()]
-  for _, prof in pairs(mine and mine.recipes or {}) do
+  for _, prof in pairs(ns.knownRecipes()[ns.charKey()] or {}) do
     if prof.known and prof.known[key] then
       local loaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
       if not (loaded and loaded("Blizzard_Professions")) then return print("Commandes : ouvre une fois ta fenêtre de métier, puis Maj+clic.") end
@@ -429,8 +437,8 @@ local function openRecipe(n)
     end
   end
   local who = {}
-  for k, c in pairs(ns.chars()) do
-    for _, prof in pairs(c.recipes or {}) do if prof.known and prof.known[key] then who[#who + 1] = k:match("^[^%-]+") end end
+  for k, metiers in pairs(ns.knownRecipes()) do
+    for _, prof in pairs(metiers) do if prof.known and prof.known[key] then who[#who + 1] = k:match("^[^%-]+") end end
   end
   print(("Commandes : %s — %s."):format(n.recipe and n.recipe.name or "recette",
     #who > 0 and ("connue de " .. table.concat(who, ", ") .. ", pas de ce perso") or "aucun de tes persos ne la connaît"))
