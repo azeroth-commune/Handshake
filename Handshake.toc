@@ -1,5 +1,7 @@
 ## Interface: 16001
 ## Title: Handshake |cffa78ffc(bêta)|r
+## Category: Professions
+## Category-frFR: Métiers
 ## Notes: Commandes et contrats d'artisanat entre joueurs : l'arbre « acheter ou fabriquer », la liste des besoins, l'échange de commandes par chuchotement, des contrats signés des deux côtés et un panneau qui vérifie chaque échange. /handshake, /contrat
 ## Version: 0.1.0-beta
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
