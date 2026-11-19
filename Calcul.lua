@@ -90,7 +90,7 @@ end
 --     how = "stock"|"marchand"|"HV"|"fabriquer"|nil, recipe, crafts, parts, buy = coût d'achat de need }
 -- cost = nil : ni prix ni recette. Chaque recette essayée travaille sur sa propre copie du stock ;
 -- celle de la meilleure option est gardée. craftable = une recette existe (le « + » de la fenêtre).
--- ctx.force[itemID] = "fabriquer" | "acheter" : le choix fait à la main dans la fenêtre l'emporte sur les prix.
+-- ctx.force[itemID] = "fabriquer" | "acheter" : le choix de case du projet l'emporte sur les prix.
 local function plan(id, qty, ctx, depth, path)
   -- « je le fournis » (apport du demandeur) : la case et tout ce qu'il y a dessous sortent de la part de l'artisan.
   if depth > 0 and ctx.apports and ctx.apports[id] then
@@ -183,12 +183,12 @@ local function buildStock(opts)
   return stock
 end
 
--- Calcul complet, pour la fenêtre et pour la commande.
--- stock : celui laissé par le suivi précédent (nil = le construire) ; il est renvoyé pour le suivant.
-function ns.craftPlan(id, qty, opts, stock, apports)
+-- Calcul complet d'une ligne d'un projet (Projet.lua), avec ses apports et ses choix de case.
+-- stock : celui laissé par la ligne précédente (nil = le construire) ; il est renvoyé pour la suivante.
+function ns.craftPlan(id, qty, opts, stock, apports, choix)
   local market = ns.market()
   local ctx = { market = market and market.items, by = recipesByOutput(true, knownRecipes()), unlearned = opts.unlearned, stock = stock or buildStock(opts),
-    force = HandshakeDB.force, apports = apports }
+    force = choix, apports = apports }
   local node = plan(id, qty, ctx, 0, {})
   return node, market, ctx.stock
 end
@@ -196,9 +196,9 @@ end
 function ns.costCommand(args)
   local test = args:match("^%s*essai%s*(%a*)")
   if test then -- /commande essai [besoins] : la commande affichée (ou ses besoins) reçue comme un chuchotement
-    local order = ns.currentOrder()
-    if test == "besoins" then return ns.sendNeeds(order, ns.computeOrder(order), true) end
-    return ns.sendOrder(order, true)
+    local p = ns.projetCourant()
+    if test == "besoins" then return ns.sendNeeds(p, ns.projetArbre(p), true) end
+    return ns.sendOrder(p, true)
   end
   local all = args:find("%f[%w]tout%f[%W]") ~= nil
   args = args:gsub("%f[%w]tout%f[%W]", "")

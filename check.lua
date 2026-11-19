@@ -27,7 +27,7 @@ CreateFrame = function() return setmetatable({}, stubMT) end
 assert(loadfile("LibCommune/Interface.lua"))() -- fenêtres, montants, noms d'objets
 assert(loadfile("LibCommune/Capture.lua"))()
 local ns = {}
-for _, f in ipairs({ "Donnees", "Calcul", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
+for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
   assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
 end
 assert(ns.findItem and ns.itemLabel and ns.newWindow, "base chargée")
@@ -67,111 +67,153 @@ ps = ns.plan(3575, 1, { market = market, by = by, stock = { [3575] = { 1, 0, 0 }
 assert(ps.how == "fabriquer" and ps.have[1] == 0 and ps.parts[1].id == 2772, "forcé : fabriqué, stock non pris")
 print("Handshake : acheter ou fabriquer OK")
 
--- Stock partagé entre deux suivis, et feuilles combinées.
+-- Stock partagé entre deux lignes (seam interne ns.plan).
 market[2772].tiers[1].price = 270
 local stock = { [2772] = { 15, 5, 0 }, [3575] = { 4, 0, 0 } } -- 20 minerais (15 sacs + 5 banque), 4 barres en sac
 local ctx = { market = market, by = by, stock = stock }
-local a = ns.plan(3575, 10, ctx, 0, {})  -- 1er suivi : 4 barres en stock, 6 à fondre avec 6 minerais du sac
+local a = ns.plan(3575, 10, ctx, 0, {})  -- 1re ligne : 4 barres en stock, 6 à fondre avec 6 minerais du sac
 assert(a.have[1] == 4 and a.need == 6 and a.how == "fabriquer" and a.cost == 0, "barres du sac puis minerai du sac : gratuit")
-local b = ns.plan(3575, 20, ctx, 0, {})  -- 2e suivi : plus de barres ; 14 minerais restants (9 sac + 5 banque), 6 à acheter
+local b = ns.plan(3575, 20, ctx, 0, {})  -- 2e ligne : plus de barres ; 14 minerais restants (9 sac + 5 banque), 6 à acheter
 assert(b.have[1] == 0 and b.parts[1].have[1] == 9 and b.parts[1].have[2] == 5 and b.parts[1].need == 6, "stock partagé")
 assert(b.cost == 6 * 270)
-local g = ns.craftGraph({ a, b })
-local t1, ore = g.byKey.T1, g.byKey.I2772
-assert(t1.have[1] == 4 and t1.made == 6 and g.byKey.T2.made == 20, "barres : 4 du sac, le reste à fondre")
-assert(ore.qty == 26 and ore.need == 6 and ore.have[1] == 15 and ore.have[2] == 5 and #ore.parents == 2, "minerai : une case pour les deux suivis")
-print("Handshake : stock partagé et cases communes OK")
 
--- Arbre par étages : marteau (10 bronze) et cuirasse (20 bronze), bronze = cuivre + étain, ×2 par fonte.
-local by2 = {
-  [5541] = { { key = 1, known = true, r = { name = "Marteau", reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } } } },
-  [2870] = { { key = 2, known = true, r = { name = "Cuirasse", reagents = { { id = 2841, qty = 20 }, { id = 5500, qty = 2 } } } } },
-  [2841] = { { key = 3, known = true, r = { name = "Fonte du bronze", made_min = 2, reagents = { { id = 2770, qty = 1 }, { id = 2771, qty = 1 } } } } },
-}
+-- Les cases d'un projet (Projet.lua) : une par objet, le même stock pour toutes ses lignes. Les données sont celles que
+-- Handshake lit (GameData installé) : HV, recettes, persos ; mes sacs et ma banque.
+UnitName = function() return "Moi" end
+local MOI = ns.charKey()
+local TOUT = { unlearned = true } -- options de calcul : toutes les recettes, aucun stock
+local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = fiches GameData des autres persos
+  local function sac(t)
+    local items = {}
+    for id, n in pairs(t or {}) do items[#items + 1] = { id = id, count = n } end
+    return { b = { items = items } }
+  end
+  GameDataMarket = { ["R-Alliance"] = { scanned = "test", items = d.hv } }
+  GameDataDB.recipes = d.recettes
+  GameDataDB.chars = d.persos or {}
+  GameDataDB.chars[MOI] = { bank = sac(d.banque) }
+  ns.containers = function() return sac(d.sacs) end
+end
+local realContainers = ns.containers
+donnees({ hv = market, recettes = { [3307] = { name = "Fonte du fer", output = 3575, reagents = { { id = 2772, qty = 1 } } } },
+  sacs = { [2772] = 15, [3575] = 4 }, banque = { [2772] = 5 } })
+local fer = ns.nouveauProjet({ lines = { { id = 3575, qty = 10 }, { id = 3575, qty = 20 } } })
+local arbre = ns.projetArbre(fer, { bags = true, bank = true, unlearned = true })
+local t1, ore = arbre.caseDe.T1, arbre.caseDe.I2772
+assert(t1.have[1] == 4 and t1.made == 6 and arbre.caseDe.T2.made == 20, "barres : 4 du sac, le reste à fondre")
+assert(ore.qty == 26 and ore.need == 6 and ore.have[1] == 15 and ore.have[2] == 5 and #ore.parents == 2, "minerai : une case pour les deux lignes")
+ns.projetApport(fer, 2772, true)
+arbre = ns.projetArbre(fer, { bags = true, bank = true, unlearned = true })
+assert(arbre.caseDe.I2772.apport == 26 and arbre.caseDe.I2772.need == 0, "minerai apporté : la case entière")
+print("Handshake : cases d'un projet, stock partagé OK")
+
+-- Marteau (10 bronzes) et cuirasse (20 bronzes), bronze = cuivre + étain, ×2 par fonte. Forge : Bel 164 connaît le
+-- marteau, pas la cuirasse ; minage : Alt 90.
 local mk = { [2770] = { tiers = { { price = 10, qty = 999 } } }, [2771] = { tiers = { { price = 10, qty = 999 } } },
   [5500] = { tiers = { { price = 500, qty = 999 } } }, [2841] = { tiers = { { price = 100, qty = 999 } } },
   [5541] = { tiers = { { price = 99999, qty = 9 } } }, [2870] = { tiers = { { price = 99999, qty = 9 } } } }
-local function both(force)
-  local c = { market = mk, by = by2, force = force }
-  return ns.craftGraph({ ns.plan(5541, 1, c, 0, {}), ns.plan(2870, 1, c, 0, {}) })
+local bronzeR = { name = "Fonte du bronze", output = 2841, made_min = 2, profession = "Minage", reagents = { { id = 2770, qty = 1 }, { id = 2771, qty = 1 } } }
+donnees({ hv = mk, recettes = {
+  [1] = { name = "Marteau", output = 5541, profession = "Forge", level = 100, reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } },
+  [2] = { name = "Cuirasse", output = 2870, profession = "Forge", reagents = { { id = 2841, qty = 20 }, { id = 5500, qty = 2 } } },
+  [3] = bronzeR },
+  persos = { ["Bel-R"] = { recipes = { Forge = { rank = 164, known = { [1] = "easy" } } } }, ["Alt-R"] = { recipes = { Minage = { rank = 90, known = {} } } } } })
+local function both(choix) -- un projet « marteau + cuirasse », avec ses choix de case
+  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  for id, c in pairs(choix or {}) do ns.projetChoix(p, id, c) end
+  return ns.projetArbre(p, TOUT)
 end
 local tree = both()
-local bronze, pearl, copper = tree.byKey.I2841, tree.byKey.I5500, tree.byKey.I2770
-assert(tree.cols == 3 and bronze.col == 1 and pearl.col == 1 and copper.col == 2, "étages : bronze et perle en 1, minerai en 2")
+local bronze, pearl, copper = tree.caseDe.I2841, tree.caseDe.I5500, tree.caseDe.I2770
 assert(bronze.qty == 30 and bronze.made == 30 and bronze.crafts == 15 and #bronze.parents == 2, "une case bronze pour les deux")
 assert(copper.qty == 15 and copper.need == 15 and #copper.parents == 1 and pearl.qty == 3, "cuivre sous le bronze seulement")
-for _, n in ipairs(tree.nodes) do -- pas de chevauchement dans un étage
-  for _, m in ipairs(tree.nodes) do
+-- « – » sur le bronze : acheté tout fait. « + » quand l'achat est moins cher : décomposé quand même.
+local bought = both({ [2841] = "acheter" })
+assert(bought.caseDe.I2841.need == 30 and bought.caseDe.I2841.made == 0 and not bought.caseDe.I2770, "bronze acheté")
+assert(bought.caseDe.I2841.craftable and bought.caseDe.I2841.choix == "acheter", "le « + » reste proposé, le choix se voit")
+mk[2841].tiers[1].price = 1
+assert(both().caseDe.I2841.made == 0, "bronze à 1 pc : acheté d'office")
+assert(both({ [2841] = "fabriquer" }).caseDe.I2841.made == 30, "décomposé à la main")
+-- Blocs : marteau et cuirasse = Forge (Bel en connaît 1 sur 2), bronze = Minage (Alt, 0 sur 1).
+local res = both({ [2841] = "fabriquer" })
+local hammer, plate = res.caseDe.T1, res.caseDe.T2
+bronze = res.caseDe.I2841
+assert(hammer.who == "Bel" and hammer.whoKnows and plate.who == "Bel" and not plate.whoKnows, "forge : Bel (marteau connu, cuirasse à apprendre)")
+assert(bronze.who == "Alt" and not bronze.whoKnows, "bronze : Alt a le minage")
+local forge, mine = res.blocDe.Forge, res.blocDe.Minage
+assert(#res.blocs == 2 and res.blocs[1] == forge and #forge.cases == 2 and #forge.recipes == 2 and forge.level == 100, "un bloc par métier")
+assert(forge.best == "Bel" and mine.best == "Alt", "qui peut faire chaque bloc")
+-- Un bloc = une commande, par étapes : le minage (étape 1) livre 30 bronzes ; la forge (étape 2) livre le marteau et la
+-- cuirasse, et reçoit le bronze en apport.
+assert(mine.step == 1 and #mine.deliver == 1 and mine.qty[2841] == 30 and not next(mine.inputs), "étape 1 : le minage")
+assert(forge.step == 2 and forge.qty[5541] == 1 and forge.qty[2870] == 1 and forge.inputs[2841], "étape 2 : la forge, bronze fourni")
+-- Le bronze du minage pour le marteau et la cuirasse = UNE livraison Minage -> Forge, par Alt.
+local o = res.livraisons[1]
+assert(#res.livraisons == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt", "une livraison Minage -> Forge")
+assert(#o.lines == 1 and o.lines[1] == 2841 and o.qty[2841] == 30 and #o.edges == 2, "30 barres de bronze, deux liens regroupés")
+-- « Commander » le bloc de la forge : un nouveau projet, le bronze en apport, à Bel.
+local cmd = ns.projetDuBloc(ns.projetCourant(), forge)
+assert(#cmd.lines == 2 and cmd.apports[2841] and cmd.player == "Bel" and ns.projetCourant() == cmd, "le bloc commandé devient le projet affiché")
+bronzeR.profession = "Couture"
+res = both({ [2841] = "fabriquer" })
+assert(res.caseDe.I2841.who == false and res.blocs[2].key == "Couture", "personne ne fait la couture : son bloc vient après")
+bronzeR.profession = "Minage"
+print("Handshake : blocs d'un projet OK")
+
+-- Dessin (Fenetre.lua) : étages, relais, bandes, titres des blocs.
+mk[2841].tiers[1].price = 100
+local g = ns.dessinArbre(both())
+bronze, pearl, copper = g.byKey.I2841, g.byKey.I5500, g.byKey.I2770
+assert(g.cols == 3 and bronze.col == 1 and pearl.col == 1 and copper.col == 2, "étages : bronze et perle en 1, minerai en 2")
+for _, n in ipairs(g.nodes) do -- pas de chevauchement dans un étage
+  for _, m in ipairs(g.nodes) do
     assert(n == m or n.col ~= m.col or math.abs(n.y - m.y) >= 50, "cases superposées")
   end
 end
--- « – » sur le bronze : acheté tout fait, plus d'étage 2. « + » quand l'achat est moins cher : décomposé quand même.
-local bought = both({ [2841] = "acheter" })
-assert(bought.cols == 2 and bought.byKey.I2841.need == 30 and bought.byKey.I2841.made == 0 and not bought.byKey.I2770, "bronze acheté")
-assert(bought.byKey.I2841.craftable, "le « + » reste proposé")
-mk[2841].tiers[1].price = 1
-assert(both().byKey.I2841.made == 0, "bronze à 1 pc : acheté d'office")
-assert(both({ [2841] = "fabriquer" }).byKey.I2841.made == 30, "décomposé à la main")
+assert(ns.dessinArbre(both({ [2841] = "acheter" })).cols == 2, "bronze acheté : plus d'étage 2")
 -- Lien qui saute un étage (ta capture : barre de fer commandée + haubert qui en consomme) : il passe par un relais à
 -- l'étage 1, et aucune case de cet étage ne lui marche dessus.
 do
-  local c = { market = mk, by = by2, force = { [2841] = "fabriquer" } }
-  local g = ns.craftGraph({ ns.plan(2841, 2, c, 0, {}), ns.plan(5541, 1, c, 0, {}) }) -- bronze commandé + marteau
+  local p = ns.nouveauProjet({ lines = { { id = 2841, qty = 2 }, { id = 5541, qty = 1 } } }) -- bronze commandé + marteau
+  ns.projetChoix(p, 2841, "fabriquer")
+  local gr = ns.dessinArbre(ns.projetArbre(p, TOUT))
   local e
-  for _, x in ipairs(g.edges) do if x.from.key == "T1" and x.to.key == "I2770" then e = x end end
+  for _, x in ipairs(gr.edges) do if x.from.key == "T1" and x.to.key == "I2770" then e = x end end
   assert(e and #e.path == 3 and e.path[2].kind == "relay" and e.path[2].col == 1, "relais à l'étage 1")
   local r = e.path[2]
-  for _, n in ipairs(g.nodes) do
+  for _, n in ipairs(gr.nodes) do
     assert(n.col ~= 1 or r.y + 14 <= n.y or n.y + 42 <= r.y, "une case de l'étage 1 recouvre le lien")
   end
 end
--- Groupes par métier : marteau et cuirasse = Forge (Bel 164 en connaît 1 sur 2), bronze = Minage (Alt 90, 0 sur 1) ;
--- la couture, personne ne l'a.
 do
-  by2[5541][1].r.profession, by2[2870][1].r.profession, by2[2841][1].r.profession = "Forge", "Forge", "Minage"
-  by2[5541][1].r.level = 100
-  local crafters = { { name = "Bel", ranks = { Forge = 164 }, known = { [1] = true } }, { name = "Alt", ranks = { Minage = 90 }, known = {} } }
-  local g = ns.assignCrafters(both({ [2841] = "fabriquer" }), crafters)
-  local hammer, plate, bronze = g.byKey.T1, g.byKey.T2, g.byKey.I2841
-  assert(hammer.who == "Bel" and hammer.whoKnows and plate.who == "Bel" and not plate.whoKnows, "forge : Bel (marteau connu, cuirasse à apprendre)")
-  assert(bronze.who == "Alt" and not bronze.whoKnows, "bronze : Alt a le minage")
-  local forge = g.groupOf.Forge
-  assert(#g.groups == 2 and g.groups[1] == forge and #forge.nodes == 2 and #forge.recipes == 2 and forge.level == 100, "un groupe par métier")
-  assert(forge.best == "Bel" and forge.label == "Étape 2 · Forge · niv. 100 requis · Bel 164 (1/2)", forge.label)
-  -- Un bloc = une commande, par étapes : le minage (étape 1) livre 30 bronzes ; la forge (étape 2) livre le marteau et la
-  -- cuirasse, et reçoit le bronze en apport.
-  local mine = g.groupOf.Minage
-  assert(mine.step == 1 and #mine.deliver == 1 and mine.qty[2841] == 30 and not next(mine.inputs), "étape 1 : le minage")
-  assert(forge.step == 2 and forge.qty[5541] == 1 and forge.qty[2870] == 1 and forge.inputs[2841], "étape 2 : la forge, bronze fourni")
+  local gr = ns.dessinArbre(both({ [2841] = "fabriquer" }))
+  local forge = gr.groupOf.Forge
+  assert(forge.label == "Étape 2 · Forge · niv. 100 requis · Bel 164 (1/2)", forge.label)
   -- Rectangles : chaque métier dans sa bande, aucune case d'un autre dans son rectangle.
-  for _, grp in ipairs(g.groups) do
+  for _, grp in ipairs(gr.groups) do
     local top, bottom, left, right = math.huge, -math.huge, math.huge, -math.huge
     for _, n in ipairs(grp.cards) do
       top, bottom = math.min(top, n.y), math.max(bottom, n.y + 42)
       left, right = math.min(left, n.col), math.max(right, n.col)
     end
-    for _, n in ipairs(g.nodes) do
+    for _, n in ipairs(gr.nodes) do
       local inside = n.col >= left and n.col <= right and n.y + 42 > top and n.y < bottom
       assert(not inside or n.band == grp.key, "une case d'un autre dans le rectangle de " .. grp.key)
     end
   end
-  assert(g.byKey.I2770.band == "Minage", "minerai sous le bronze : dans la bande du minage")
-  -- Commandes entre métiers : le bronze du minage pour le marteau et la cuirasse = UNE commande Minage -> Forge, par Alt.
-  local o = g.orders[1]
-  assert(#g.orders == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt", "une commande Minage -> Forge")
-  assert(#o.lines == 1 and o.lines[1] == 2841 and o.qty[2841] == 30 and #o.edges == 2, "30 barres de bronze, deux liens regroupés")
-  by2[2841][1].r.profession = "Couture"
-  g = ns.assignCrafters(both({ [2841] = "fabriquer" }), crafters)
-  assert(g.byKey.I2841.who == false and g.groupOf.Couture.label == "Étape 1 · Couture · personne de ta liste", "personne ne fait la couture")
-  assert(g.groups[2].key == "Couture", "les métiers que personne n'a viennent après")
-  for _, n in ipairs(g.nodes) do -- rien ne se chevauche, bande sans artisan comprise
-    for _, m in ipairs(g.nodes) do
+  assert(gr.byKey.I2770.band == "Minage", "minerai sous le bronze : dans la bande du minage")
+  bronzeR.profession = "Couture"
+  gr = ns.dessinArbre(both({ [2841] = "fabriquer" }))
+  assert(gr.groupOf.Couture.label == "Étape 1 · Couture · personne de ta liste", gr.groupOf.Couture.label)
+  for _, n in ipairs(gr.nodes) do -- rien ne se chevauche, bande sans artisan comprise
+    for _, m in ipairs(gr.nodes) do
       assert(n == m or n.col ~= m.col or n.y + 42 <= m.y or m.y + 42 <= n.y, "cases superposées")
     end
   end
-  by2[2841][1].r.profession, by2[5541][1].r.level = "Minage", nil
+  bronzeR.profession = "Minage"
 end
-print("Handshake : arbre par étages OK")
+ns.containers, GameDataDB.chars = realContainers, {}
+print("Handshake : dessin de l'arbre (étages, relais, bandes) OK")
 
 -- Suggestions : fabricables d'abord, puis début de nom, puis noms courts.
 GameDataItems.items = { [1] = { name = "Barre de bronze" }, [2] = { name = "Bronze" }, [3] = { name = "Lame en bronze" }, [4] = { name = "Fer" } }
@@ -213,29 +255,46 @@ assert(ns.poText(55600) == "5.56 po" and ns.poText(50000) == "5 po")
 print("Handshake : texte échangé OK")
 
 -- Besoins : composants pas fabriqués avec ce qu'on a ; recette pas apprise -> l'objet « Plans : … ».
-local res = { graph = { nodes = {
+local res = { cases = {
   { id = 7963, kind = "target", qty = 1, made = 1, need = 0, have = { 0, 0, 0 }, unknown = true, recipe = { name = "Claymore en mithril" } },
   { id = 3858, kind = "item", qty = 36, made = 0, need = 30, cost = 3000, have = { 6, 0, 0 }, how = "HV" },
   { id = 7920, kind = "item", qty = 1, made = 0, need = 0, cost = 0, have = { 1, 0, 0 } },
-} }, total = 3000 }
+}, total = 3000 }
 local rows, recipes = ns.orderNeeds(res)
 assert(#rows == 2 and rows[1].id == 3858 and rows[1].required == 36 and rows[2].need == 0, "manquants d'abord, le complet ensuite")
 assert(#recipes == 1 and recipes[1].item == 7989, "recette trouvée par son nom")
 print("Handshake : besoins OK")
 
--- Reprise des suivis de GameData à la première ouverture du module.
+-- Reprise des suivis de GameData à la première ouverture du module : ils deviennent un projet.
 GameDataDB.craft_targets, GameDataDB.craft_options = { { id = 7963, qty = 1 } }, { bags = true }
 HandshakeDB = nil
 local loader
 CreateFrame = function() return setmetatable({ SetScript = function(_, _, fn) loader = fn end }, stubMT) end
 assert(loadfile("Handshake/Commande.lua"))("Handshake", ns)
 loader(nil, "ADDON_LOADED", "Handshake")
-assert(#HandshakeDB.orders == 1 and HandshakeDB.orders[1].lines[1].id == 7963 and HandshakeDB.options.bags, "suivis repris")
+assert(select(2, ns.numeroProjet()) == 1 and ns.projetCourant().lines[1].id == 7963 and HandshakeDB.options.bags, "suivis repris")
 assert(GameDataDB.craft_targets == nil, "plus rien dans GameData")
+-- Migration (19/11/2026) : des commandes enregistrées à l'ancienne (la 2e liée à un contrat, affichée) et la table
+-- globale des choix « fabriquer / acheter ».
+HandshakeDB = { orders = {
+  { name = "Ma commande", player = "Bel", tip = 500, lines = { { id = 5541, qty = 1 } }, apports = { [5500] = true } },
+  { name = "Réponse à Bob", reply = "Bob-R#1", replyHash = "abc", player = "Bob-R", lines = { { id = 7963, qty = 1 } } },
+}, current = 2, force = { [2841] = "acheter" } }
+loader(nil, "ADDON_LOADED", "Handshake")
+local pos, nb = ns.numeroProjet()
+assert(nb == 2 and pos == 2, "chaque commande devient un projet, le même affiché")
+local reponse = ns.projetCourant()
+assert(not ns.projetAjouter(reponse, 2841, 1) and #reponse.lines == 1, "la commande liée est une réponse : ce qu'il veut est figé")
+assert(ns.projetReponse({ origin = "Bob-R", id = "1", hash = "abc" }) == reponse, "la réponse retrouvée par son contrat, même version gardée")
+local mien = ns.changerProjet(-1)
+assert(mien.name == "Ma commande" and mien.player == "Bel" and mien.tip == 500 and mien.apports[5500], "artisan, offre et apports repris")
+assert(ns.projetAjouter(mien, 2841, 1), "un projet à moi se modifie")
+assert(HandshakeDB.force == nil and HandshakeDB.orders == nil and HandshakeDB.current == nil, "l'ancienne table des choix et les commandes disparaissent")
 ns.openCraftWindow = noop -- pas d'interface hors jeu
 ns.importText(msgs[1] .. " " .. msgs[2]:gsub("^.-: ", ""), "Bob")
-assert(#HandshakeDB.orders == 2 and HandshakeDB.current == 2 and ns.currentOrder().player == "Bob", "commande importée affichée")
-print("Handshake : reprise et import OK")
+pos, nb = ns.numeroProjet()
+assert(nb == 3 and pos == 3 and ns.projetCourant().player == "Bob", "commande importée affichée")
+print("Handshake : reprise, migration et import OK")
 
 -- /commande essai : la commande affichée revient comme un chuchotement de soi-même, sans réseau.
 UnitName = function() return "Belegard" end
@@ -393,9 +452,10 @@ GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [3858] = { tie
   [4234] = { tiers = { { price = 500, qty = 999 } } }, [7963] = { tiers = { { price = 99999, qty = 9 } } } } } }
 GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 }, { id = 4234, qty = 4 } } } }
 GameDataItems.items[4234] = { name = "Cuir lourd", link = link(4234, "Cuir lourd") }
-HandshakeDB.force = {}
-local demande = { player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } }, apports = { [4234] = true } }
-local dres = ns.computeDemande(demande)
+HandshakeDB.projets = {}
+local demande = ns.nouveauProjet({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } })
+ns.projetApport(demande, 4234, true)
+local dres = ns.projetDemande(demande)
 local brought = ns.demandeApports(dres)
 assert(#brought == 1 and brought[1].id == 4234 and brought[1].qty == 4, "apport : le cuir, case entière")
 assert(dres.roots[1].how == "fabriquer" and dres.roots[1].cost == 30 * 200, "part de l'artisan : le minerai seulement")
@@ -404,7 +464,7 @@ assert(v1.client == BOB and v1.artisan == BEL and v1.clientGUID == GBOB, "moi cl
 assert(#v1.m == 1 and v1.m[1].id == 4234 and v1.m[1].unit == 500 and v1.o[1].unit == 4 * 500 + 30000, "caution sur l'apport + offre")
 assert(ns.ctParse(ns.ctCanonical(v1), BOB, BEL, clock), "ce qu'on envoie passe notre propre lecture stricte")
 -- Sans apport : vente simple (pas de caution).
-local simple = ns.ctFromDemande({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } }, 3)
+local simple = ns.ctFromDemande(ns.nouveauProjet({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } }), 3)
 assert(#simple.m == 0 and simple.o[1].unit == 30000, "vente simple")
 -- En clair : « Commande : 1x[Claymore] · j'apporte 4x[Cuir lourd] · offre 3 po », relu à l'identique.
 popups = {}
@@ -417,9 +477,8 @@ local wanted, kindR, offer, apportsR = ns.parseList(popups[1].data.text)
 assert(#wanted == 1 and wanted[1].id == 7963 and #apportsR == 1 and apportsR[1].id == 4234 and apportsR[1].qty == 4 and offer == 30000,
   "ce qu'il veut, ce qu'il apporte, son offre")
 ns.openCraftWindow = noop
-HandshakeDB.orders = HandshakeDB.orders or {}
 ns.importText(popups[1].data.text, "Bob")
-assert(ns.currentOrder().apports and ns.currentOrder().apports[4234] and ns.currentOrder().tip == 30000, "demande importée avec ses apports")
+assert(ns.projetCourant().apports and ns.projetCourant().apports[4234] and ns.projetCourant().tip == 30000, "demande importée avec ses apports")
 print("Handshake : demande (apports, offre, vente simple, en clair) OK")
 
 -- Je réponds (l'artisan) : Belegard ouvre la demande dans son arbre, demande aussi le minerai et chiffre 5 po.
@@ -428,12 +487,12 @@ as(BEL)
 local key1 = ns.ctKey(v1)
 local recu = HandshakeDB.contracts[key1]
 assert(recu and ns.ctStatus(recu) == "a_signer", "demande reçue par l'artisan")
-HandshakeDB.orders = {}
-local rep = ns.replyOrder(recu)
-assert(rep.reply == key1 and rep.apports[4234] and rep.tip == 30000 and rep.lines[1].id == 7963 and rep.player == BOB, "sa demande dans mon arbre")
+local rep = ns.projetReponse(recu)
+assert(rep.reponse == key1 and rep.apports[4234] and rep.tip == 30000 and rep.lines[1].id == 7963 and rep.player == BOB, "sa demande dans mon arbre")
 assert(select(2, ns.ctReplyFromOrder(rep)):find("rien n'a changé"), "rien changé : rien ne part")
-rep.apports[3858], rep.tip = true, 50000
-assert(ns.replyOrder(recu) == rep and rep.apports[3858], "même version rouverte : mes changements restent")
+ns.projetApport(rep, 3858, true)
+ns.projetOffre(rep, 50000)
+assert(ns.projetReponse(recu) == rep and rep.apports[3858], "même version rouverte : mes changements restent")
 local v2 = ns.ctReplyFromOrder(rep)
 assert(v2.v == "2" and #v2.m == 2 and v2.m[1].id == 3858 and v2.m[1].unit == 200 and v2.m[2].unit == 500,
   "minerai ajouté au prix de mon scan, cuir à la caution du contrat")
@@ -441,8 +500,42 @@ assert(v2.o[1].unit == 30 * 200 + 4 * 500 + 50000, "livraison = cautions + mon p
 as(BOB)
 local back = HandshakeDB.contracts[key1]
 assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob reçoit la contre-proposition")
-assert(not ns.ctReplyFromOrder({ reply = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
+assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
 print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
+
+-- Projets : un choix de case appartient à son projet (CONTEXT.md) ; ni l'arbre ni le contrat d'un autre projet n'en
+-- dépendent. Marteau = 10 bronzes + 1 perle, cuirasse = 20 bronzes ; le bronze se fond (cuivre + étain, ×2).
+as(BOB)
+local function tiers(prix)
+  local t = {}
+  for id, p in pairs(prix) do t[id] = { tiers = { { price = p, qty = 999 } } } end
+  return t
+end
+GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = tiers({ [2770] = 10, [2771] = 10, [5500] = 500, [2841] = 100, [5541] = 99999, [2870] = 99999 }) } }
+GameDataDB.recipes = {
+  [1] = { name = "Marteau", output = 5541, profession = "Forge", reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } },
+  [2] = { name = "Cuirasse", output = 2870, profession = "Forge", reagents = { { id = 2841, qty = 20 } } },
+  [3] = { name = "Fonte du bronze", output = 2841, made_min = 2, profession = "Minage", reagents = { { id = 2770, qty = 1 }, { id = 2771, qty = 1 } } },
+}
+do
+  local function lignes() return { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } end
+  local pa = ns.nouveauProjet({ player = "Belegard", tip = 8000, lines = lignes() })
+  local pb = ns.nouveauProjet({ player = "Belegard", tip = 8000, lines = lignes() })
+  ns.projetApport(pb, 5500, true)
+  local function termes(p)
+    local c = assert(ns.ctFromDemande(p, 3))
+    local function txt(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x.id .. ":" .. x.qty .. ":" .. x.unit end return table.concat(t, ",") end
+    return txt(c.m) .. " / " .. txt(c.o)
+  end
+  local avantA, avantB = termes(pa), termes(pb)
+  assert(avantB == "5500:1:500 / 2870:1:5333,5541:1:3167", avantB)
+  ns.projetChoix(pa, 2841, "acheter")
+  assert(termes(pa) ~= avantA, "témoin : le choix change les prix par objet du projet A")
+  assert(ns.projetArbre(pa, TOUT).caseDe.I2841.made == 0, "projet A : le bronze acheté")
+  assert(termes(pb) == avantB, "projet B : caution et prix par objet inchangés")
+  assert(ns.projetArbre(pb, TOUT).caseDe.I2841.made == 30, "projet B : le bronze toujours fondu")
+end
+print("Handshake : choix de case propres à chaque projet OK")
 
 -- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }

@@ -1,5 +1,5 @@
 -- Handshake : une commande passe d'un joueur à l'autre.
--- Commande = des lignes « objet × quantité », le joueur d'en face, un pourboire, et qui fournit les composants.
+-- Commande = les lignes « objet × quantité » d'un projet (Projet.lua), le joueur d'en face, une offre, des apports.
 -- Ce qu'il faut pour la faire (la liste des besoins) a la même forme : on peut la renvoyer au client, ou la passer
 -- à un autre joueur comme une commande.
 -- Échange : du texte avec des liens d'objets, lisible et écrivable à la main (Maj+clic), par chuchotement :
@@ -12,18 +12,6 @@ local _, ns = ...
 local MAX_MSG = 255
 
 ---------------------------------------------------------------------------------------------------
--- Commandes enregistrées : HandshakeDB.orders[i] = { name, player, tip (cuivre), mats (il fournit les
--- composants), lines = { { id, qty } }, created }, HandshakeDB.current = celle affichée.
-function ns.newOrder(o)
-  o = o or {}
-  o.lines = o.lines or {}
-  o.name = o.name or ("Commande du " .. date("%d/%m %H:%M"))
-  o.created = time()
-  table.insert(HandshakeDB.orders, o)
-  HandshakeDB.current = #HandshakeDB.orders
-  return o
-end
-
 -- /handshake demo [set|ceinture|hasard] : une commande d'essai parlante. Choisis dans les données (arbres profonds qui
 -- traversent plusieurs métiers, tools/crafts_critiques.py) :
 --   set      : l'ensemble en thorium enchanté (heaume, cuirasse, jambières) — forge 300 + alchimie, enchantement, minage ;
@@ -38,7 +26,7 @@ function ns.demoOrder(kind, perProf)
   if d then
     local lines = {}
     for _, id in ipairs(d.ids) do lines[#lines + 1] = { id = id, qty = 1 } end
-    return ns.newOrder({ name = d.name, lines = lines })
+    return ns.nouveauProjet({ name = d.name, lines = lines })
   end
   local recipes, makes, byProf = ns.recipes(), {}, {}
   for _, r in pairs(recipes) do if r.output then makes[r.output] = true end end
@@ -60,51 +48,13 @@ function ns.demoOrder(kind, perProf)
       if not seen[id] then seen[id], lines[#lines + 1] = true, { id = id, qty = 1 } end
     end
   end
-  return ns.newOrder({ name = "Essai : au hasard", lines = lines })
+  return ns.nouveauProjet({ name = "Essai : au hasard", lines = lines })
 end
-
-function ns.currentOrder()
-  local db = HandshakeDB
-  if #db.orders == 0 then ns.newOrder() end
-  db.current = math.min(math.max(1, db.current or 1), #db.orders)
-  return db.orders[db.current]
-end
-
--- « Je réponds » : la demande reçue devient une commande liée au contrat (order.reply = sa clé). Ce qu'il veut est
--- figé ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel sont recopiés à chaque nouvelle version.
-function ns.replyOrder(c)
-  local key, order = ns.ctKey(c), nil
-  for i, o in ipairs(HandshakeDB.orders) do if o.reply == key then order, HandshakeDB.current = o, i end end
-  order = order or ns.newOrder({ reply = key })
-  if order.replyHash == c.hash then return order end -- même version : on garde ce que tu as changé
-  order.replyHash, order.name, order.player = c.hash, "Réponse à " .. c.client:match("^[^%-]+"), c.client
-  order.lines, order.apports = {}, nil
-  for _, l in ipairs(c.o) do order.lines[#order.lines + 1] = { id = l.id, qty = l.qty } end
-  for _, l in ipairs(c.m) do order.apports = order.apports or {}; order.apports[l.id] = true end
-  order.tip = math.max(0, ns.ctTotal(c.o) - ns.ctTotal(c.m))
-  return order
-end
-
--- Calcul d'une commande : les lignes l'une après l'autre sur le même stock, puis l'arbre. opts : options de stock et
--- de recettes (celles de la fenêtre par défaut).
-function ns.computeOrder(order, opts)
-  local roots, market, stock, total, incomplete = {}, nil, nil, 0, false
-  for i, l in ipairs(order.lines) do
-    roots[i], market, stock = ns.craftPlan(l.id, l.qty, opts or HandshakeDB.options, stock, order.apports)
-    total = total + (roots[i].cost or 0)
-    incomplete = incomplete or roots[i].incomplete or not roots[i].cost
-  end
-  return { roots = roots, graph = ns.assignCrafters(ns.craftGraph(roots), ns.crafters()), total = total, incomplete = incomplete, market = market }
-end
-
--- La demande telle que l'artisan la verra : toutes les recettes, aucun stock déduit (les stocks du demandeur ne
--- réduisent pas la part de l'artisan, CONCEPTION.md), les apports retirés.
-function ns.computeDemande(order) return ns.computeOrder(order, { unlearned = true }) end
 
 -- Les apports d'une demande, avec leur quantité (case entière) : { { id, qty }, … } triés par ID.
 function ns.demandeApports(res)
   local out = {}
-  for _, n in ipairs(res.graph.nodes) do
+  for _, n in ipairs(res.cases) do
     if (n.apport or 0) > 0 then out[#out + 1] = { id = n.id, qty = n.apport } end
   end
   table.sort(out, function(a, b) return a.id < b.id end)
@@ -129,7 +79,7 @@ end
 -- combien il en faut et combien on en a ; puis les recettes pas apprises.
 function ns.orderNeeds(res)
   local rows, recipes = {}, {}
-  for _, n in ipairs(res.graph.nodes) do
+  for _, n in ipairs(res.cases) do
     local required = n.qty - n.made
     if required > 0 and (n.made == 0 or n.need > 0) and (n.apport or 0) == 0 then
       rows[#rows + 1] = { id = n.id, required = required, have = n.have, need = n.need, cost = n.cost, unpriced = n.unpriced, how = n.how }
@@ -251,7 +201,7 @@ end
 function ns.sendOrder(order, loop)
   local lines = {}
   for _, l in ipairs(order.lines) do lines[#lines + 1] = l end
-  local brought = ns.demandeApports(ns.computeDemande(order))
+  local brought = ns.demandeApports(ns.projetDemande(order))
   if #brought > 0 then
     lines[#lines + 1] = { raw = "· j'apporte" }
     for _, l in ipairs(brought) do lines[#lines + 1] = l end
@@ -284,7 +234,7 @@ function ns.importText(text, player)
   local who = player and player ~= "" and player or nil
   local apports = {}
   for _, l in ipairs(brought) do apports[l.id] = true end
-  ns.newOrder({ name = (kind == "besoins" and "Besoins" or "Commande") .. (who and (" de " .. who) or ""),
+  ns.nouveauProjet({ name = (kind == "besoins" and "Besoins" or "Commande") .. (who and (" de " .. who) or ""),
     player = who, lines = lines, tip = tip, apports = next(apports) and apports or nil })
   ns.openCraftWindow()
 end
@@ -380,12 +330,8 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
   local db, old = HandshakeDB, GameDataDB or {}
   -- Reprise de ce qui vivait dans GameData avant le module (18/11/2026).
   db.options = db.options or old.craft_options or { bags = true, bank = true, alts = false, unlearned = false }
-  db.force = db.force or old.craft_force or {}
   db.contracts = db.contracts or {}
   for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
-  if not db.orders then
-    db.orders = {}
-    if old.craft_targets and #old.craft_targets > 0 then ns.newOrder({ name = "Ma commande", lines = old.craft_targets }) end
-  end
+  ns.migrerProjets(db, old)
   old.craft_options, old.craft_force, old.craft_targets = nil, nil, nil
 end)
