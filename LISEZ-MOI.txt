@@ -18,6 +18,9 @@ INSTALLER (2 minutes)
   fenêtre d'échange et dit si c'est CONFORME au contrat. S'il dit NON CONFORME, n'accepte pas.
 - Après un échange lié à un contrat, tape /reload : c'est ce qui enregistre sur le disque.
 - Avant de tester, tape une fois :  /console scriptErrors 1   (pour voir les erreurs s'il y en a).
+- Seul, Handshake voit ton perso connecté (ses sacs, sa banque une fois ouverte, ses recettes) et les prix de
+  l'HV d'Auctionator s'il est installé. L'addon GameData (à part, facultatif) y ajoute tes autres persos, ta banque
+  à tout moment et les prix de l'HV.
 
 FAIRE UNE DEMANDE
   /handshake, tape l'objet voulu, « Ajouter », mets le nom de l'artisan dans « Joueur ».
