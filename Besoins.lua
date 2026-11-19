@@ -110,7 +110,7 @@ function ns.refreshNeeds(res)
   if not (frame and frame:IsShown()) then return end
   local p = ns.projetCourant()
   res = res or ns.projetArbre(p)
-  local order = ns.projetCommande(p, 1, res) -- les besoins de tout le projet : son artisan, son offre
+  local order = ns.projetCommande(p, 1) -- les besoins de tout le projet : son artisan, son offre
   local list, recipes = ns.orderNeeds(res)
   used, frame.y = 0, 40
   frame.head:SetText((p.name or "Projet") .. (order.player and (" · " .. order.player) or ""))
@@ -154,7 +154,7 @@ function ns.refreshNeeds(res)
 
   local foot = ("%d/%d prêts"):format(done, #list)
   if buy > 0 then foot = foot .. " · à acheter : " .. ns.moneyShort(buy) end
-  if order.tip and order.tip > 0 then foot = foot .. " · pourboire " .. ns.moneyShort(order.tip) end
+  if order.tip and order.tip > 0 then foot = foot .. " · offre " .. ns.moneyShort(order.tip) end
   frame.foot:SetText(foot)
   frame.send:SetText(order.player and ("Envoyer à " .. order.player) or "Envoyer (joueur ?)")
   frame:SetHeight(frame.y + 70)

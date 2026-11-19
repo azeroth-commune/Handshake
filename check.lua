@@ -159,7 +159,7 @@ do
   ns.projetApport(p, 5500, true)
   local nb = select(2, ns.numeroProjet())
   local function arbre() return ns.projetArbre(p, TOUT) end
-  local function vue(i) return ns.projetCommande(p, i, arbre()) end
+  local function vue(i) return ns.projetCommande(p, i) end
   local function qte(v, id) for _, l in ipairs(v.lines) do if l.id == id then return l.qty end end end
   local function nbApports(v) local k = 0 for _ in pairs(v.apports or {}) do k = k + 1 end return k end
   local tout = vue(1)
@@ -180,7 +180,7 @@ do
   -- vide ; la forge n'a plus le bronze en apport (son artisan l'achète).
   ns.projetChoix(p, 2841, "acheter")
   local vide = vue(3)
-  assert(vide.part == "Minage" and vide.vide and #vide.lines == 0 and #ns.projetCommandes(p, arbre()) == 3, "commande du minage : vide, toujours là")
+  assert(vide.part == "Minage" and vide.vide and #vide.lines == 0 and #ns.projetCommandes(p) == 3, "commande du minage : vide, toujours là")
   assert(nbApports(vue(2)) == 1 and vue(2).apports[5500], "la forge suit le choix de case du projet")
 end
 bronzeR.profession = "Couture"
@@ -562,7 +562,7 @@ do
   local pb = ns.nouveauProjet({ player = "Belegard", tip = 8000, lines = lignes() })
   ns.projetApport(pb, 5500, true)
   local function termes(p, i) -- les termes de la commande i (1 = tout le projet : ceux du projet seul, d'avant les commandes)
-    local c = assert(ns.ctFromDemande(ns.projetCommande(p, i, ns.projetArbre(p, TOUT)), 3))
+    local c = assert(ns.ctFromDemande(ns.projetCommande(p, i), 3))
     local function txt(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x.id .. ":" .. x.qty .. ":" .. x.unit end return table.concat(t, ",") end
     return txt(c.m) .. " / " .. txt(c.o)
   end
@@ -582,6 +582,98 @@ do
   assert(termes(pb) == avantB, "la commande « tout le projet » n'a pas bougé")
 end
 print("Handshake : choix de case propres à chaque projet OK")
+
+-- Les commandes d'un projet se lisent sur l'arbre de la demande (aucun stock déduit, toutes les recettes) : mes stocks
+-- ne réduisent jamais la part de l'artisan (CONCEPTION.md). Avec un marteau dans mes sacs et le stock coché, ce que livre
+-- le minage = le bronze que la forge reçoit en apport.
+as(BOB)
+local sacsAvant, optionsAvant = ns.containers, HandshakeDB.options
+ns.containers = function() return { b = { items = { { id = 5541, count = 1 } } } } end
+HandshakeDB.options = { bags = true, unlearned = true }
+local ok, err = pcall(function()
+  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 2 }, { id = 2870, qty = 1 } } })
+  ns.projetChoix(p, 2841, "fabriquer")
+  local blocs = ns.projetArbre(p).blocDe -- l'arbre de la fenêtre, stock déduit
+  local forge, mine = ns.projetCommande(p, ns.projetCommander(p, blocs.Forge)), ns.projetCommande(p, ns.projetCommander(p, blocs.Minage))
+  local livre, recu = mine.lines[1], ns.demandeApports(ns.projetDemande(forge))
+  assert(livre.id == 2841 and recu[1].id == 2841 and livre.qty == recu[1].qty and livre.qty == 40,
+    ("le minage livre %d bronzes, la forge en reçoit %d"):format(livre.qty, recu[1].qty))
+end)
+ns.containers, HandshakeDB.options = sacsAvant, optionsAvant
+assert(ok, err)
+print("Handshake : commandes sur l'arbre de la demande OK")
+
+-- Envoyer une commande (#7) : « Préparer la demande » en fait un brouillon de contrat, qui la suit encore ; envoyée, elle
+-- devient une demande (contrat v1) : ses termes sont ceux du contrat et ne bougent plus avec le projet, son état se lit
+-- dans le contrat.
+as(BOB)
+do
+  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  ns.projetChoix(p, 2841, "fabriquer")
+  local i = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
+  ns.projetArtisan(p, "Belegard", i)
+  ns.projetOffre(p, 8000, i)
+  local function cmd() return ns.projetCommande(p, i) end
+  local function termes(v) -- ce que la commande demande : lignes, apports, offre, artisan
+    local t = {}
+    for _, l in ipairs(v.lines) do t[#t + 1] = l.id .. "x" .. l.qty end
+    table.sort(t)
+    local a = {}
+    for id in pairs(v.apports or {}) do a[#a + 1] = id end
+    table.sort(a)
+    return table.concat(t, ",") .. " / " .. table.concat(a, ",") .. " / " .. tostring(v.tip) .. " / " .. tostring(v.player)
+  end
+  assert(cmd().etat == "pas envoyée", "pas encore de contrat")
+  local ct = assert(ns.projetEnvoyer(p, i))
+  assert(ct.status == "brouillon" and cmd().etat == "pas envoyée", "brouillon : pas envoyée")
+  ns.projetOffre(p, 9000, i)
+  ct = assert(ns.projetEnvoyer(p, i))
+  assert(ns.ctTotal(ct.o) - ns.ctTotal(ct.m) == 9000, "préparée de nouveau : le brouillon suit la commande")
+  ns.ctPropose(ct)
+  assert(cmd().etat == "demande envoyée", "envoyée : son état vient du contrat")
+  assert(ns.ctKey(ct) ~= key1 and bases[BEL].contracts[ns.ctKey(ct)].hash == ct.hash, "même seconde qu'une autre demande : une autre clé, arrivée chez Belegard")
+  local envoyee = termes(cmd())
+  assert(envoyee == "2870x1,5541x1 / 2841 / 9000 / Belegard", envoyee)
+  ns.projetChoix(p, 2841, "acheter")
+  ns.projetApport(p, 5500, true)
+  ns.projetAjouter(p, 5541, 3)
+  ns.projetOffre(p, 1, i)
+  ns.projetArtisan(p, "Cid", i)
+  assert(termes(cmd()) == envoyee, "le projet change : la demande ne bouge pas")
+  assert(ns.projetEnvoyer(p, i) == ct, "une demande envoyée n'est pas refaite")
+  -- Belegard contre-propose (+ 10 pa), Bob signe : la commande suit son contrat, pas le projet.
+  as(BEL)
+  local chez = HandshakeDB.contracts[ns.ctKey(ct)]
+  ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000)
+  as(BOB)
+  assert(cmd().etat == "contre-proposée", "contre-proposée")
+  local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
+  assert(ns.ctAccept(v2, v2.hash))
+  assert(cmd().etat == "signée" and cmd().tip == 10000, "signée, au prix de la version signée")
+  -- En clair (#7) : le texte part de la commande, avec ses lignes, ses apports et son offre ; envoyée, ce sont ceux de son
+  -- contrat, même si la recette a changé depuis (la cuirasse prend maintenant 25 bronzes).
+  for id, nom in pairs({ [5541] = "Marteau", [2870] = "Cuirasse", [2841] = "Barre de bronze" }) do
+    GameDataItems.items[id] = { name = nom, link = link(id, nom) }
+  end
+  GameDataDB.recipes[2].reagents[1].qty = 25
+  popups = {}
+  ns.whisper = function(msg) ns.onChat("CHAT_MSG_WHISPER", msg, BOB) end
+  ns.sendOrder(cmd())
+  ns.whisper = realWhisper
+  GameDataDB.recipes[2].reagents[1].qty = 20
+  local voulu, _, offre, apporte = ns.parseList(popups[1].data.text)
+  table.sort(voulu, function(a, b) return a.id < b.id end)
+  assert(#voulu == 2 and voulu[1].id == 2870 and voulu[1].qty == 1 and voulu[2].id == 5541 and voulu[2].qty == 1, "ses lignes")
+  assert(#apporte == 1 and apporte[1].id == 2841 and apporte[1].qty == 30 and offre == 10000, "ses apports (du contrat), son offre")
+  -- Le bloc de la forge commandé de nouveau : sa commande est figée, une nouvelle commande vivante (son identité à elle) ;
+  -- commandé encore une fois : la même, tant qu'elle n'est pas partie.
+  local j = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
+  assert(j ~= i and not ns.projetCommande(p, j).fige and ns.projetCommande(p, j).etat == "pas envoyée", "une nouvelle commande de la forge")
+  assert(ns.projetCommande(p, j).id ~= cmd().id, "chaque commande a son identité")
+  assert(ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge) == j, "la commande vivante est reprise")
+  assert(termes(cmd()) ~= termes(ns.projetCommande(p, j)), "la nouvelle suit le projet, l'envoyée non")
+end
+print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
 
 -- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }

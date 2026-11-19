@@ -4,7 +4,7 @@
 -- Ce qu'il faut pour la faire (la liste des besoins) a la même forme : on peut la renvoyer au client, ou la passer
 -- à un autre joueur comme une commande.
 -- Échange : du texte avec des liens d'objets, lisible et écrivable à la main (Maj+clic), par chuchotement :
---   Commande : 1x[Claymore en mithril] 1x[Camail en mithril] · pourboire 5 po · je fournis les composants
+--   Commande : 1x[Claymore en mithril] 1x[Camail en mithril] · j'apporte 36x[Minerai de mithril] · offre 5 po
 --   Besoins (1/2) : 36x[Minerai de mithril] 12x[Pierre solide] …
 -- Un message est limité à 255 caractères (un lien en prend ~80) : la liste part en plusieurs messages (i/n),
 -- recollés à l'arrivée.
@@ -106,7 +106,7 @@ end
 local function po(copper) return (("%.2f"):format(copper / 10000)):gsub("%.?0+$", "") .. " po" end
 ns.poText = po
 
--- lines : { { id, qty } ou { text, qty } } ; extra : texte ajouté à la fin (pourboire…). Renvoie les messages.
+-- lines : { { id, qty } ou { text, qty } } ; extra : texte ajouté à la fin (offre…). Renvoie les messages.
 function ns.listMessages(kind, lines, extra)
   local tokens = {}
   for _, l in ipairs(lines) do tokens[#tokens + 1] = l.raw or ("%dx%s"):format(l.qty, l.text or chatLink(l.id)) end
@@ -199,10 +199,11 @@ local function send(kind, lines, extra, target, loop)
 end
 
 -- La demande en clair (pour quelqu'un sans l'addon) : « Commande : 1x[Armure] · j'apporte 4x[Cuir lourd] · offre 5 po ».
+-- order = une commande (ns.projetCommande) ; envoyée (figée), ses apports sont ceux de son contrat.
 function ns.sendOrder(order, loop)
   local lines = {}
   for _, l in ipairs(order.lines) do lines[#lines + 1] = l end
-  local brought = ns.demandeApports(ns.projetDemande(order))
+  local brought = order.fige and ns.ctStore()[order.contrat].m or ns.demandeApports(ns.projetDemande(order))
   if #brought > 0 then
     lines[#lines + 1] = { raw = "· j'apporte" }
     for _, l in ipairs(brought) do lines[#lines + 1] = l end

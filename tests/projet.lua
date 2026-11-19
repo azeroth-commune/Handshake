@@ -46,9 +46,18 @@ local function boutons(ok) return tous(HandshakeFrame, function(c) return c:GetO
 -- La liste des commandes : un bouton par commande, « part · artisan[ · offre] ».
 local function commandes() return boutons(function(t) return t:find(" · ", 1, true) ~= nil end) end
 
-test("Commander un bloc ajoute une commande au projet, sur la même page", function()
+-- Personne n'a de recette ici : « recettes pas apprises » cochée, toutes comptent et les blocs se dessinent. L'option est
+-- rendue telle quelle, même si une vérification échoue.
+local function sansRecettes(f)
     local avant = HandshakeDB.options.unlearned
-    HandshakeDB.options.unlearned = true -- personne n'a de recette ici : toutes comptent, les blocs se dessinent
+    HandshakeDB.options.unlearned = true
+    local ok, err = pcall(f)
+    HandshakeDB.options.unlearned = avant
+    HandshakeFrame:Hide()
+    if not ok then error(err, 0) end
+end
+
+test("Commander un bloc ajoute une commande au projet, sur la même page", function() sansRecettes(function()
     SlashCmdList.HANDSHAKE("demo ceinture")
     local nb = #HandshakeDB.projets
     assertEquals(1, #commandes()) -- tout le projet
@@ -61,6 +70,27 @@ test("Commander un bloc ajoute une commande au projet, sur la même page", funct
     assertEquals(2, #liste)
     commander[1]:Click() -- le même bloc : la même commande
     assertEquals(2, #commandes())
-    HandshakeDB.options.unlearned = avant
-    HandshakeFrame:Hide()
-end)
+end) end)
+
+-- Envoyer une commande (#7) : son état, lu dans son contrat, s'affiche à côté d'elle dans la liste des commandes.
+test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat", function() sansRecettes(function()
+    SlashCmdList.HANDSHAKE("demo ceinture")
+    boutons(function(t) return t == "Commander" end)[1]:Click()
+    for _, b in ipairs(commandes()) do assertTrue(b:GetText():find("pas envoyée", 1, true) ~= nil, b:GetText()) end
+    local p = HandshakeDB.projets[#HandshakeDB.projets]
+    p.commandes[1].player = "Bel" -- la commande « tout le projet », à un autre joueur
+    commandes()[1]:Click()
+    bouton("Préparer la demande"):Click()
+    assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon s'ouvre dans les contrats")
+    assertTrue(commandes()[1]:GetText():find("pas envoyée", 1, true) ~= nil, "un brouillon n'est pas parti")
+    local envoyer
+    for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
+        if c.GetText and c:GetText() == "Envoyer la proposition" then envoyer = c end
+    end
+    envoyer:Click()
+    HandshakeContratsFrame:Hide()
+    local texte = commandes()[1]:GetText()
+    assertTrue(texte:find("demande envoyée", 1, true) ~= nil, texte)
+    assertTrue(commandes()[2]:GetText():find("pas envoyée", 1, true) ~= nil, "l'autre commande n'est pas partie")
+    assertTrue(bouton("Voir la demande") ~= nil, "envoyée : on la revoit, on ne la refait pas")
+end) end)

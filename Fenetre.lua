@@ -47,7 +47,7 @@ local function newOrderTag()
   t:SetScript("OnEnter", function(self)
     local o = self.order
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:AddLine(("Commande : %s pour %s"):format(o.maker, bandName(o.client)))
+    GameTooltip:AddLine(("Livraison : %s pour %s"):format(o.maker, bandName(o.client)))
     GameTooltip:AddLine(o.player and ("Par " .. o.player) or "Personne de ta liste n'a ce métier", 0.8, 0.8, 0.8)
     for _, id in ipairs(o.lines) do GameTooltip:AddLine(("%d× %s"):format(o.qty[id], ns.itemLabel(id)), 1, 1, 1) end
     GameTooltip:AddLine("Pour la commander : « Commander » sur le titre du bloc", 0.66, 0.56, 1)
@@ -68,9 +68,7 @@ local function laCommande()
   if choisie.p ~= projet() then choisie.p, choisie.i = projet(), 1 end
   return choisie.i
 end
-local dernier = {} -- le dernier arbre calculé (res) et son projet (p) : les commandes de bloc s'y lisent
-local function arbre() return dernier.p == projet() and dernier.res or nil end
-local function commande() return ns.projetCommande(projet(), laCommande(), arbre()) end
+local function commande() return ns.projetCommande(projet(), laCommande()) end
 
 ---------------------------------------------------------------------------------------------------
 -- Hauteurs. Chaque case (ou relais) vise le milieu de ses voisins, sans chevauchement (de gauche à droite, puis retour).
@@ -469,7 +467,6 @@ end
 local function refresh()
   if not (frame and frame:IsShown()) then return end
   local res = ns.projetArbre(projet())
-  dernier.p, dernier.res = projet(), res
   local roots, market, total, incomplete, g = res.roots, res.market, res.total, res.incomplete, ns.dessinArbre(res)
   if frame.syncOrder then frame.syncOrder() end
   if ns.refreshNeeds then ns.refreshNeeds(res) end
@@ -675,6 +672,8 @@ local function refresh()
     .. " · « + » décompose, « – » achète tout fait (violet = ton choix) · molette : zoom, glisser : déplacer, clic milieu : ajuster")
 end
 ns.refreshCraftWindow = refresh
+-- L'état des commandes (un contrat a bougé) : la liste des commandes seulement, pas l'arbre.
+function ns.syncCommandes() if frame and frame:IsShown() then frame.syncOrder() end end
 
 ---------------------------------------------------------------------------------------------------
 local function track(id, qty)
@@ -831,23 +830,24 @@ local function build()
   hint:SetPoint("LEFT", poL, "RIGHT", 12, 0)
   hint:SetText("Ctrl+clic sur une case : je la fournis")
   local contractB -- plus bas, sur la ligne d'ajout
-  -- Les commandes du projet, une par bouton : sa part, son artisan et son offre, ou « vide » (son bloc a disparu) ;
-  -- clic = la choisir.
+  -- Les commandes du projet, une par bouton : sa part, son artisan et son offre, ou « vide » (son bloc a disparu), puis
+  -- son état (lu dans son contrat) ; clic = la choisir.
   local cmdL = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   cmdL:SetPoint("TOPLEFT", 14, -164)
   cmdL:SetText("Commandes :")
   local cmdB = {}
   frame.syncOrder = function()
     local o, sel = projet(), laCommande()
-    local vues = ns.projetCommandes(o, arbre())
+    local vues = ns.projetCommandes(o)
     local c = vues[sel]
     if not orderName:HasFocus() then orderName:SetText(o.name or "") end
     if not player:HasFocus() then player:SetText(c.player or "") end
     if not tip:HasFocus() then tip:SetText(c.tip and c.tip > 0 and (ns.poText(c.tip):gsub(" po$", "")) or "") end
+    player:SetEnabled(not c.fige); tip:SetEnabled(not c.fige) -- envoyée : son artisan et son offre sont ceux du contrat
     count:SetText(("%d/%d"):format(ns.numeroProjet()))
     tipL:SetText(c.reponse and "Mon prix" or "Offre")
     if frame.apportLegend then frame.apportLegend:SetText(o.reponse and "fourni par lui" or "fourni par toi") end
-    contractB:SetText(c.reponse and "Contre-proposer" or "Préparer la demande")
+    contractB:SetText(c.reponse and "Contre-proposer" or c.fige and "Voir la demande" or "Préparer la demande")
     hint:SetText(o.reponse and "Ctrl+clic sur une case : il la fournit / je la reprends" or "Ctrl+clic sur une case : je la fournis")
     for i, v in ipairs(vues) do
       local b = cmdB[i]
@@ -857,9 +857,9 @@ local function build()
         cmdB[i] = b
       end
       b.i = i
-      -- ponytail: une seule ligne ; au-delà de 5 ou 6 blocs commandés elle dépasse à droite, passer à deux lignes alors
-      local text = ("%s · %s%s"):format(v.reponse and "réponse" or v.part, v.vide and "vide" or (v.player or "artisan ?"),
-        not v.vide and v.tip and v.tip > 0 and (" · " .. ns.moneyShort(v.tip)) or "")
+      -- ponytail: une seule ligne ; au-delà de 4 ou 5 commandes elle dépasse à droite, passer à deux lignes alors
+      local text = ("%s · %s%s%s"):format(v.reponse and "réponse" or v.part, v.vide and "vide" or (v.player or "artisan ?"),
+        not v.vide and v.tip and v.tip > 0 and (" · " .. ns.moneyShort(v.tip)) or "", v.etat and (" · " .. v.etat) or "")
       b:SetText(i == sel and ("|cffa98fff" .. text .. "|r") or text)
       b:SetWidth(b:GetTextWidth() + 24)
       b:Show()
@@ -895,7 +895,12 @@ local function build()
   importB:SetPoint("RIGHT", sendB, "LEFT", -6, 0)
   contractB = button("Préparer la demande", 150, function()
     local c = commande()
-    if not c.reponse then return ns.ctDraftFromDemande(c) end
+    if not c.reponse then -- brouillon de contrat (refait tant qu'il n'est pas parti), ou la demande déjà envoyée
+      local ct, err = ns.projetEnvoyer(projet(), laCommande())
+      if not ct then return print("|cffe64d4dContrats :|r " .. err .. ".") end
+      frame.syncOrder()
+      return ns.openContracts(ns.ctKey(ct))
+    end
     local n, err = ns.ctReplyFromOrder(c)
     if not n then return print("|cffe64d4dContrats :|r " .. err .. ".") end
     ns.openContracts(ns.ctKey(n))
