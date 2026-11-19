@@ -108,7 +108,6 @@ local function plan(id, qty, ctx, depth, path)
   else have, need = take(ctx.stock, id, qty) end
   local node = { id = id, qty = qty, have = have, need = need }
   if need == 0 then node.cost, node.how, node.craftable = 0, "stock", canCraft or nil return node end
-  ctx.vendors = ctx.vendors or ns.vendorPrices()
   local cost, how, partial = buyCost(id, need, ctx.market, ctx.vendors)
   node.cost, node.how, node.partial, node.buy = cost, how, partial, cost
   if depth >= MAX_DEPTH or path[id] or not ctx.by[id] then return node end
@@ -192,12 +191,12 @@ end
 
 -- Calcul complet d'une ligne d'un projet (Projet.lua), avec ses apports et ses choix de case.
 -- stock : celui laissé par la ligne précédente (nil = le construire) ; il est renvoyé pour la suivante.
-function ns.craftPlan(id, qty, opts, stock, apports, choix)
+function ns.craftPlan(id, qty, opts, stock, apports, choix, vendors)
   local market = ns.market()
   local ctx = { market = market and market.items, by = recipesByOutput(true, knownRecipes()), unlearned = opts.unlearned, stock = stock or buildStock(opts),
-    force = choix, apports = apports, vendors = ns.vendorPrices() }
+    force = choix, apports = apports, vendors = vendors or ns.vendorPrices() }
   local node = plan(id, qty, ctx, 0, {})
-  return node, market, ctx.stock
+  return node, market, ctx.stock, ctx.vendors
 end
 
 function ns.costCommand(args)

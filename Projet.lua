@@ -515,9 +515,9 @@ end
 -- les cases et les blocs. opts : options de stock et de recettes (celles de la fenêtre par défaut).
 -- Renvoie { roots, cases, caseDe, liens, blocs, blocDe, livraisons, total, incomplete, market }.
 function ns.projetArbre(p, opts)
-  local roots, market, stock, total, incomplete = {}, nil, nil, 0, false
-  for i, l in ipairs(p.lines) do
-    roots[i], market, stock = ns.craftPlan(l.id, l.qty, opts or HandshakeDB.options, stock, p.apports, p.choix)
+  local roots, market, stock, vendors, total, incomplete = {}, nil, nil, nil, 0, false
+  for i, l in ipairs(p.lines) do -- les prix marchands lus une fois pour tout le projet
+    roots[i], market, stock, vendors = ns.craftPlan(l.id, l.qty, opts or HandshakeDB.options, stock, p.apports, p.choix, vendors)
     total = total + (roots[i].cost or 0)
     incomplete = incomplete or roots[i].incomplete or not roots[i].cost
   end
