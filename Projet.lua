@@ -2,7 +2,7 @@
 -- (décomposer, acheter) et mes apports ; son arbre fusionné en cases (une par objet) et ses blocs (un par métier, avec
 -- qui peut les faire). Toute modification d'un projet passe par ce module ; la fenêtre (Fenetre.lua) ne fait que dessiner.
 -- Enregistrés dans HandshakeDB.projets[i] = { name, lines = { { id, qty } }, choix = { [id] = "fabriquer" | "acheter" },
---   apports = { [id] = true }, commandes = { { bloc (le métier ; nil = tout le projet, toujours la 1re), player
+--   apports = { [id] = true }, commandes = { { bloc (le métier ; nil = tout le projet : la 1re, et celles recommandées), player
 --   (l'artisan), tip (l'offre, en cuivre), contrat (clé de son contrat, une fois préparée), id } }, seq, reponse (clé
 --   du contrat dont il est la réponse), reponseHash, created } ;
 --   HandshakeDB.courant = le projet affiché.

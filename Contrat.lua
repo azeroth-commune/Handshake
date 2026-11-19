@@ -450,7 +450,7 @@ end
 -- prix de marché.
 function ns.ctVersionDemande(c, order)
   if c.client ~= ns.me() or (c.status ~= "envoye" and c.status ~= "a_signer") then return nil, "ce contrat ne prend plus de nouvelle version" end
-  if #order.lines == 0 then return nil, "la commande est vide : retire la demande dans Contrats" end
+  if #order.lines == 0 then return nil, "la commande est vide : retire (ou refuse) la demande dans Contrats" end
   local keep = {}
   for _, l in ipairs(c.m) do keep[l.id] = l.unit end
   local m, o = demandeTerms(order, keep)
