@@ -9,6 +9,8 @@ local _, ns = ...
 
 local lib = LibStub("LibCommune-1.0") -- embarquée (OptionalDeps en développement)
 -- Ce que Handshake lit : GameData ne relève que les types auxquels un add-on a souscrit (GameData#4).
+local lib = LibStub("LibCommune-1.0") -- embarquée (OptionalDeps en développement)
+-- Ce que Handshake lit : GameData ne relève que les types auxquels un add-on a souscrit (GameData#4).
 if lib.Souscrire then for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do lib:Souscrire(t) end end
 -- Recettes connues de tous les persos relevés (sans GameData : le perso connecté) et recettes vues, ou rien.
 local function recettesConnues()
