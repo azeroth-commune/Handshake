@@ -109,11 +109,20 @@ test("Une commande envoyée signale l'écart et repart en nouvelle version sur u
     HandshakeContratsFrame:Hide()
     local ct = HandshakeDB.contracts[p.commandes[1].contrat]
     assertEquals("envoye", ct.status)
-    assertTrue(commandes()[1]:GetText():find("a changé", 1, true) == nil, "rien n'a changé")
+    -- Écart de prix (#18) : avec un apport, la caution contre mon estimation, en %, ou « estimation incomplète ».
+    local m = ct.m
+    ct.m = { { id = 2589, qty = 1, unit = 1 } } -- (comme si j'apportais un tissu, caution 1 pc)
+    commandes()[1]:Click()
+    local prix = commandes()[1]:GetText()
+    assertTrue(prix:find("caution |cff%x+[+-]%d+ %%") ~= nil or prix:find("estimation incomplète", 1, true) ~= nil, prix)
+    ct.m = m
+    commandes()[1]:Click()
+    assertTrue(commandes()[1]:GetText():find("caution |cff", 1, true) == nil, "rien d'apporté : pas de caution")
+    assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "rien n'a changé")
     p.lines[1].qty = p.lines[1].qty + 1 -- une ligne de plus à fabriquer : la part de « tout le projet » change
     commandes()[1]:Click()
     local texte = commandes()[1]:GetText()
-    assertTrue(texte:find("a changé depuis la demande", 1, true) ~= nil, texte)
+    assertTrue(texte:find("ne correspond plus au contrat", 1, true) ~= nil, texte) -- constaté, sans cause supposée (#18)
     assertEquals("1", ct.v, "rien ne part sans clic")
     bouton("Nouvelle version"):Click()
     local v2 = HandshakeDB.contracts[p.commandes[1].contrat]
@@ -121,7 +130,7 @@ test("Une commande envoyée signale l'écart et repart en nouvelle version sur u
     assertEquals("1", v2.prev.v)
     assertTrue(HandshakeContratsFrame:IsShown(), "la nouvelle version s'ouvre dans les contrats, différentiel compris")
     HandshakeContratsFrame:Hide()
-    assertTrue(commandes()[1]:GetText():find("a changé", 1, true) == nil, "partie : plus d'écart")
+    assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "partie : plus d'écart")
     local nv = bouton("Nouvelle version")
     assertTrue(nv == nil or not nv:IsShown(), "plus de « Nouvelle version »")
     v2.status = "retire" -- (comme si je l'avais retirée dans les contrats)
