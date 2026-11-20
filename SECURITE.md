@@ -200,12 +200,15 @@ d'acceptation automatique (66).
 
 ## Ajout : noms de famille sur Forever (n° 69)
 
-Les persos de Forever ont un nom de famille (« Aedi Triple-Forgé »), qui peut contenir des tirets, et
-`UnitName` renvoie prénom, nom de famille (pas le royaume). L'identité retenue est prénom + royaume (royaume = ce qui
-suit le dernier tiret, seulement s'il ne peut pas s'agir du nom de famille), plus le GUID figé au premier échange.
-Si deux joueurs partagent un prénom, un homonyme ne gagne rien : chaque échange est équilibré (P1). À vérifier en jeu
-avec `/handshake noms` : la forme exacte de l'expéditeur dans les chuchotements et les messages d'addon, et si les
-prénoms sont uniques sur un royaume.
+Les persos de Forever ont un nom de famille, sans tiret ni espace (le jeu refuse le tiret : « Marteaudefer », relevé
+du 20/11/2026, LibCommune#19). `UnitName`, `UnitFullName` et `GetUnitName(unité, true)` rendent ce nom de famille là où
+le retail rend le royaume : le royaume vient seulement de `GetNormalizedRealmName()`. L'identité retenue est l'adresse
+« Prénom-Royaume » (royaume normalisé ; dans une adresse, le dernier tiret sépare toujours le prénom du royaume), plus
+le GUID figé au premier échange. L'analyse est celle de la lib commune (`lib.Adresse`, `lib.Destinataire` pour le
+prénom seul d'un chuchotement sur notre royaume) ; un nom reçu dans un contrat doit être une adresse telle quelle.
+Si deux joueurs partagent un prénom, un homonyme ne gagne rien : chaque échange est équilibré (P1). Encore à relever en
+jeu avec `/handshake noms` : la forme du `sender` d'un chuchotement ou d'un message d'addon reçu d'un autre joueur, et
+si les prénoms sont uniques sur un royaume.
 
 ## Ajout : identifiants de personnage (protocole 2)
 

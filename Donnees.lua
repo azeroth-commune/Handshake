@@ -13,9 +13,9 @@ if lib.Souscrire then for _, t in ipairs({ "recettes connues", "inventaires", "m
 local function recettesConnues()
   return lib:Lire("recettes connues", "tous") or { recettes = {}, persos = {} }
 end
--- { [perso] = { [métier] = { rank, max, known = { [clé] = difficulté } } } }
+-- { [GUID] = { [métier] = { rank, max, known = { [clé] = difficulté } } } }
 function ns.knownRecipes() return recettesConnues().persos end
--- Un type par perso, tous les persos relevés : { [perso] = … }.
+-- Un type par perso, tous les persos relevés : { [GUID] = … }.
 local function parPerso(t) local d = lib:Lire(t, "tous") return d and d.persos or {} end
 
 ---------------------------------------------------------------------------------------------------
@@ -58,7 +58,7 @@ function ns.recipeLevel(key, r)
   local c = key and HandshakeClassicRecipes and HandshakeClassicRecipes[key]
   return c and c[7] or nil
 end
--- { [perso] = { bags, bank, … } } ; { [perso] = { professions, skills } } ; { [PNJ] = { items = { { id, price, stack, limited } } } }
+-- { [GUID] = { bags, bank, … } } ; { [GUID] = { professions, skills } } ; { [PNJ] = { items = { { id, price, stack, limited } } } }
 function ns.inventaires() return parPerso("inventaires") end
 function ns.metiers() return parPerso("métiers et compétences") end
 function ns.vendors() return lib:Lire("marchands") or {} end
@@ -103,11 +103,11 @@ function ns.apportGameData()
     .. (ns.market() and "." or " et les prix de l'HV.")
 end
 
--- Sur Forever, UnitName("player") renvoie prénom, nom de famille ; la clé d'un perso est « Prénom Nom-Royaume »
--- (même forme que GameData).
-function ns.charKey()
-  local first, last = UnitName("player")
-  return (last and (first .. " " .. last) or first) .. "-" .. GetRealmName()
+-- Un perso du joueur est rangé sous son GUID (LibCommune#19) ; son prénom pour l'affichage (« ? » si la lib ne le connaît
+-- pas : un perso de GameData pas encore reconnecté depuis le passage au GUID).
+function ns.prenom(guid)
+  local p = lib.Personnage(guid)
+  return p and p.adresse and p.adresse:match("^[^%-]+") or "?"
 end
 
 ---------------------------------------------------------------------------------------------------

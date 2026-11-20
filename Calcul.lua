@@ -178,7 +178,7 @@ local function buildStock(opts)
       end
     end
   end
-  local me, inv = ns.charKey(), ns.inventaires()
+  local me, inv = UnitGUID("player"), ns.inventaires()
   if opts.bags then add(ns.mesSacs(), 1) end
   if opts.bank then add(inv[me] and inv[me].bank, 2) end
   if opts.alts then
