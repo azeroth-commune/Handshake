@@ -11,6 +11,7 @@ C_Item = { GetItemInfo = noop, GetItemIconByID = noop }
 date, time = os.date, os.time
 GetTime = function() return 0 end
 GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
+UnitGUID = function(u) if u == "player" then return "Player-1-0000000E" end end -- un perso est rangé sous son GUID
 GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {}, lots = {} }, { items = {} }, {}
 -- GameData installé : la lib commune lit ses données par GameDataAPI, ses vrais accesseurs (GameData/Souscriptions.lua :
 -- inventaires, métiers, marchands, objets, cours de l'HV) ; les recettes connues, même forme que GameData.
@@ -90,7 +91,7 @@ assert(b.cost == 6 * 270)
 -- Les cases d'un projet (Projet.lua) : une par objet, le même stock pour toutes ses lignes. Les données sont celles que
 -- Handshake lit (GameData installé) : HV, recettes, persos ; mes sacs et ma banque.
 UnitName = function() return "Moi" end
-local MOI = ns.charKey()
+local MOI = UnitGUID("player")
 local TOUT = { unlearned = true } -- options de calcul : toutes les recettes, aucun stock
 local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = fiches GameData des autres persos
   local function sac(t)
@@ -127,7 +128,8 @@ donnees({ hv = mk, recettes = {
   [1] = { name = "Marteau", output = 5541, profession = "Forge", level = 100, reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } },
   [2] = { name = "Cuirasse", output = 2870, profession = "Forge", reagents = { { id = 2841, qty = 20 }, { id = 5500, qty = 2 } } },
   [3] = bronzeR },
-  persos = { ["Bel-R"] = { recipes = { Forge = { rank = 164, known = { [1] = "easy" } } } }, ["Alt-R"] = { recipes = { Minage = { rank = 90, known = {} } } } } })
+  persos = { ["Player-1-00000BE1"] = { adresse = "Bel-R", recipes = { Forge = { rank = 164, known = { [1] = "easy" } } } },
+    ["Player-1-00000A17"] = { adresse = "Alt-R", recipes = { Minage = { rank = 90, known = {} } } } } })
 local function both(choix) -- un projet « marteau + cuirasse », avec ses choix de case
   local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
   for id, c in pairs(choix or {}) do ns.projetChoix(p, id, c) end
@@ -875,9 +877,10 @@ as(BEL)
 assert(ns.ctDescribe(bases[BEL].contracts[k], BEL):find("tu es l'ARTISAN"), "rôle affiché depuis mon côté")
 print("Handshake : fiche du contrat OK")
 
--- Noms à la Forever : prénom + nom de famille (avec tirets), royaume après le dernier tiret.
-assert(ns.fullName("Aedi Triple-Forgé-" .. REALM) == "Aedi-" .. REALM, "nom de famille à tiret, royaume au bout")
-assert(ns.fullName("Aedi Triple-Forgé") == "Aedi-" .. REALM, "sans royaume : le tiret est celui du nom de famille")
+-- Noms à la Forever : prénom + nom de famille (sans tiret ni espace), royaume après le tiret ; analyse de la lib commune.
+assert(ns.fullName == commune.Adresse and ns.whisperTarget == commune.Destinataire, "noms : ceux de la lib commune, plus de copie")
+assert(ns.fullName("Belegard Marteaudefer-" .. REALM) == BEL, "nom de famille et royaume")
+assert(ns.fullName("Belegard Marteaudefer") == BEL, "nom de famille sans royaume : notre royaume")
 assert(ns.fullName("Riwanon", "Kerys") == "Riwanon-Kerys" and ns.fullName("Riwanon") == "Riwanon-" .. REALM)
 assert(ns.fullName("Bob-AutreRoyaume") == "Bob-AutreRoyaume", "autre royaume")
 UnitName = function() return "Belegard", "Marteaudefer" end
@@ -885,12 +888,13 @@ assert(ns.me() == BEL, "moi = prénom + royaume, pas le nom de famille")
 print("Handshake : noms à la Forever OK")
 
 -- Avec GameData : les recettes connues de tous ses persos, par la lib commune.
-GameDataDB.chars = { ["Alt Dupont-R"] = { recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
-  professions = { { name = "Couture", rank = 120 } }, bags = { b = { items = { { id = 2840, count = 4 } } } } }, ["Sans-R"] = {} }
-assert(ns.knownRecipes()["Alt Dupont-R"].Forge.known[9] and not ns.knownRecipes()["Sans-R"], "recettes connues de GameData")
+local ALT, SANS = "Player-1-00000A17", "Player-1-00005A25"
+GameDataDB.chars = { [ALT] = { adresse = "Alt-R", nom = "Alt Dupont", recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
+  professions = { { name = "Couture", rank = 120 } }, bags = { b = { items = { { id = 2840, count = 4 } } } } }, [SANS] = {} }
+assert(ns.knownRecipes()[ALT].Forge.known[9] and not ns.knownRecipes()[SANS], "recettes connues de GameData, par GUID")
 local alt
-for _, e in ipairs(ns.crafters()) do if e.key == "Alt Dupont-R" then alt = e end end
-assert(alt and alt.name == "Alt" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData")
+for _, e in ipairs(ns.crafters()) do if e.key == ALT then alt = e end end
+assert(alt and alt.name == "Alt" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData, prénom tiré de sa fiche")
 assert(alt.ranks.Couture == 120, "métiers des persos (fiche de GameData), par la lib")
 -- Mes autres persos (option « mes autres persos ») : leurs sacs, par la lib.
 GameDataDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
@@ -936,9 +940,9 @@ C_Item.GetItemInfo = function(id) if id == 2840 then return "Barre de cuivre", "
 ns.rememberItem(2840)
 C_Item.GetItemInfo = noop
 assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "relevé de repli, noms en mémoire")
-assert(ns.knownRecipes()[ns.charKey()].Minage.known[5] and not ns.knownRecipes()[ns.charKey()].Minage.known[6], "recettes connues du perso")
+assert(ns.knownRecipes()[UnitGUID("player")].Minage.known[5] and not ns.knownRecipes()[UnitGUID("player")].Minage.known[6], "recettes connues du perso")
 local moi = ns.crafters()[1]
-assert(moi.key == ns.charKey() and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
+assert(moi.key == UnitGUID("player") and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
 -- Sacs (lus à l'instant) et banque (vue cette session) du perso connecté : par la lib, déduits du calcul.
 Enum.BagIndex = { Backpack = 0, Bank = -1 }
 local slots = { [0] = { { itemID = 2770, stackCount = 2 } }, [-1] = { { itemID = 2770, stackCount = 3 } } }

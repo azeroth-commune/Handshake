@@ -29,37 +29,13 @@ local store = ns.ctStore
 local function now() return GetServerTime() end
 
 ---------------------------------------------------------------------------------------------------
--- Noms : toujours « Prénom-Royaume », royaume sans espace ni tiret (forme des messages d'addon).
--- Sur Forever les persos ont un nom de famille (« Aedi Triple-Forgé ») : UnitName renvoie prénom, nom de famille, et
--- un nom de famille peut contenir des tirets. On garde le prénom ; le royaume est ce qui suit le DERNIER tiret, et
--- seulement s'il n'y a pas d'espace (sinon ce tiret peut être celui du nom de famille) ou si c'est notre royaume.
+-- Noms : toujours l'adresse « Prénom-Royaume », royaume sans espace ni tiret (forme des messages d'addon). L'analyse
+-- est celle de la lib commune (lib.Adresse : le 2e retour de UnitName est le nom de famille sur Forever, jamais le
+-- royaume ; lib.Destinataire : le prénom seul pour un chuchotement sur notre royaume).
 -- Un homonyme (même prénom) ne gagne rien : chaque échange est équilibré (P1), et le GUID est figé au 1er échange.
-local NAME = "^[^%-|,:%s%c]+%-[^%-|,:%s%c]+$"
-function ns.fullName(name, realm)
-  if type(name) ~= "string" or name == "" then return nil end
-  local mine = (GetNormalizedRealmName and GetNormalizedRealmName() or ""):gsub("[%s%-]", "")
-  if not realm then
-    local before, after = name:match("^(.+)%-([^%-]+)$")
-    if after and (not name:find("%s") or after:gsub("%s", "") == mine) then name, realm = before, after end
-  end
-  name = name:match("^[^%s%-]+")
-  if not name then return nil end
-  realm = (realm and realm ~= "") and realm:gsub("[%s%-]", "") or mine
-  local full = name .. "-" .. realm
-  return full:match(NAME) and full or nil
-end
+local lib = LibStub("LibCommune-1.0")
+ns.fullName, ns.whisperTarget = lib.Adresse, lib.Destinataire
 function ns.me() return ns.fullName((UnitName("player"))) end
-
--- À qui adresser un chuchotement : le prénom seul pour quelqu'un de mon royaume. Sur Forever, « Prénom-Royaume » est
--- lu « Prénom NomDeFamille » (le jeu a répondu « Aucun joueur nommé 'Testeur CAMWOWEU4Realm8PvP' », 18/11/2026).
--- ponytail: un autre royaume garde « Prénom-Royaume », à vérifier le jour où on joue entre royaumes
-function ns.whisperTarget(name)
-  local full = ns.fullName(name)
-  if not full then return name end
-  local first, realm = full:match("^([^%-]+)%-(.+)$")
-  local mine = (GetNormalizedRealmName and GetNormalizedRealmName() or ""):gsub("[%s%-]", "")
-  return realm == mine and first or full
-end
 function ns.myGUID() return UnitGUID("player") end
 
 -- Identifiants appris de sources serveur : l'identifiant que le jeu joint à chaque chuchotement reçu.
@@ -208,7 +184,7 @@ function ns.ctParse(body, sender, me, t)
   if not (c.id:match("^%d+$") and #c.id <= 12) then return nil, "id" end
   if not (c.parent == "0" or c.parent:match("^%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")) then return nil, "parent" end
   for _, k in ipairs({ "origin", "client", "artisan" }) do
-    if not c[k]:match(NAME) then return nil, "nom" end
+    if ns.fullName(c[k]) ~= c[k] then return nil, "nom" end -- une adresse « Prénom-Royaume » telle quelle, rien d'autre
   end
   if c.client == c.artisan or not ((c.client == me and c.artisan == sender) or (c.artisan == me and c.client == sender)) then
     return nil, "parties"

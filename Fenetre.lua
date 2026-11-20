@@ -254,7 +254,7 @@ end
 local function openRecipe(n)
   local key = n.recipeKey
   if type(key) ~= "number" then return print("Commandes : pas de recette à ouvrir pour " .. ns.itemLabel(n.id) .. ".") end
-  for _, prof in pairs(ns.knownRecipes()[ns.charKey()] or {}) do
+  for _, prof in pairs(ns.knownRecipes()[UnitGUID("player")] or {}) do
     if prof.known and prof.known[key] then
       local loaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
       if not (loaded and loaded("Blizzard_Professions")) then return print("Commandes : ouvre une fois ta fenêtre de métier, puis Maj+clic.") end
@@ -263,7 +263,7 @@ local function openRecipe(n)
   end
   local who = {}
   for k, metiers in pairs(ns.knownRecipes()) do
-    for _, prof in pairs(metiers) do if prof.known and prof.known[key] then who[#who + 1] = k:match("^[^%-]+") end end
+    for _, prof in pairs(metiers) do if prof.known and prof.known[key] then who[#who + 1] = ns.prenom(k) end end
   end
   print(("Commandes : %s — %s."):format(n.recipe and n.recipe.name or "recette",
     #who > 0 and ("connue de " .. table.concat(who, ", ") .. ", pas de ce perso") or "aucun de tes persos ne la connaît"))
