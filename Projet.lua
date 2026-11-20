@@ -290,10 +290,10 @@ function ns.projetEnvoyer(p, i)
   return ct
 end
 
--- « Nouvelle version » (#8) : la commande envoyée i, dont la part du projet a changé, repart en contre-proposition
+-- « Nouvelle version » (#8) : la commande envoyée i, dont la part du projet a changé, prépare sa contre-proposition
 -- (Contrat : nouvelle version, l'artisan voit le différentiel, accepte ou refuse) avec ce que sa part est maintenant. Son
--- offre reste celle du contrat : le différentiel = l'écart. Seulement sur un clic du joueur, jamais d'office. Renvoie la
--- nouvelle version, ou nil, raison.
+-- offre reste celle du contrat : le différentiel = l'écart. Elle reste en brouillon (#19) : le joueur la relit dans
+-- Contrats et l'envoie de là. Renvoie le brouillon, ou nil, raison.
 function ns.projetNouvelleVersion(p, i)
   local c = commandes(p)[i or 1]
   local ct = envoyee(c)

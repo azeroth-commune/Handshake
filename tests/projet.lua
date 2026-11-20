@@ -95,9 +95,10 @@ test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat
     assertTrue(bouton("Voir la demande") ~= nil, "envoyée : on la revoit, on ne la refait pas")
 end) end)
 
--- Écart (#8) : la part d'une commande envoyée change, l'écart s'affiche à côté d'elle avec « Nouvelle version », qui la
--- renvoie (v2) seulement sur ce clic. Retirée, elle se commande de nouveau.
-test("Une commande envoyée signale l'écart et repart en nouvelle version sur un clic", function() sansRecettes(function()
+-- Écart (#8) : la part d'une commande envoyée change, l'écart s'affiche à côté d'elle avec « Nouvelle version », qui
+-- prépare la v2 en brouillon et l'ouvre dans les contrats (#19) ; elle part de là, sur « Envoyer la proposition ».
+-- Retirée, elle se commande de nouveau.
+test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant l'envoi", function() sansRecettes(function()
     SlashCmdList.HANDSHAKE("demo ceinture")
     local p = HandshakeDB.projets[#HandshakeDB.projets]
     p.commandes[1].player = "Bel"
@@ -125,10 +126,27 @@ test("Une commande envoyée signale l'écart et repart en nouvelle version sur u
     assertTrue(texte:find("ne correspond plus au contrat", 1, true) ~= nil, texte) -- constaté, sans cause supposée (#18)
     assertEquals("1", ct.v, "rien ne part sans clic")
     bouton("Nouvelle version"):Click()
+    local brouillon = HandshakeDB.contracts[p.commandes[1].contrat .. "+"]
+    assertEquals("brouillon", brouillon.status)
+    assertEquals("2", brouillon.v)
+    assertEquals("1", HandshakeDB.contracts[p.commandes[1].contrat].v, "rien n'est parti avant l'envoi")
+    assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon de la v2 s'ouvre dans les contrats")
+    local envoyer, fiche
+    for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
+        if c.GetText and c:GetText() == "Envoyer la proposition" and c:IsShown() then envoyer = c end
+    end
+    for _, r in ipairs(tous(HandshakeContratsFrame, function() return true end)) do
+        for _, z in ipairs({ r:GetRegions() }) do
+            if z.GetText and (z:GetText() or ""):find("Changé depuis la v1", 1, true) then fiche = true end
+        end
+    end
+    assertTrue(fiche, "le différentiel est affiché avant l'envoi")
+    envoyer:Click()
     local v2 = HandshakeDB.contracts[p.commandes[1].contrat]
     assertEquals("2", v2.v)
+    assertEquals("envoye", v2.status)
     assertEquals("1", v2.prev.v)
-    assertTrue(HandshakeContratsFrame:IsShown(), "la nouvelle version s'ouvre dans les contrats, différentiel compris")
+    assertNil(HandshakeDB.contracts[p.commandes[1].contrat .. "+"], "envoyé : plus de brouillon")
     HandshakeContratsFrame:Hide()
     assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "partie : plus d'écart")
     local nv = bouton("Nouvelle version")
