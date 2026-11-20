@@ -264,8 +264,16 @@ end
 
 ---------------------------------------------------------------------------------------------------
 -- États : a_signer (reçu, c'est à moi), envoye (à lui), signe, refuse, retire, clos. « échu » se calcule.
-local function key(c) return c.origin .. "#" .. c.id end
+-- Une nouvelle version pas encore envoyée (brouillon, #19) se range à côté de la version en cours : « origine#id+ ».
+local function key(c) return c.origin .. "#" .. c.id .. (c.status == "brouillon" and c.parent ~= "0" and "+" or "") end
 ns.ctKey = key
+
+-- Ce brouillon de nouvelle version ne vaut plus : la version en cours a changé depuis (il a contre-proposé, signé, refusé…).
+function ns.ctBrouillonPerime(c)
+  if c.status ~= "brouillon" or c.parent == "0" then return false end
+  local cur = store()[c.origin .. "#" .. c.id]
+  return not (cur and cur.hash == c.parent and (cur.status == "envoye" or cur.status == "a_signer"))
+end
 
 local function notify(text) if ns.ctNotify then ns.ctNotify(text) end end
 
@@ -341,10 +349,16 @@ local function horsBornes(c)
   if c.d < now() or c.d > now() + MAX_DAYS * 86400 then return "échéance dépassée ou à plus de 30 jours" end
 end
 
--- Renvoie le contrat envoyé, ou nil, raison (rien n'est enregistré ni envoyé).
+-- Renvoie le contrat envoyé, ou nil, raison (rien n'est enregistré ni envoyé). Un brouillon de nouvelle version (#19)
+-- périmé est effacé, pas envoyé ; envoyé, il prend la place de la version en cours.
 function ns.ctPropose(c)
+  if ns.ctBrouillonPerime(c) then
+    store()[key(c)] = nil
+    return nil, "le contrat a changé depuis ce brouillon : « Nouvelle version » le refait"
+  end
   local err = horsBornes(c)
   if err then return nil, err end
+  store()[c.origin .. "#" .. c.id .. "+"] = nil -- une nouvelle version part : un brouillon de la suivante ne vaut plus
   c.hash, c.author, c.status = ns.ctHash(ns.ctCanonical(c)), ns.me(), "envoye"
   local otherGUID = c.client == ns.me() and c.artisanGUID or c.clientGUID
   if otherGUID ~= "0" and not c.peer then c.peer = { guid = otherGUID, verified = ns.knownGUID[ns.other(c, ns.me())] == otherGUID or nil } end
@@ -385,14 +399,14 @@ local function scale(list, total)
   end
   return out
 end
--- Une nouvelle version de c (m, o, échéance), envoyée à l'autre.
-local function newVersion(c, m, o, d)
+-- Une nouvelle version de c (m, o, échéance), pas encore envoyée.
+local function nextVersion(c, m, o, d)
   local me, peerGUID = ns.me(), c.peer and c.peer.guid or "0"
-  local n = { origin = c.origin, id = c.id, v = tostring(tonumber(c.v) + 1), parent = c.hash, client = c.client, artisan = c.artisan,
+  return { origin = c.origin, id = c.id, v = tostring(tonumber(c.v) + 1), parent = c.hash, client = c.client, artisan = c.artisan,
     clientGUID = c.client == me and ns.myGUID() or peerGUID, artisanGUID = c.artisan == me and ns.myGUID() or peerGUID, peer = c.peer,
     m = m, o = o, d = d, prev = snapshot(c) }
-  return ns.ctPropose(n)
 end
+local function newVersion(c, m, o, d) return ns.ctPropose(nextVersion(c, m, o, d)) end
 function ns.ctCounter(c, caution, delivery, days)
   return newVersion(c, caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
     days and (now() + math.floor(days * 86400)) or c.d)
@@ -472,7 +486,8 @@ end
 
 -- « Nouvelle version » de ma demande c (#8, moi client) : ce que la commande order demande maintenant (ses lignes, ses
 -- apports, son offre), en contre-proposition. Les cautions déjà au contrat restent ; un apport ajouté est estimé à mon
--- prix de marché.
+-- prix de marché. Elle est préparée en brouillon (#19), relue dans Contrats avec le différentiel, et part de là
+-- (« Envoyer la proposition ») ; préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
 function ns.ctVersionDemande(c, order)
   if c.client ~= ns.me() or (c.status ~= "envoye" and c.status ~= "a_signer") then return nil, "ce contrat ne prend plus de nouvelle version" end
   if #order.lines == 0 then return nil, "la commande est vide : retire (ou refuse) la demande dans Contrats" end
@@ -480,7 +495,12 @@ function ns.ctVersionDemande(c, order)
   for _, l in ipairs(c.m) do keep[l.id] = l.unit end
   local m, o = demandeTerms(order, keep)
   if not m then return nil, o end
-  return newVersion(c, m, o, c.d)
+  local n = nextVersion(c, m, o, c.d)
+  local err = horsBornes(n)
+  if err then return nil, err end
+  n.status = "brouillon"
+  store()[key(n)] = n
+  return n
 end
 
 ---------------------------------------------------------------------------------------------------

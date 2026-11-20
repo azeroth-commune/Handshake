@@ -790,8 +790,19 @@ do
   local chez = bases[BEL].contracts
   assert(chez[ns.ctKey(cf)].v == "1" and chez[ns.ctKey(cm)].v == "1" and cf.v == "1", "rien ne part sans clic")
   assert(not ns.projetNouvelleVersion(p, m), "pas d'écart, pas de nouvelle version")
-  -- « Nouvelle version » : v2 chez Belegard, avec la v1 pour le différentiel ; il porte sur l'écart seulement.
+  -- « Nouvelle version » (#19) : la v2 en brouillon, à côté de la v1, relue avec le différentiel avant l'envoi ; rien n'est
+  -- parti. Préparée de nouveau, elle est refaite. Elle part de Contrats (« Envoyer la proposition ») et remplace la v1.
+  local brouillon = assert(ns.projetNouvelleVersion(p, f))
+  assert(brouillon.status == "brouillon" and brouillon.v == "2" and ns.ctKey(brouillon) ~= ns.ctKey(cf)
+    and HandshakeDB.contracts[ns.ctKey(brouillon)] == brouillon and HandshakeDB.contracts[ns.ctKey(cf)] == cf, "brouillon à côté de la v1")
+  assert(chez[ns.ctKey(cf)].v == "1" and cmd(f).etat == "demande envoyée" and cmd(f).ecart, "rien n'est parti, l'écart reste")
+  local apercu = ns.ctDescribe(brouillon, BOB)
+  assert(apercu:find("BROUILLON") and apercu:find("Changé depuis la v1") and apercu:find("absent %-> 1"), "le différentiel avant l'envoi")
   local v2 = assert(ns.projetNouvelleVersion(p, f))
+  assert(v2 ~= brouillon and HandshakeDB.contracts[ns.ctKey(v2)] == v2, "préparée de nouveau : refaite")
+  local cle = ns.ctKey(v2)
+  assert(ns.ctPropose(v2))
+  assert(HandshakeDB.contracts[ns.ctKey(cf)] == v2 and not HandshakeDB.contracts[cle], "envoyée : elle remplace la v1, plus de brouillon")
   as(BEL)
   local recu = HandshakeDB.contracts[ns.ctKey(cf)]
   assert(recu.v == "2" and recu.status == "a_signer" and recu.prev.v == "1" and recu.hash == v2.hash, "contre-proposition reçue")
@@ -837,6 +848,17 @@ do
   local _, trop = ns.projetNouvelleVersion(p, f)
   assert(trop and trop:find("bornes"), "hors bornes : rien n'est envoyé")
   assert(bases[BEL].contracts[ns.ctKey(cf)].v == "3", "Belegard a toujours la v3 (son prix)")
+  -- Un brouillon de nouvelle version dépassé (il contre-propose entre-temps) : périmé, il ne part pas, il est effacé.
+  ns.projetQuantite(p, 2, 2)
+  local b = assert(ns.projetNouvelleVersion(p, f))
+  assert(b.v == "4" and b.prev.v == "3", "brouillon de la v4")
+  as(BEL)
+  local v3 = HandshakeDB.contracts[ns.ctKey(cf)]
+  assert(ns.ctCounter(v3, nil, ns.ctTotal(v3.o) + 500))
+  as(BOB)
+  local _, perime = ns.ctPropose(b)
+  assert(perime and perime:find("a changé") and not HandshakeDB.contracts[ns.ctKey(b)], "périmé : effacé, pas envoyé")
+  assert(HandshakeDB.contracts[ns.ctKey(cf)].author == BEL and bases[BEL].contracts[ns.ctKey(cf)].v == "4", "sa v4 reste")
 end
 print("Handshake : écart et nouvelle version d'une commande envoyée OK")
 

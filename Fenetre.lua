@@ -839,8 +839,8 @@ local function build()
   cmdL:SetPoint("TOPLEFT", 14, -164)
   cmdL:SetText("Commandes :")
   local cmdB, actB = {}, {}
-  -- À côté d'une commande : « Nouvelle version » (envoyée, sa part du projet a changé ; elle part sur ce clic, jamais
-  -- d'office) ou « Commander de nouveau » (refusée, retirée, échue).
+  -- À côté d'une commande : « Nouvelle version » (envoyée, sa part du projet a changé ; préparée en brouillon et ouverte
+  -- dans Contrats, elle part de là) ou « Commander de nouveau » (refusée, retirée, échue).
   local function agir(self)
     local o = projet()
     if ns.projetCommande(o, self.i).recommander then
