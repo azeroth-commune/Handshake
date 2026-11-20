@@ -522,6 +522,14 @@ local v1 = ns.ctFromDemande(ns.projetCommande(demande), 3)
 assert(v1.client == BOB and v1.artisan == BEL and v1.clientGUID == GBOB, "moi client, l'autre artisan")
 assert(#v1.m == 1 and v1.m[1].id == 4234 and v1.m[1].unit == 500 and v1.o[1].unit == 4 * 500 + 30000, "caution sur l'apport + offre")
 assert(ns.ctParse(ns.ctCanonical(v1), BOB, BEL, clock), "ce qu'on envoie passe notre propre lecture stricte")
+-- Un champ nom qui n'est pas une adresse « Prénom-Royaume » telle quelle (lib.Adresse) : refusé.
+for _, mauvais in ipairs({ "Bob Smith-R", "Bob,x-R", "Bob", "Bob-R-X" }) do
+  local f = {}
+  for champ in (ns.ctCanonical(v1) .. "|"):gmatch("([^|]*)|") do f[#f + 1] = champ end
+  f[7] = mauvais -- le client
+  local c, raison = ns.ctParse(table.concat(f, "|"), BOB, BEL, clock)
+  assert(c == nil and raison == "nom", "client « " .. mauvais .. " » : " .. tostring(raison))
+end
 -- Sans apport : vente simple (pas de caution).
 local simple = ns.ctFromDemande(ns.projetCommande(ns.nouveauProjet({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } })), 3)
 assert(#simple.m == 0 and simple.o[1].unit == 30000, "vente simple")

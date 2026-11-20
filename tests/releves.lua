@@ -27,8 +27,13 @@ test("mon perso par son GUID : recettes connues sous mon GUID, mon adresse par l
     local moi = lib.Personnage()
     assertEquals(UnitGUID("player"), moi.guid)
     assertEquals(moi.adresse, lib.Adresse((UnitName("player"))))
-    local d = lib:Lire("recettes connues", "tous")
-    if d then for cle in pairs(d.persos) do assertTrue(cle:find("^Player%-") ~= nil) end end
+    local d = lib:Lire("inventaires", "tous")
+    if not d then SlashCmdList.GAMEDATA("") d = lib:Lire("inventaires", "tous") end -- /gdata : relevé tout de suite
+    assertNotNil(d, "inventaires relevés (Handshake y souscrit)")
+    local n = 0
+    for cle in pairs(d.persos) do n = n + 1; assertTrue(cle:find("^Player%-") ~= nil, "clé " .. cle) end
+    assertTrue(n > 0, "au moins mon perso")
+    assertNotNil(d.persos[UnitGUID("player")], "mon perso sous mon GUID")
     SlashCmdList.HANDSHAKE("demo ceinture") -- la fenêtre lit les artisans et le stock par GUID
     assertTrue(HandshakeFrame:IsShown())
     HandshakeFrame:Hide()
