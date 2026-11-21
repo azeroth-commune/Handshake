@@ -24,6 +24,8 @@ local function commandes(p)
   return p.commandes
 end
 
+-- Un projet a une identité stable (p.id, jamais redonnée ; d.projetSeq = la dernière donnée) : supprimer ou réordonner
+-- les autres ne la change pas. Son rang (d.courant pour celui affiché) ne dit que sa place dans la liste.
 function ns.nouveauProjet(p)
   p = p or {}
   p.lines = p.lines or {}
@@ -31,6 +33,8 @@ function ns.nouveauProjet(p)
   p.name = p.name or ("Projet du " .. date("%d/%m %H:%M"))
   p.created = time()
   local d = db()
+  d.projetSeq = (d.projetSeq or 0) + 1
+  p.id = d.projetSeq
   table.insert(d.projets, p)
   d.courant = #d.projets
   return p
@@ -57,6 +61,13 @@ function ns.numeroProjet()
 end
 
 function ns.supprimerProjet() table.remove(db().projets, db().courant) end
+
+-- Le projet d'identité id, affiché ; nil s'il n'existe plus.
+function ns.ouvrirProjet(id)
+  for i, p in ipairs(db().projets) do
+    if p.id == id then db().courant = i return p end
+  end
+end
 
 -- « Je réponds » : la demande reçue devient une réponse, un projet lié au contrat (p.reponse = sa clé). Ce qu'il veut
 -- est figé ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel sont recopiés à chaque nouvelle version.
@@ -534,17 +545,12 @@ end
 function ns.projetDemande(p) return ns.projetArbre(p, { unlearned = true }) end
 
 ---------------------------------------------------------------------------------------------------
--- Migration des SavedVariables (19/11/2026) : chaque commande enregistrée devient un projet (artisan et offre repris
--- tels quels, puis rangés dans sa commande « tout le projet » à la première lecture, voir commandes), une commande liée
--- à un contrat devient une réponse, la table globale des choix (« force ») est jetée.
-function ns.migrerProjets(d)
-  if not d.projets then
-    d.projets = {}
-    for _, o in ipairs(d.orders or {}) do
-      o.reponse, o.reponseHash, o.reply, o.replyHash = o.reply, o.replyHash, nil, nil
-      d.projets[#d.projets + 1] = o
-    end
-    d.courant = d.current
+-- Au chargement : les projets d'avant l'identité stable (Handshake#37) sont effacés, sans migration (perte acceptée), avec
+-- les vieilles commandes d'avant les projets et la table globale des choix (« force »).
+function ns.purgerProjets(d)
+  d.projets = d.projets or {}
+  for i = #d.projets, 1, -1 do
+    if not d.projets[i].id then table.remove(d.projets, i) end
   end
   d.orders, d.current, d.force = nil, nil, nil
 end

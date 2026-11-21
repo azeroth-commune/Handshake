@@ -193,6 +193,19 @@ assert(res.caseDe.I2841.who == false and res.blocs[2].key == "Couture", "personn
 bronzeR.profession = "Minage"
 print("Handshake : blocs d'un projet OK")
 
+-- Identité stable (Handshake#37) : un projet garde la sienne quand on supprime ou réordonne les autres ; son rang, lui,
+-- ne dit que sa place dans la liste.
+do
+  local pa, pb, pc = ns.nouveauProjet(), ns.nouveauProjet(), ns.nouveauProjet()
+  local idB = pb.id
+  assert(pa.id and idB and pc.id and pa.id ~= idB and idB ~= pc.id and pa.id ~= pc.id, "une identité par projet")
+  assert(ns.ouvrirProjet(pa.id) == pa and ns.projetCourant() == pa, "un projet s'ouvre par son identité")
+  ns.supprimerProjet()
+  assert(pb.id == idB and ns.ouvrirProjet(idB) == pb and not ns.ouvrirProjet(pa.id), "un autre supprimé : la même identité")
+  assert(ns.nouveauProjet().id ~= pa.id, "une identité n'est jamais redonnée")
+end
+print("Handshake : identité stable d'un projet OK")
+
 -- Dessin (Fenetre.lua) : étages, relais, bandes, titres des blocs.
 mk[2841].tiers[1].price = 100
 local g = ns.dessinArbre(both())
@@ -324,36 +337,18 @@ HandshakeDB = { contracts = { ancien = { client = "Bob-CAMWOWEU4Realm8PvP", arti
 loader(nil, "ADDON_LOADED", "Handshake")
 assert(HandshakeDB.contracts.neuf and not HandshakeDB.contracts.ancien, "ancien contrat purgé, contrat par GUID gardé")
 assert(HandshakeDB.debug.contracts.bon and not HandshakeDB.debug.contracts.vieux, "pareil pour ceux du Testeur")
--- Migration (19/11/2026) : des commandes enregistrées à l'ancienne (la 2e liée à un contrat, affichée) et la table
--- globale des choix « fabriquer / acheter ».
-HandshakeDB = { orders = {
-  { name = "Ma commande", player = "Bel", tip = 500, lines = { { id = 5541, qty = 1 } }, apports = { [5500] = true } },
-  { name = "Réponse à Bob", reply = "Bob-R#1", replyHash = "abc", player = "Bob-R", lines = { { id = 7963, qty = 1 } } },
-}, current = 2, force = { [2841] = "acheter" } }
+-- Projets d'avant l'identité stable (Handshake#37) : pas de migration, perte acceptée (les SavedVariables sont
+-- négligeables) ; les projets sans identité disparaissent, avec les vieilles commandes et la table globale des choix.
+HandshakeDB = { orders = { { name = "Ma commande", lines = { { id = 5541, qty = 1 } } } }, current = 1, force = { [2841] = "acheter" },
+  projets = { { name = "Projet #5", player = "Bel", tip = 900, lines = { { id = 5541, qty = 1 } }, commandes = {} } }, courant = 1 }
 loader(nil, "ADDON_LOADED", "Handshake")
-local pos, nb = ns.numeroProjet()
-assert(nb == 2 and pos == 2, "chaque commande devient un projet, le même affiché")
-local reponse = ns.projetCourant()
-assert(not ns.projetAjouter(reponse, 2841, 1) and #reponse.lines == 1, "la commande liée est une réponse : ce qu'il veut est figé")
-assert(ns.projetReponse({ origin = "Bob-R", id = "1", hash = "abc" }) == reponse, "la réponse retrouvée par son contrat, même version gardée")
-local mien = ns.changerProjet(-1)
-local tout = ns.projetCommande(mien)
-assert(mien.name == "Ma commande" and tout.player == "Bel" and tout.tip == 500 and mien.apports[5500], "artisan, offre et apports repris")
-assert(#ns.projetCommandes(mien) == 1 and tout.part == "tout le projet", "artisan et offre : sa commande « tout le projet »")
-assert(ns.projetAjouter(mien, 2841, 1), "un projet à moi se modifie")
+assert(type(HandshakeDB.projets) == "table" and #HandshakeDB.projets == 0, "projets sans identité : effacés")
 assert(HandshakeDB.force == nil and HandshakeDB.orders == nil and HandshakeDB.current == nil, "l'ancienne table des choix et les commandes disparaissent")
--- Un projet enregistré avant les commandes (#5 : artisan et offre sur le projet) : ils deviennent sa commande « tout le projet ».
-HandshakeDB = { projets = { { name = "Projet #5", player = "Bel", tip = 900, lines = { { id = 5541, qty = 1 } } } }, courant = 1 }
-loader(nil, "ADDON_LOADED", "Handshake")
-local p5 = ns.projetCourant()
-assert(ns.projetCommande(p5).player == "Bel" and ns.projetCommande(p5).tip == 900, "projet #5 : artisan et offre repris")
-ns.projetArtisan(p5, "Cid")
-assert(ns.projetCommande(p5).player == "Cid", "puis fixés sur sa commande")
 ns.openCraftWindow = noop -- pas d'interface hors jeu
 ns.importText(msgs[1] .. " " .. msgs[2]:gsub("^.-: ", ""), "Bob")
-pos, nb = ns.numeroProjet()
-assert(nb == 2 and pos == 2 and ns.projetCommande(ns.projetCourant()).player == "Bob", "commande importée affichée")
-print("Handshake : reprise, migration et import OK")
+local pos, nb = ns.numeroProjet()
+assert(nb == 1 and pos == 1 and ns.projetCourant().id and ns.projetCommande(ns.projetCourant()).player == "Bob", "commande importée affichée")
+print("Handshake : reprise, purge et import OK")
 
 -- /commande essai : la commande affichée revient comme un chuchotement de soi-même, sans réseau.
 UnitName = function() return "Belegard" end

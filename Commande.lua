@@ -341,5 +341,5 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
     for k, c in pairs(base) do if not tostring(c.client):find("^Player%-") then base[k] = nil end end
   end
   for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
-  ns.migrerProjets(db)
+  ns.purgerProjets(db)
 end)
