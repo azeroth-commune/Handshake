@@ -1,4 +1,4 @@
--- Commande à la main (#38) dans le simulateur : la liste se remplit par la recherche d'objets du socle et par Maj+clic,
+-- Commande à la main (#38) dans le simulateur : la liste se remplit par la recherche d'objets du socle et par un objet déposé,
 -- part en demande par le chemin d'aujourd'hui (brouillon relu dans Contrats, « Envoyer la proposition ») ; côté artisan,
 -- une demande reçue se répond dans la liste.
 local function tous(f, ok, out)
@@ -43,10 +43,16 @@ test("commande à la main → demande → contrat", function()
     assertNotNil(apporte, "deux barres de recherche")
     local voulu = choisir(veux, "bronze")
     local apport = choisir(apporte, "cuivre")
-    -- Maj+clic sur un lien quand la barre a le focus : l'objet entre dans la liste.
-    apporte:SetFocus()
-    ChatEdit_InsertLink(select(2, C_Item.GetItemInfo(2589)) or "|cffffffff|Hitem:2589::::::::1:::::::::|h[Tissu en lin]|h|r")
-    apporte:ClearFocus()
+    -- Un objet pris dans les sacs et déposé sur la liste « j'apporte » y entre ; le curseur est vidé.
+    -- Maj+clic n'est plus pris : il garde son sens dans le jeu (séparer une pile, lien dans la discussion).
+    local zone = HandshakeMainFrame.cols[2].depot
+    assertNotNil(zone, "la liste reçoit un objet déposé")
+    local getCursor, clear, vide = GetCursorInfo, ClearCursor, false
+    GetCursorInfo = function() return "item", 2589 end
+    ClearCursor = function() vide = true end
+    zone:GetScript("OnReceiveDrag")(zone)
+    GetCursorInfo, ClearCursor = getCursor, clear
+    assertTrue(vide, "curseur vidé")
     local m = HandshakeDB.main
     assertEquals(1, #m.lines)
     assertEquals(voulu, m.lines[1].id)

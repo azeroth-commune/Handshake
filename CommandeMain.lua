@@ -1,5 +1,5 @@
 -- Handshake : la commande à la main (#38), sans arbre ni projet. Deux listes d'objets × quantités, « ce que je veux » et
--- « ce que j'apporte », remplies par la recherche d'objets du socle ou par Maj+clic sur un lien ; l'artisan et l'offre.
+-- « ce que j'apporte », remplies par la recherche d'objets du socle ou par un objet déposé dessus ; l'artisan et l'offre.
 -- Elle part par le chemin d'une commande de projet : brouillon de contrat (ns.ctFromDemande), relu et envoyé dans
 -- Contrats, ou texte lisible (ns.sendOrder). Côté artisan, une demande reçue se répond dans la même liste : ce qu'il veut
 -- en lecture seule, apports et prix modifiables, contre-proposition (ns.ctReplyFromOrder).
@@ -82,8 +82,23 @@ function ns.mainPreparer(order)
 end
 
 ---------------------------------------------------------------------------------------------------
+-- Un objet pris dans les sacs (au curseur) et déposé sur f : il est rendu à son sac et onObjet(id) le reçoit.
+function ns.recevoirObjet(f, onObjet)
+  local function depose()
+    local kind, id = GetCursorInfo()
+    if kind ~= "item" then return end
+    ClearCursor()
+    onObjet(id)
+  end
+  f:EnableMouse(true)
+  f:SetScript("OnReceiveDrag", depose)
+  f:HookScript("OnMouseUp", depose)
+end
+
+---------------------------------------------------------------------------------------------------
 -- Barre de recherche avec suggestions (la recherche d'objets du socle, AzerothCommune#49) : flèches haut/bas, Entrée ou
--- Tab pour choisir, ou clic ; Maj+clic sur un objet quand elle a le focus l'ajoute aussitôt. onPick(id, quantité).
+-- Tab pour choisir, ou clic ; un objet déposé sur le champ l'ajoute aussitôt. onPick(id, quantité).
+-- Maj+clic n'est pas pris : dans le jeu, il sépare une pile ou colle le lien dans la discussion.
 -- Partagée par cette fenêtre et celle des projets. w = largeur du champ (280 par défaut).
 function ns.rechercheObjets(parent, qty, onPick, w)
   w = w or 280
@@ -160,12 +175,7 @@ function ns.rechercheObjets(parent, qty, onPick, w)
     paint()
   end)
   qty:SetScript("OnEnterPressed", submit)
-  if ChatEdit_InsertLink then -- Maj+clic : le jeu passe le lien à ChatEdit_InsertLink ; le champ garde le focus
-    hooksecurefunc("ChatEdit_InsertLink", function(link)
-      local id = name:HasFocus() and type(link) == "string" and ns.findItem(link)
-      if id then onPick(id, qtyValue()); name:SetText(""); drop:Hide() end
-    end)
-  end
+  ns.recevoirObjet(name, function(id) onPick(id, qtyValue()) end)
   return name, submit
 end
 
@@ -226,6 +236,11 @@ local function build()
   for k, liste in ipairs({ "lines", "apporte" }) do
     local x = 14 + (k - 1) * (W / 2)
     local col = { liste = liste, rows = {} }
+    -- La colonne entière reçoit un objet déposé (sous la recherche et les lignes, qui restent cliquables).
+    col.depot = CreateFrame("Frame", nil, frame)
+    col.depot:SetPoint("TOPLEFT", x - 4, -80)
+    col.depot:SetSize(W / 2 - 16, 64 + ROWS * ROW)
+    col.depot:SetFrameLevel(frame:GetFrameLevel() + 1)
     col.title = text("GameFontNormal", "TOPLEFT", x, -86)
     col.qty = input(32, true)
     col.qty:SetText("1")
@@ -238,10 +253,17 @@ local function build()
     col.qty:SetPoint("LEFT", col.search, "RIGHT", 8, 0)
     col.add = button(frame, "Ajouter", 60, function() col.search:GetScript("OnEnterPressed")(col.search) end)
     col.add:SetPoint("LEFT", col.qty, "RIGHT", 6, 0)
+    ns.recevoirObjet(col.depot, function(id)
+      local ok, err = ns.mainAjouter(order(), liste, id, math.max(1, tonumber(col.qty:GetText()) or 1))
+      if not ok then say(err) end
+      refresh()
+    end)
+    for _, f in ipairs({ col.search, col.qty, col.add }) do f:SetFrameLevel(col.depot:GetFrameLevel() + 2) end
     for i = 1, ROWS do
       local r = CreateFrame("Frame", nil, frame)
       r:SetSize(W / 2 - 24, ROW)
       r:SetPoint("TOPLEFT", x, -136 - (i - 1) * ROW)
+      r:SetFrameLevel(col.depot:GetFrameLevel() + 2)
       r.icon = r:CreateTexture(nil, "ARTWORK")
       r.icon:SetSize(18, 18)
       r.icon:SetPoint("LEFT", 0, 0)
@@ -275,7 +297,7 @@ local function build()
   frame.status = text("GameFontHighlightSmall", "BOTTOMLEFT", 14, 44)
   frame.status:SetWidth(W - 28)
   frame.status:SetJustifyH("LEFT")
-  text("GameFontDisableSmall", "BOTTOMRIGHT", -14, 62):SetText("Maj+clic sur un objet : il entre dans la liste dont la recherche a le focus")
+  text("GameFontDisableSmall", "BOTTOMRIGHT", -14, 62):SetText("Glisse un objet de tes sacs sur une liste : il y entre")
   frame.go = button(frame, "Préparer la demande", 160, function()
     local o = order()
     if o.reponse then

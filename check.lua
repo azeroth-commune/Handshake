@@ -700,7 +700,7 @@ assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le c
 print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
 
 -- Commande à la main (#38) : sans arbre, une liste « ce que je veux » et une liste « ce que j'apporte » (objets ×
--- quantités), remplies par la recherche (un ID) ou par Maj+clic (un lien). Le contrat ne voit que des objets × quantités :
+-- quantités), remplies par la recherche (un ID) ou par un objet déposé (un ID). Le contrat ne voit que des objets × quantités :
 -- mêmes termes que la commande du projet aux mêmes objets (la claymore, 4 cuirs lourds apportés, offre 3 po).
 as(BOB)
 do
@@ -709,7 +709,7 @@ do
   local cm = ns.commandeMain()
   assert(#cm.lines == 0 and #cm.apporte == 0 and ns.commandeMain() == cm, "une commande à la main, vide, rangée dans HandshakeDB")
   assert(ns.mainAjouter(cm, "lines", 7963, 1), "recherche : l'objet choisi entre dans ce que je veux")
-  assert(ns.mainAjouter(cm, "apporte", ns.findItem(link(4234, "Cuir lourd")), 3), "Maj+clic : le lien donne l'objet, qui entre dans ce que j'apporte")
+  assert(ns.mainAjouter(cm, "apporte", ns.findItem(link(4234, "Cuir lourd")), 3), "un lien donne l'objet, qui entre dans ce que j'apporte")
   assert(ns.mainAjouter(cm, "apporte", 4234, 1) and #cm.apporte == 1 and cm.apporte[1].qty == 4, "le même objet : quantités additionnées")
   assert(not ns.mainAjouter(cm, "apporte", ns.findItem("pas un objet"), 1) and #cm.apporte == 1, "pas d'objet : rien n'entre")
   assert(ns.mainQuantite(cm, "lines", 1, 2) and cm.lines[1].qty == 2 and ns.mainQuantite(cm, "lines", 1, 1), "quantité changée")
@@ -777,7 +777,9 @@ do
   HandshakeDB.main = nil
 end
 -- Ctrl+clic droit appartient aux projets (bientôt Composants) : la commande à la main ne le prend jamais.
-assert(not io.open("Handshake/CommandeMain.lua"):read("*a"):find("HandleModifiedItemClick", 1, true), "Ctrl+clic droit pas pris")
+local srcMain = io.open("Handshake/CommandeMain.lua"):read("*a")
+assert(not srcMain:find("HandleModifiedItemClick", 1, true), "Ctrl+clic droit pas pris")
+assert(not srcMain:find("ChatEdit_InsertLink", 1, true), "Maj+clic pas pris : il garde son sens dans le jeu")
 print("Handshake : commande à la main (liste, demande, texte, réponse) OK")
 
 -- Règles de la réponse (#10) : un projet tenu (#37) ; ce que veut le demandeur (lignes, quantités) est figé, avec la
