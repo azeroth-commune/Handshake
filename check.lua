@@ -29,7 +29,7 @@ for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+
   if f ~= "VendorData" and f ~= "RecettesClassic" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
 end
 local ns = {}
-for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
+for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "CommandeMain", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
   assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
 end
 assert(ns.findItem and ns.itemLabel and ns.newWindow, "base chargée")
@@ -698,6 +698,80 @@ local back = HandshakeDB.contracts[key1]
 assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob reçoit la contre-proposition")
 assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
 print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
+
+-- Commande à la main (#38) : sans arbre, une liste « ce que je veux » et une liste « ce que j'apporte » (objets ×
+-- quantités), remplies par la recherche (un ID) ou par Maj+clic (un lien). Le contrat ne voit que des objets × quantités :
+-- mêmes termes que la commande du projet aux mêmes objets (la claymore, 4 cuirs lourds apportés, offre 3 po).
+as(BOB)
+do
+  local function txt(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x.id .. ":" .. x.qty .. ":" .. x.unit end return table.concat(t, ",") end
+  HandshakeDB.main = nil
+  local cm = ns.commandeMain()
+  assert(#cm.lines == 0 and #cm.apporte == 0 and ns.commandeMain() == cm, "une commande à la main, vide, rangée dans HandshakeDB")
+  assert(ns.mainAjouter(cm, "lines", 7963, 1), "recherche : l'objet choisi entre dans ce que je veux")
+  assert(ns.mainAjouter(cm, "apporte", ns.findItem(link(4234, "Cuir lourd")), 3), "Maj+clic : le lien donne l'objet, qui entre dans ce que j'apporte")
+  assert(ns.mainAjouter(cm, "apporte", 4234, 1) and #cm.apporte == 1 and cm.apporte[1].qty == 4, "le même objet : quantités additionnées")
+  assert(not ns.mainAjouter(cm, "apporte", ns.findItem("pas un objet"), 1) and #cm.apporte == 1, "pas d'objet : rien n'entre")
+  assert(ns.mainQuantite(cm, "lines", 1, 2) and cm.lines[1].qty == 2 and ns.mainQuantite(cm, "lines", 1, 1), "quantité changée")
+  cm.player, cm.tip = BELN, 30000
+  local main = assert(ns.ctFromDemande(cm, 3))
+  local proj = assert(ns.ctFromDemande(ns.projetCommande(demande), 3))
+  assert(txt(main.m) == txt(proj.m) and txt(main.o) == txt(proj.o) and main.artisan == BEL, "mêmes termes : " .. txt(main.m) .. " / " .. txt(main.o))
+  -- Deux lignes : mêmes objets, mêmes apports, même caution ; la livraison se répartit sans arbre (prix d'achat de chaque ligne).
+  local p2 = projetPour(BELN, 30000, { { id = 7963, qty = 1 }, { id = 3858, qty = 5 } })
+  ns.projetApport(p2, 4234, true)
+  local cm2 = { lines = { { id = 7963, qty = 1 }, { id = 3858, qty = 5 } }, apporte = { { id = 4234, qty = 4 } }, player = BELN, tip = 30000 }
+  local a, b = assert(ns.ctFromDemande(cm2, 3)), assert(ns.ctFromDemande(ns.projetCommande(p2), 3))
+  local function objets(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x.id .. "x" .. x.qty end return table.concat(t, ",") end
+  assert(txt(a.m) == txt(b.m) and objets(a.o) == objets(b.o), "deux lignes : mêmes objets et apports")
+  assert(math.abs(ns.ctTotal(a.o) - ns.ctTotal(b.o)) <= 3, "deux lignes : caution + offre à l'arrondi près")
+  -- Le texte lisible : le même qu'aujourd'hui.
+  local function enClair(order)
+    local msgs, real = {}, ns.whisper
+    ns.whisper = function(m) msgs[#msgs + 1] = m end
+    ns.sendOrder(order)
+    ns.whisper = real
+    return table.concat(msgs, "\n")
+  end
+  local texte = enClair(cm)
+  assert(texte ~= "" and texte == enClair(ns.projetCommande(demande)), "même texte lisible : " .. texte)
+  assert(texte:find("^Commande : 1x") and texte:find("· j'apporte 4x", 1, true) and texte:find("· offre 3 po", 1, true), texte)
+  -- « Préparer la demande » : un brouillon dans Contrats, refait tant qu'il n'est pas parti ; parti, la commande est figée.
+  local ct = assert(ns.mainPreparer(cm))
+  assert(ct.status == "brouillon" and cm.contrat == ns.ctKey(ct) and txt(ct.m) == txt(proj.m), "brouillon de la demande")
+  local avant = cm.contrat
+  ct = assert(ns.mainPreparer(cm))
+  assert(cm.contrat == avant or not HandshakeDB.contracts[avant], "refait : l'ancien brouillon ne reste pas")
+  assert(ns.ctPropose(ct) and ct.status == "envoye", "envoyée par le chemin d'aujourd'hui")
+  assert(ns.mainPreparer(cm) == ct, "envoyée : son contrat, inchangé")
+  local ok, raison = ns.mainAjouter(cm, "lines", 3858, 1)
+  assert(not ok and raison:find("envoyée", 1, true) and #cm.lines == 1, "envoyée : la commande est figée")
+  assert(ns.etatDemande(ct) == "demande envoyée", ns.etatDemande(ct))
+  local nouvelle = ns.mainNouvelle()
+  assert(nouvelle ~= cm and #nouvelle.lines == 0 and ns.commandeMain() == nouvelle and HandshakeDB.contracts[ns.ctKey(ct)], "nouvelle commande ; le contrat reste")
+
+  -- Côté artisan : la demande reçue se répond dans la liste. Ce qu'il veut ne change pas ; apports et prix oui ; la
+  -- contre-proposition est une nouvelle version (cuir à la caution du contrat, minerai ajouté au prix de mon scan).
+  as(BEL)
+  local recue = HandshakeDB.contracts[ns.ctKey(ct)]
+  assert(recue and ns.ctStatus(recue) == "a_signer", "demande reçue")
+  local r = ns.reponseMain(recue)
+  assert(r.reponse == ns.ctKey(recue) and r.player == BOBN and objets(r.lines) == "7963x1" and objets(r.apporte) == "4234x4" and r.tip == 30000,
+    "sa demande dans la liste")
+  local figee, pourquoi = ns.mainAjouter(r, "lines", 3858, 1)
+  assert(not figee and pourquoi:find("sa demande", 1, true), "ce qu'il veut : on n'ajoute rien")
+  assert(not ns.mainQuantite(r, "lines", 1, 3) and r.lines[1].qty == 1, "ce qu'il veut : quantité figée")
+  assert(select(2, ns.ctReplyFromOrder(r)):find("rien n'a changé"), "rien changé : rien ne part")
+  assert(ns.mainAjouter(r, "apporte", 3858, 30) and ns.reponseMain(recue) == r, "apport ajouté ; même version : mes changements restent")
+  r.tip = 50000
+  local v2 = assert(ns.ctReplyFromOrder(r))
+  assert(v2.v == "2" and txt(v2.m) == "3858:30:200,4234:4:500" and v2.o[1].unit == 30 * 200 + 4 * 500 + 50000, "contre-proposition : " .. txt(v2.m) .. " / " .. txt(v2.o))
+  as(BOB)
+  local back = HandshakeDB.contracts[ns.ctKey(ct)]
+  assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "le demandeur reçoit la nouvelle version")
+  HandshakeDB.main = nil
+end
+print("Handshake : commande à la main (liste, demande, texte, réponse) OK")
 
 -- Règles de la réponse (#10) : un projet tenu (#37) ; ce que veut le demandeur (lignes, quantités) est figé, avec la
 -- raison que donne la partie commandes, affichée telle quelle ; apports, choix de case, prix et commande d'un bloc

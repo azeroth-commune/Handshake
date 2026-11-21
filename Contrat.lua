@@ -364,17 +364,20 @@ function ns.ctEditDraft(c, caution, delivery, days)
   if days then c.d = now() + math.floor(days * 86400) end
 end
 
--- Les termes d'une demande (CONCEPTION.md) ; order = une commande (ns.projetCommande), calculée avec les choix de case
--- de son projet seulement :
---   m = les apports (case entière), unité = keep[id] (caution déjà au contrat) sinon leur prix de marché (mon scan) ;
---   o = ce qui est voulu, payé par objet : sa part de caution + sa part de l'offre (order.tip), au prorata de
---       l'estimation de la part de l'artisan pour chaque ligne.
+-- Les termes d'une demande (CONCEPTION.md). Le contrat ne voit que des objets × quantités, quelle que soit l'origine :
+-- order = une commande de projet (ns.projetCommande, calculée avec les choix de case de son projet seulement) ou une
+-- commande à la main (ns.commandeMain : order.apporte, sans arbre).
+--   m = les apports (case entière, ou la quantité de la liste), unité = keep[id] (caution déjà au contrat) sinon leur
+--       prix d'achat (mon scan) ;
+--   o = ce qui est voulu, payé par objet : sa part de caution + sa part de l'offre (order.tip). Projet : au prorata de
+--       l'estimation de la part de l'artisan pour chaque ligne, et la caution de ce que consomme chaque ligne. À la main :
+--       les deux au prorata du prix d'achat de chaque ligne (à parts égales sans prix).
 local function demandeTerms(order, keep)
-  local res = ns.projetDemande(order, order.apports)
+  local res = not order.apporte and ns.projetDemande(order, order.apports) or nil
   local market = ns.market()
   local items, vendors = market and market.items, lib:PrixMarchands()
   local m, unit = {}, {}
-  for _, a in ipairs(ns.demandeApports(res)) do
+  for _, a in ipairs(ns.commandeApports(order, res)) do
     local cost = lib:PrixAchat(a.id, a.qty, items, vendors)
     unit[a.id] = keep and keep[a.id] or cost and math.floor(cost / a.qty + 0.5) or 0
     m[#m + 1] = { id = a.id, qty = a.qty, unit = unit[a.id] }
@@ -386,7 +389,13 @@ local function demandeTerms(order, keep)
     return v
   end
   local shares, totalCost, byId = {}, 0, {}
-  for i, r in ipairs(res.roots) do shares[i] = { a = apportValue(r), c = r.cost or 0 }; totalCost = totalCost + shares[i].c end
+  if res then
+    for i, r in ipairs(res.roots) do shares[i] = { a = apportValue(r), c = r.cost or 0 }; totalCost = totalCost + shares[i].c end
+  else
+    local caution, w = ns.ctTotal(m), {}
+    for i, l in ipairs(order.lines) do w[i] = lib:PrixAchat(l.id, l.qty, items, vendors) or 0; totalCost = totalCost + w[i] end
+    for i in ipairs(order.lines) do shares[i] = { a = totalCost > 0 and caution * w[i] / totalCost or caution / #order.lines, c = w[i] } end
+  end
   local offer = order.tip or 0
   for i, l in ipairs(order.lines) do
     local share = totalCost > 0 and shares[i].c / totalCost or 1 / #order.lines
