@@ -124,8 +124,8 @@ local function plan(id, qty, ctx, depth, path)
   path[id] = true
   local base, keep = ctx.stock, ctx.stock
   -- Le calcul automatique ne prend que les recettes connues (sauf option « recettes pas apprises ») et hors boucle ; le
-  -- « + » existe dès qu'une recette existe, et forcer « fabriquer » essaie aussi celles que personne n'a apprises (en
-  -- rouge) et celles en boucle. Ordre d'essai et départage : voir « Choix entre recettes équivalentes ».
+  -- « + » existe dès qu'une recette existe, et un choix de case « décomposer » essaie aussi celles que personne n'a
+  -- apprises (en rouge) et celles en boucle. Ordre d'essai et départage : voir « Choix entre recettes équivalentes ».
   local recs = {}
   for _, rec in ipairs(ctx.by[id]) do
     if force == "fabriquer" or (rec.known or ctx.unlearned) and not enBoucle(ctx, rec, id) then recs[#recs + 1] = rec end
