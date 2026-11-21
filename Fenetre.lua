@@ -447,7 +447,7 @@ local function refresh()
 
   for _, h in ipairs(headers) do h:Hide() end
   if #roots == 0 then
-    header(1, 0, "|cff999999Tape un nom (suggestions), dépose un objet, ou Maj+clic sur un lien, puis Ajouter ; ou Importer une liste reçue.|r")
+    header(1, 0, "|cff999999Tape un nom (suggestions) ou dépose un objet, puis Ajouter ; ou Importer une liste reçue.|r")
   else
     local o, cost = projet(), ns.moneyShort(total) .. (incomplete and " |cffe64d4d+ ?|r" or "")
     if replying() then -- ma part, mon prix, ce qui reste pour mon travail

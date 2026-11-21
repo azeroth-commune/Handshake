@@ -30,7 +30,7 @@ FAIRE UNE DEMANDE
 
 COMMANDE À LA MAIN (sans arbre)
   /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
-  j'apporte ». Tape un objet dans la recherche (ou Maj+clic sur un objet quand la recherche a le focus),
+  j'apporte ». Tape un objet dans la recherche (ou glisse un objet de tes sacs sur la liste),
   mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
   Une demande reçue se répond aussi en liste : « Répondre en liste » dans /contrat.
 
