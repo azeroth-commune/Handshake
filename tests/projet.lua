@@ -197,3 +197,24 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
     HandshakeFrame:Hide()
     if not ok then error(err, 0) end
 end)
+
+-- AzerothCommune#49 : la barre de recherche de la fenêtre propose ce que rend la recherche d'objets du socle, dans son
+-- ordre (Handshake n'a plus d'index d'objets à lui).
+test("la barre de recherche propose les objets de la recherche du socle", function()
+    SlashCmdList.HANDSHAKE("demo ceinture")
+    local box = enfant(function(c) return c:GetObjectType() == "EditBox" and math.floor(c:GetWidth() + 0.5) == 280 end)
+    assertNotNil(box, "barre de recherche")
+    box:SetText("bronze")
+    box:GetScript("OnTextChanged")(box, true)
+    local attendus = AzerothCommune.ChercherObjets("bronze", 8)
+    assertEquals(8, #attendus)
+    local montres = tous(HandshakeFrame, function(c)
+        return c:GetObjectType() == "Button" and c:IsShown() and c.text ~= nil and math.floor(c:GetWidth() + 0.5) == 316
+    end)
+    assertEquals(#attendus, #montres)
+    for i, e in ipairs(attendus) do
+        assertEquals(e.name .. (e.fabricable and "  |cffe6a640fabricable|r" or ""), montres[i].text:GetText())
+    end
+    box:SetText("")
+    HandshakeFrame:Hide()
+end)

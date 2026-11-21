@@ -95,6 +95,9 @@ ns.money, ns.moneyShort, ns.moneySigned, ns.newWindow = lib.Argent, lib.ArgentCo
 function ns.rememberItem(id) return lib.RetenirObjet(id, nomsDeSession) end
 function ns.itemLabel(id) return lib.NomObjet(id, ns.items(), nomsDeSession) end
 function ns.findItem(text) return lib.TrouverObjet(text, ns.items(), ns.recipes()) end
+-- Suggestions de la barre de recherche des projets : objets vus et objets fabriqués de la base des recettes, lus par le
+-- socle (Handshake souscrit aux deux types ci-dessus).
+ns.chercherObjets = lib.ChercherObjets
 
 ---------------------------------------------------------------------------------------------------
 -- Les données relevées ne se sauvegardent plus ici (ADR 0001 de l'atelier) : on purge celles d'un Handshake d'avant

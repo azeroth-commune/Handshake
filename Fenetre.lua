@@ -198,44 +198,6 @@ function ns.dessinArbre(res)
   return g
 end
 
--- Suggestions pour la barre de recherche : objets du catalogue et recettes dont l'objet n'a pas encore de nom.
--- Fabricables d'abord, puis ceux qui commencent par le texte tapé, puis les noms courts.
-function ns.itemIndex()
-  local craft, index = {}, {}
-  for _, r in pairs(ns.recipes()) do
-    if r.output then craft[r.output] = r.name or craft[r.output] or true end
-  end
-  local items = ns.items()
-  for id, it in pairs(items) do
-    if it.name then index[#index + 1] = { id = id, name = it.name, low = it.name:lower(), craft = craft[id] ~= nil } end
-  end
-  for id, rname in pairs(craft) do
-    if type(rname) == "string" and not (items[id] and items[id].name) then
-      index[#index + 1] = { id = id, name = rname, low = rname:lower(), craft = true }
-    end
-  end
-  return index
-end
-
--- ponytail: :lower() ne connaît pas les accents (« É » reste « É ») ; taper en minuscules marche
-function ns.suggestItems(index, text, max)
-  local q = (text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-  if #q < 2 then return {} end
-  local hits = {}
-  for _, e in ipairs(index) do
-    local at = e.low:find(q, 1, true)
-    if at then hits[#hits + 1] = { e = e, s = (e.craft and 0 or 2) + (at == 1 and 0 or 1) } end
-  end
-  table.sort(hits, function(a, b)
-    if a.s ~= b.s then return a.s < b.s end
-    if #a.e.name ~= #b.e.name then return #a.e.name < #b.e.name end
-    return a.e.id < b.e.id
-  end)
-  local out = {}
-  for i = 1, math.min(max or 8, #hits) do out[i] = hits[i].e end
-  return out
-end
-
 ---------------------------------------------------------------------------------------------------
 -- Dessin
 local function stocked(n) return n.have[1] + n.have[2] + n.have[3] end
@@ -699,7 +661,7 @@ local function searchBox(qty)
   drop:SetBackdropColor(0.08, 0.08, 0.10, 0.98)
   drop:SetBackdropBorderColor(0.66, 0.56, 1.00, 0.35)
   drop:Hide()
-  local buttons, hits, sel, index = {}, {}, 1, nil
+  local buttons, hits, sel = {}, {}, 1
   local function qtyValue() return math.max(1, tonumber(qty:GetText()) or 1) end
   local function pick(e)
     track(e.id, qtyValue())
@@ -730,14 +692,13 @@ local function searchBox(qty)
     buttons[i] = b
   end
   local function update()
-    index = index or ns.itemIndex()
-    hits, sel = ns.suggestItems(index, name:GetText(), 8), 1
+    hits, sel = ns.chercherObjets(name:GetText(), 8), 1 -- la recherche d'objets du socle (AzerothCommune#49)
     for i, b in ipairs(buttons) do
       local e = hits[i]
       b:SetShown(e ~= nil)
       if e then
         b.icon:SetTexture(C_Item.GetItemIconByID(e.id))
-        b.text:SetText(e.name .. (e.craft and "  |cffe6a640fabricable|r" or ""))
+        b.text:SetText(e.name .. (e.fabricable and "  |cffe6a640fabricable|r" or ""))
       end
     end
     drop:SetHeight(4 + 20 * #hits)
@@ -751,7 +712,6 @@ local function searchBox(qty)
     pick({ id = id })
   end
   name:SetScript("OnTextChanged", function(_, userInput) if userInput then update() end end)
-  name:SetScript("OnEditFocusGained", function() index = ns.itemIndex() end) -- le catalogue grossit pendant le scan
   name:SetScript("OnEditFocusLost", function() C_Timer.After(0.2, function() drop:Hide() end) end) -- laisse passer le clic
   name:SetScript("OnEscapePressed", function(self) drop:Hide(); self:ClearFocus() end)
   name:SetScript("OnEnterPressed", submit)
