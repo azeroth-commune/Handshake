@@ -370,7 +370,7 @@ end
 --   o = ce qui est voulu, payé par objet : sa part de caution + sa part de l'offre (order.tip), au prorata de
 --       l'estimation de la part de l'artisan pour chaque ligne.
 local function demandeTerms(order, keep)
-  local res = ns.projetDemande(order)
+  local res = ns.projetDemande(order, order.apports)
   local market = ns.market()
   local items, vendors = market and market.items, lib:PrixMarchands()
   local m, unit = {}, {}

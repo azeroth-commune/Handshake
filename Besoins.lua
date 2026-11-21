@@ -109,7 +109,7 @@ end
 function ns.refreshNeeds(res)
   if not (frame and frame:IsShown()) then return end
   local p = ns.projetCourant()
-  res = res or ns.projetArbre(p)
+  res = res or ns.projetArbre(p, nil, ns.projetApports(p))
   local order = ns.projetCommande(p, 1) -- les besoins de tout le projet : son artisan, son offre
   local list, recipes = ns.orderNeeds(res)
   used, frame.y = 0, 40
@@ -177,7 +177,7 @@ local function build()
   frame.send:SetPoint("BOTTOMLEFT", 14, 12)
   frame.send:SetScript("OnClick", function()
     local p = ns.projetCourant()
-    ns.sendNeeds(ns.projetCommande(p), ns.projetArbre(p))
+    ns.sendNeeds(ns.projetCommande(p), ns.projetArbre(p, nil, ns.projetApports(p)))
   end)
   local pending
   frame:RegisterEvent("BAG_UPDATE_DELAYED")

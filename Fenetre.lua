@@ -61,7 +61,7 @@ local cards, lines, labels = {}, {}, {}
 local function opts() return HandshakeDB.options end
 local function projet() return ns.projetCourant() end
 -- Affichage seulement (« il le fournit », « mon prix ») : ce qui se modifie, la fenêtre le demande au projet (ns.projetPeut).
-local function replying() return projet().reponse ~= nil end -- « je réponds » : la demande d'un autre
+local function replying() return ns.estReponse(projet()) end -- « je réponds » : la demande d'un autre
 local function lignes() return (ns.projetPeut(projet(), "lignes")) end -- ajouter, retirer, changer une quantité
 -- La commande choisie dans le projet affiché (1 = tout le projet) : Joueur, Offre, « Préparer la demande » et « En clair »
 -- portent sur elle. Un autre projet affiché : retour à 1.
@@ -469,7 +469,7 @@ end
 
 local function refresh()
   if not (frame and frame:IsShown()) then return end
-  local res = ns.projetArbre(projet())
+  local res = ns.projetArbre(projet(), nil, ns.projetApports(projet()))
   local roots, market, total, incomplete, g = res.roots, res.market, res.total, res.incomplete, ns.dessinArbre(res)
   if frame.syncOrder then frame.syncOrder() end
   if ns.refreshNeeds then ns.refreshNeeds(res) end
@@ -811,7 +811,7 @@ local function build()
   newB:SetPoint("LEFT", nextB, "RIGHT", 44, 0)
   local delB = button("Supprimer", 84, function()
     if not IsShiftKeyDown() then return print("Commandes : Maj+clic sur « Supprimer » pour effacer ce projet.") end
-    ns.supprimerProjet()
+    ns.oublierCommandes(ns.supprimerProjet())
     refresh()
   end)
   delB:SetPoint("LEFT", newB, "RIGHT", 4, 0)

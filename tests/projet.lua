@@ -79,6 +79,9 @@ local function artisanConnu()
     FireEvent("CHAT_MSG_WHISPER", "bonjour", ARTISAN, "", "", ARTISAN, "", 0, 0, "", 0, 1, "Player-1-0000BE11")
 end
 
+-- La commande « tout le projet » de p, rangée à part, rattachée à son identité (#37).
+local function toutLeProjet(p) return HandshakeDB.commandes[p.id].liste[1] end
+
 -- Envoyer une commande (#7) : son état, lu dans son contrat, s'affiche à côté d'elle dans la liste des commandes.
 test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat", function() sansRecettes(function()
     SlashCmdList.HANDSHAKE("demo ceinture")
@@ -86,7 +89,7 @@ test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat
     for _, b in ipairs(commandes()) do assertTrue(b:GetText():find("pas envoyée", 1, true) ~= nil, b:GetText()) end
     local p = HandshakeDB.projets[#HandshakeDB.projets]
     artisanConnu()
-    p.commandes[1].player = ARTISAN -- la commande « tout le projet », à un autre joueur
+    toutLeProjet(p).player = ARTISAN -- la commande « tout le projet », à un autre joueur
     commandes()[1]:Click()
     bouton("Préparer la demande"):Click()
     assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon s'ouvre dans les contrats")
@@ -110,14 +113,14 @@ test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant
     SlashCmdList.HANDSHAKE("demo ceinture")
     local p = HandshakeDB.projets[#HandshakeDB.projets]
     artisanConnu()
-    p.commandes[1].player = ARTISAN
+    toutLeProjet(p).player = ARTISAN
     commandes()[1]:Click()
     bouton("Préparer la demande"):Click()
     for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
         if c.GetText and c:GetText() == "Envoyer la proposition" then c:Click() end
     end
     HandshakeContratsFrame:Hide()
-    local ct = HandshakeDB.contracts[p.commandes[1].contrat]
+    local ct = HandshakeDB.contracts[toutLeProjet(p).contrat]
     assertEquals("envoye", ct.status)
     -- Écart de prix (#18) : avec un apport, la caution contre mon estimation, en %, ou « estimation incomplète ».
     local m = ct.m
@@ -135,10 +138,10 @@ test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant
     assertTrue(texte:find("ne correspond plus au contrat", 1, true) ~= nil, texte) -- constaté, sans cause supposée (#18)
     assertEquals("1", ct.v, "rien ne part sans clic")
     bouton("Nouvelle version"):Click()
-    local brouillon = HandshakeDB.contracts[p.commandes[1].contrat .. "+"]
+    local brouillon = HandshakeDB.contracts[toutLeProjet(p).contrat .. "+"]
     assertEquals("brouillon", brouillon.status)
     assertEquals("2", brouillon.v)
-    assertEquals("1", HandshakeDB.contracts[p.commandes[1].contrat].v, "rien n'est parti avant l'envoi")
+    assertEquals("1", HandshakeDB.contracts[toutLeProjet(p).contrat].v, "rien n'est parti avant l'envoi")
     assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon de la v2 s'ouvre dans les contrats")
     local envoyer, fiche
     for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
@@ -151,11 +154,11 @@ test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant
     end
     assertTrue(fiche, "le différentiel est affiché avant l'envoi")
     envoyer:Click()
-    local v2 = HandshakeDB.contracts[p.commandes[1].contrat]
+    local v2 = HandshakeDB.contracts[toutLeProjet(p).contrat]
     assertEquals("2", v2.v)
     assertEquals("envoye", v2.status)
     assertEquals("1", v2.prev.v)
-    assertNil(HandshakeDB.contracts[p.commandes[1].contrat .. "+"], "envoyé : plus de brouillon")
+    assertNil(HandshakeDB.contracts[toutLeProjet(p).contrat .. "+"], "envoyé : plus de brouillon")
     HandshakeContratsFrame:Hide()
     assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "partie : plus d'écart")
     local nv = bouton("Nouvelle version")
@@ -169,9 +172,9 @@ test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant
     assertTrue(commandes()[nb + 1]:GetText():find("pas envoyée", 1, true) ~= nil, "une commande vivante")
 end) end)
 
--- Règles de la réponse (#10) : la fenêtre demande au projet ce qui se modifie. Dans une réponse, la quantité de ce qu'il
--- veut est grisée ; dans un projet à moi, elle se tape. (Une réponse à un contrat qui n'existe pas : seul compte qu'elle
--- en soit une.) Le projet redevient le mien même si une vérification échoue.
+-- Règles de la réponse (#10) : la fenêtre demande au projet ce qui se modifie. Dans une réponse (un projet tenu, #37), la
+-- quantité de ce qu'il veut est grisée ; dans un projet à moi, elle se tape. (Une réponse à un contrat qui n'existe pas :
+-- seul compte qu'elle en soit une.) Le projet redevient le mien même si une vérification échoue.
 -- Les champs de quantité des cases de la colonne 0 (une case porte son nœud).
 local function quantites()
     return tous(HandshakeFrame, function(c) return c:GetObjectType() == "EditBox" and c:IsVisible() and c:GetParent().node ~= nil end)
@@ -182,14 +185,14 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
     local ok, err = pcall(function()
         assertTrue(#quantites() > 0, "une case par objet du projet")
         for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
-        p.reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
+        HandshakeDB.commandes[p.id].reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
         bouton("<"):Click(); bouton(">"):Click() -- redessiné
         assertEquals(p, HandshakeDB.projets[HandshakeDB.courant])
         assertTrue(#quantites() > 0, "toujours affichée")
         for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
         assertTrue(bouton("Contre-proposer") ~= nil, "une réponse se contre-propose")
     end)
-    p.reponse, p.tenu = nil, nil
+    HandshakeDB.commandes[p.id].reponse, p.tenu = nil, nil
     HandshakeFrame:Hide()
     if not ok then error(err, 0) end
 end)
