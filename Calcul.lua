@@ -48,6 +48,34 @@ local function recipesByOutput(all, known)
   return by
 end
 
+-- Une recette est en boucle quand elle fabrique l'objet d'une case à partir d'un objet que cette case sert elle-même à
+-- fabriquer, directement ou non, par les recettes que le calcul peut prendre (Vie → Terre quand Terre → Vie existe ; le
+-- tour Air → Feu → Terre → Eau → Air) : la décomposer ne ferait que racheter plus bas ce qu'on fabrique. Elle n'est
+-- reprise que sur un choix de case « décomposer ». Mémorisé le temps d'un calcul (ctx.boucle).
+local function enBoucle(ctx, rec, id)
+  ctx.boucle = ctx.boucle or {}
+  if ctx.boucle[rec] == nil then
+    local vu = {}
+    local function faitDe(x) -- x se fabrique-t-il à partir de id ?
+      if x == id then return true end
+      if vu[x] then return false end
+      vu[x] = true
+      for _, r in ipairs(ctx.by[x] or {}) do
+        if r.known or ctx.unlearned then
+          for _, rg in ipairs(r.r.reagents) do
+            if rg.id and faitDe(rg.id) then return true end
+          end
+        end
+      end
+      return false
+    end
+    local b = false
+    for _, rg in ipairs(rec.r.reagents) do b = b or (rg.id ~= nil and faitDe(rg.id)) end
+    ctx.boucle[rec] = b
+  end
+  return ctx.boucle[rec]
+end
+
 -- Stock déductible : stock[itemID] = { sacs, banque, autres persos }. Partagé par tout l'arbre : un minerai
 -- pris pour une branche n'est plus disponible pour une autre.
 local function take(stock, id, qty)
@@ -95,11 +123,12 @@ local function plan(id, qty, ctx, depth, path)
   if force == "fabriquer" then node.cost, node.how, node.partial = nil, nil, nil end -- l'achat ne compte plus
   path[id] = true
   local base, keep = ctx.stock, ctx.stock
-  -- Le calcul automatique ne prend que les recettes connues (sauf option « recettes pas apprises ») ; le « + » existe
-  -- dès qu'une recette existe, et forcer « fabriquer » essaie aussi celles que personne n'a apprises (en rouge).
+  -- Le calcul automatique ne prend que les recettes connues (sauf option « recettes pas apprises ») et hors boucle ; le
+  -- « + » existe dès qu'une recette existe, et forcer « fabriquer » essaie aussi celles que personne n'a apprises (en
+  -- rouge) et celles en boucle. Ordre d'essai et départage : voir « Choix entre recettes équivalentes ».
   local recs = {}
   for _, rec in ipairs(ctx.by[id]) do
-    if rec.known or ctx.unlearned or force == "fabriquer" then recs[#recs + 1] = rec end
+    if force == "fabriquer" or (rec.known or ctx.unlearned) and not enBoucle(ctx, rec, id) then recs[#recs + 1] = rec end
   end
   for _, rec in ipairs(recs) do
     local per = math.max(1, rec.r.made_min or 1)
