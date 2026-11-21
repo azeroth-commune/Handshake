@@ -869,6 +869,14 @@ do
   assert(ns.projetCommande(p, j).id ~= cmd().id, "chaque commande a son identité")
   assert(ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge) == j, "la commande vivante est reprise")
   assert(termes(cmd()) ~= termes(ns.projetCommande(p, j)), "la nouvelle suit le projet, l'envoyée non")
+  -- Supprimer le projet (#37) : sa commande signée reste dans Contrats, jamais effacée ; celle qui n'est pas partie
+  -- disparaît avec lui.
+  local signee = ns.ctKey(ct)
+  ns.ouvrirProjet(p.id)
+  ns.oublierCommandes(ns.supprimerProjet())
+  assert(not ns.ouvrirProjet(p.id), "le projet est supprimé")
+  assert(HandshakeDB.contracts[signee] and ns.ctStatus(HandshakeDB.contracts[signee]) == "signe", "la commande signée reste dans Contrats")
+  assert(HandshakeDB.commandes[p.id] == nil, "ses commandes pas encore parties disparaissent")
 end
 print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
 
