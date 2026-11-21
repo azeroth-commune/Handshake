@@ -207,8 +207,9 @@ le retail rend le royaume : le royaume vient seulement de `GetNormalizedRealmNam
 le GUID figé au premier échange. L'analyse est celle de la lib commune (`lib.Adresse`, `lib.Destinataire` pour le
 prénom seul d'un chuchotement sur notre royaume) ; un nom reçu dans un contrat doit être une adresse telle quelle.
 Si deux joueurs partagent un prénom, un homonyme ne gagne rien : chaque échange est équilibré (P1). Encore à relever en
-jeu avec `/handshake noms` : la forme du `sender` d'un chuchotement ou d'un message d'addon reçu d'un autre joueur, et
-si les prénoms sont uniques sur un royaume.
+jeu : la forme du `sender` d'un chuchotement ou d'un message d'addon reçu d'un autre joueur (plus d'outil pour la voir
+depuis Handshake#27 ; les sondes d'identité de la lib ne couvrent que notre personnage), et si les prénoms sont uniques
+sur un royaume.
 
 ## Ajout : identifiants de personnage (protocole 2)
 

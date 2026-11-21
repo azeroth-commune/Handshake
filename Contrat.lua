@@ -58,8 +58,7 @@ end
 function ns.identity(nameRealm, guid, surname)
   local first, realm = (nameRealm or "?"):match("^([^%-]+)%-?(.*)$")
   surname = surname or (guid and ns.surnames[guid])
-  local mine = (GetNormalizedRealmName and GetNormalizedRealmName() or ""):gsub("[%s%-]", "")
-  local shown = (realm == mine or realm == "") and GetRealmName() or realm
+  local shown = (realm == lib.RoyaumeNormalise() or realm == "") and lib.Royaume() or realm -- sondés par la lib
   return (("%s%s — %s — %s"):format(first, surname and (" " .. surname) or "", shown, guid or "identifiant inconnu"):gsub("|", "||"))
 end
 function ns.myIdentity()
@@ -80,20 +79,6 @@ function ns.ctCheckClaim(name, guid)
   return "inconnu"
 end
 
--- /handshake noms : comment ce client et ce serveur écrivent les noms (pour vérifier ce qui précède en jeu).
-ns.rawSenders = {}
-function ns.namesDiagnostic()
-  local a, b = UnitName("player")
-  print(("Handshake — UnitName(player) = %s | %s ; UnitFullName = %s | %s ; royaume normalisé = %s ; moi = %s")
-    :format(tostring(a), tostring(b), tostring((UnitFullName("player"))), tostring(select(2, UnitFullName("player"))),
-      tostring(GetNormalizedRealmName()), tostring(ns.me())))
-  if UnitExists("target") and UnitIsPlayer("target") then
-    local t1, t2 = UnitName("target")
-    print(("  cible : UnitName = %s | %s ; GetUnitName(true) = %s ; lu comme %s"):format(tostring(t1), tostring(t2),
-      tostring(GetUnitName("target", true)), tostring(ns.fullName(t1))))
-  end
-  for kind, s in pairs(ns.rawSenders) do print(("  dernier expéditeur (%s) : « %s » lu comme %s"):format(kind, s, tostring(ns.fullName(s)))) end
-end
 function ns.other(c, me) return c.client == me and c.artisan or c.client end
 
 ---------------------------------------------------------------------------------------------------
@@ -219,7 +204,6 @@ ns.ctSendRaw = send
 local buffers, rate = {}, {}
 function ns.ctOnAddon(prefix, text, channel, sender)
   if prefix ~= PREFIX or channel ~= "WHISPER" or type(text) ~= "string" then return end
-  ns.rawSenders.addon = sender
   sender = ns.fullName(sender)
   if not sender then return end
   local r = rate[sender] or { t = GetTime(), n = 0 } -- 30 messages par minute et par expéditeur

@@ -217,7 +217,6 @@ end
 if GameDataAPI then GameDataAPI.costCommand = ns.costCommand end -- /gdata cout, si GameData est là
 SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
-  if args:match("^%s*noms") then return ns.namesDiagnostic() end
   if args:match("^%s*demo") then ns.demoOrder(args:match("^%s*demo%s+(%a+)")); return ns.openCraftWindow() end
   ns.costCommand(args)
 end
