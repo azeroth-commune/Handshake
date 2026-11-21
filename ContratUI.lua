@@ -2,8 +2,9 @@
 -- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
 -- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
--- « Préparer la demande » dans la fenêtre des projets crée un brouillon depuis la commande (ns.projetEnvoyer), « Nouvelle
--- version » un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ».
+-- « Préparer la demande » dans la fenêtre des projets crée un brouillon depuis la commande (ns.projetEnvoyer), ou dans la
+-- commande à la main (ns.mainPreparer) ; « Nouvelle version » un brouillon de la version suivante
+-- (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ». Une demande reçue se répond dans l'arbre ou en liste.
 local _, ns = ...
 
 local W, H = 620, 600
@@ -99,7 +100,7 @@ function ns.ctDescribe(c, me)
   for _, l in ipairs(c.o) do add(("   %s %d × %s   (%s l'objet)"):format(verb(artisan, "livres", "livre"), l.qty, ns.itemLabel(l.id), ns.money(l.unit))) end
   add(("   %s : %s%s"):format(verb(not artisan, "paies", "paie"), ns.money(delivery), #c.m > 0 and (" (caution rendue %s + prix %s)"):format(ns.money(caution), ns.moneySigned(delivery - caution)) or ""))
   if delivery - caution <= 0 then
-    add(artisan and "   |cffe6994d! Aucun prix pour ton travail : « Répondre dans l'arbre » pour chiffrer ta part.|r"
+    add(artisan and "   |cffe6994d! Aucun prix pour ton travail : « Répondre dans l'arbre » ou « en liste » pour chiffrer ta part.|r"
       or "   |cffe6994dPrix laissé à l'artisan : il le chiffrera en contre-proposant.|r")
   end
   if #c.m == 0 then add("   |cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r") end
@@ -176,6 +177,7 @@ end
 
 local function refresh()
   if ns.syncCommandes then ns.syncCommandes() end -- l'état des commandes se lit dans leur contrat
+  if ns.refreshCommandeMain then ns.refreshCommandeMain() end
   if not (frame and frame:IsShown()) then return end
   list = sorted()
   pos = math.min(math.max(1, pos), math.max(1, #list))
@@ -197,7 +199,7 @@ local function refresh()
   local function show(b) b:Show() end
   if status == "a_signer" then
     show(frame.accept); show(frame.refuse)
-    if c.artisan == me then show(frame.reply) end
+    if c.artisan == me then show(frame.reply); show(frame.replyList) end
     -- Réarmement (n° 5) : « Signer » s'active 2 s après le premier affichage de CETTE version ; le bouton porte
     -- l'empreinte affichée, une autre version ne peut pas être signée par ce clic.
     shownHash = c.hash
@@ -276,9 +278,10 @@ local function build()
   frame.body:SetSpacing(3)
 
   -- Actions (bas de la fenêtre)
-  frame.accept = button("Signer", 110, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)
-  frame.refuse = button("Refuser", 90, function(c) ns.ctRefuse(c) end)
+  frame.accept = button("Signer", 90, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)
+  frame.refuse = button("Refuser", 80, function(c) ns.ctRefuse(c) end)
   frame.reply = button("Répondre dans l'arbre", 160, function(c) ns.projetReponse(c); ns.openCraftWindow() end)
+  frame.replyList = button("Répondre en liste", 130, function(c) ns.openCommandeMain(c) end) -- sans arbre (#38)
   frame.send = button("Envoyer la proposition", 170, function(c)
     local ok, err = ns.ctPropose(c)
     if not ok then print("|cffe64d4dContrats :|r " .. err .. ".") end
@@ -291,10 +294,16 @@ local function build()
     end
   end)
   frame.readable = button("Envoyer en clair", 130, function(c) readable(c) end)
-  frame.actions = { frame.accept, frame.refuse, frame.reply, frame.send, frame.withdraw, frame.manual, frame.readable }
+  frame.actions = { frame.accept, frame.refuse, frame.reply, frame.replyList, frame.send, frame.withdraw, frame.manual, frame.readable }
   frame.accept:SetPoint("BOTTOMLEFT", 14, 12)
   frame.refuse:SetPoint("LEFT", frame.accept, "RIGHT", 6, 0)
   frame.reply:SetPoint("LEFT", frame.refuse, "RIGHT", 6, 0)
+  frame.replyList:SetPoint("LEFT", frame.reply, "RIGHT", 6, 0)
+  local main = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") -- une commande sans arbre ni projet (#38)
+  main:SetSize(150, 22)
+  main:SetPoint("TOPRIGHT", -70, -10)
+  main:SetText("Commande à la main")
+  main:SetScript("OnClick", function() ns.openCommandeMain() end)
   frame.send:SetPoint("BOTTOMLEFT", 14, 12)
   frame.withdraw:SetPoint("BOTTOMLEFT", 14, 12)
   frame.manual:SetPoint("LEFT", frame.withdraw, "RIGHT", 6, 0)

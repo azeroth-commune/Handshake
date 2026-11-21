@@ -771,6 +771,8 @@ do
   assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "le demandeur reçoit la nouvelle version")
   HandshakeDB.main = nil
 end
+-- Ctrl+clic droit appartient aux projets (bientôt Composants) : la commande à la main ne le prend jamais.
+assert(not io.open("Handshake/CommandeMain.lua"):read("*a"):find("HandleModifiedItemClick", 1, true), "Ctrl+clic droit pas pris")
 print("Handshake : commande à la main (liste, demande, texte, réponse) OK")
 
 -- Règles de la réponse (#10) : un projet tenu (#37) ; ce que veut le demandeur (lignes, quantités) est figé, avec la
