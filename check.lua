@@ -306,13 +306,17 @@ end
 commune.Conteneurs, AzerothCommuneDB.chars = realContainers, {}
 print("Handshake : dessin de l'arbre (étages, relais, bandes) OK")
 
--- Suggestions : fabricables d'abord, puis début de nom, puis noms courts.
+-- Suggestions : la recherche d'objets du socle (AzerothCommune#49), plus d'index d'objets dans Handshake ; mêmes objets,
+-- même ordre (fabricables d'abord, puis début de nom, puis noms courts).
+assert(ns.chercherObjets == commune.ChercherObjets and ns.itemIndex == nil and ns.suggestItems == nil, "la recherche du socle")
+local fen = io.open("Handshake/Fenetre.lua"):read("*a")
+assert(not fen:find("itemIndex", 1, true) and not fen:find("low:find", 1, true), "plus de recherche à soi dans la fenêtre")
 AzerothCommuneItems.items = { [1] = { name = "Barre de bronze" }, [2] = { name = "Bronze" }, [3] = { name = "Lame en bronze" }, [4] = { name = "Fer" } }
 AzerothCommuneDB.recipes = { [9] = { name = "Lame en bronze", output = 3 }, [8] = { name = "Cuirasse changeante", output = 210794 } }
-local sug = ns.suggestItems(ns.itemIndex(), "bron")
-assert(#sug == 3 and sug[1].id == 3 and sug[2].id == 2 and sug[3].id == 1, "ordre des suggestions")
-assert(ns.suggestItems(ns.itemIndex(), "chang")[1].id == 210794, "recette dont l'objet n'a pas de nom")
-assert(#ns.suggestItems(ns.itemIndex(), "b") == 0, "au moins 2 lettres")
+local sug = ns.chercherObjets("bron", 8)
+assert(#sug == 3 and sug[1].id == 3 and sug[2].id == 2 and sug[3].id == 1 and sug[1].fabricable, "ordre des suggestions")
+assert(ns.chercherObjets("chang", 8)[1].id == 210794, "recette dont l'objet n'a pas de nom")
+assert(#ns.chercherObjets("b", 8) == 0, "au moins 2 lettres")
 print("Handshake : suggestions OK")
 
 
