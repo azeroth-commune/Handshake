@@ -32,7 +32,8 @@ test("un projet créé s'ouvre dans la fenêtre, < et > passent d'un projet à l
 end)
 
 -- Commandes (#6) : « Commander » sur un bloc ajoute une commande à la liste du projet, sans nouvelle page. Les blocs
--- viennent de la réserve Classic (RecettesClassic.lua, généré, hors du repo : à copier dans une branche en worktree),
+-- viennent de la base des recettes du socle (sa réserve Classic, AzerothCommune/RecettesClassic.lua, générée, hors du repo :
+-- à copier dans une branche en worktree),
 -- recettes pas apprises comprises (« tout »).
 local function tous(f, ok, out)
     out = out or {}
@@ -62,7 +63,7 @@ test("Commander un bloc ajoute une commande au projet, sur la même page", funct
     local nb = #HandshakeDB.projets
     assertEquals(1, #commandes()) -- tout le projet
     local commander = boutons(function(t) return t == "Commander" end)
-    assertTrue(#commander > 0, "des blocs dessinés (RecettesClassic.lua présent ?)")
+    assertTrue(#commander > 0, "des blocs dessinés (AzerothCommune/RecettesClassic.lua présent ?)")
     commander[1]:Click()
     assertEquals(nb, #HandshakeDB.projets)
     assertTrue(affiche("Essai : ceintures multi-métiers"))

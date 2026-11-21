@@ -1,5 +1,6 @@
 -- Handshake, la base : les données dont le calcul a besoin (fenêtres, montants, noms d'objets : le socle).
--- Aucune donnée relevée n'est sauvegardée ici (ADR 0001 de l'atelier) : recettes connues, inventaires, métiers, marchands,
+-- Aucune donnée relevée n'est sauvegardée ici (ADR 0001 de l'atelier) : recettes connues, base des recettes (avec sa
+-- réserve Classic, que porte le socle), inventaires, métiers, marchands,
 -- objets et cours de l'HV sont lus par le socle (requis, lib:Lire) ; l'HV passe par son scan ou par un fournisseur
 -- (Auctionator…).
 -- HandshakeDB ne garde que les données propres de Handshake : commandes, contrats, projets, réglages.
@@ -7,7 +8,8 @@ local _, ns = ...
 
 local lib = AzerothCommune
 -- Ce que Handshake lit : le socle ne relève que les types auxquels un add-on a souscrit (GameData#4).
-for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do lib:Souscrire(t) end
+for _, t in ipairs({ "recettes connues", "base des recettes", "inventaires", "métiers et compétences", "marchands", "objets",
+  "cours de l'HV" }) do lib:Souscrire(t) end
 -- Recettes connues de tous les persos relevés et recettes vues, ou rien.
 local function recettesConnues()
   return lib:Lire("recettes connues", "tous") or { recettes = {}, persos = {} }
@@ -19,50 +21,22 @@ local function parPerso(t) local d = lib:Lire(t, "tous") return d and d.persos o
 
 ---------------------------------------------------------------------------------------------------
 -- Accès aux données (par la lib)
--- Recettes : celles relevées dans les fenêtres de métier (par le socle), complétées par la réserve Classic
--- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
-local classic -- la réserve, mise en forme une fois : la forme des recettes de la base du socle
-local function reserve() -- nil sans RecettesClassic.lua (généré, hors du repo)
-  if not classic and HandshakeClassicRecipes then
-    classic = {}
-    for k, c in pairs(HandshakeClassicRecipes) do
-      local reagents = {}
-      for i = 1, #c[6], 2 do reagents[#reagents + 1] = { id = c[6][i], qty = c[6][i + 1] } end
-      classic[k] = { output = c[1], made_min = c[2], made_max = c[3], profession = c[4], name = c[5], reagents = reagents, level = c[7],
-        classic = true }
-    end
-  end
-  return classic
-end
--- Remise au socle à notre chargement, une fois : ses candidates pour le relevé des recettes connues sans fenêtre de
--- métier (AzerothCommune#46 : le socle ne lit plus notre global).
-if reserve() then lib:RemettreRecettes(classic) end
+-- Recettes : la base des recettes du socle (AzerothCommune#48) : celles relevées dans les fenêtres de métier, puis sa
+-- réserve Classic (provenance « source externe ») pour les objets qu'aucune recette vue ne fabrique (les métiers que tu
+-- n'as pas). Chaque recette porte sa compétence requise (level) quand la réserve la connaît.
 local nomsDemandes = {} -- recettes dont on a déjà demandé les noms d'objets
 function ns.recipes()
-  local own = recettesConnues().recettes
+  local recettes = lib:Lire("base des recettes") or {}
   if not lib:Lire("objets") then -- catalogue des objets pas encore relevé : personne d'autre ne demande ces noms au serveur
-    for k, r in pairs(own) do
-      if not nomsDemandes[k] then
+    for k, r in pairs(recettes) do
+      if not nomsDemandes[k] and not r.provenance then -- les recettes vues seulement, pas la réserve
         nomsDemandes[k] = true
         if r.output then ns.rememberItem(r.output) end
         for _, rg in ipairs(r.reagents or {}) do ns.rememberItem(rg.id) end
       end
     end
   end
-  if not HandshakeClassicRecipes then return own end
-  reserve()
-  local out, made = {}, {}
-  for k, r in pairs(own) do out[k] = r; if r.output then made[r.output] = true end end
-  for k, r in pairs(classic) do
-    if out[k] == nil and not made[r.output] then out[k] = r end -- une recette scannée de cet objet fait foi
-  end
-  return out
-end
--- Compétence requise pour apprendre une recette : la sienne si les données la donnent, sinon celle de la réserve Classic.
-function ns.recipeLevel(key, r)
-  if r and r.level then return r.level end
-  local c = key and HandshakeClassicRecipes and HandshakeClassicRecipes[key]
-  return c and c[7] or nil
+  return recettes
 end
 -- { [GUID] = { bags, bank, … } } ; { [GUID] = { professions, skills } } ; { [PNJ] = { items = { { id, price, stack, limited } } } }
 function ns.inventaires() return parPerso("inventaires") end

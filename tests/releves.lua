@@ -1,7 +1,7 @@
 -- Handshake#1 (ADR 0001 de l'atelier) : Handshake ne sauvegarde aucune donnée relevée ; il souscrit à ses types de
 -- données et les lit par le socle Azeroth Commune.
 test("Handshake souscrit à ses types de données", function()
-    for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do
+    for _, t in ipairs({ "recettes connues", "base des recettes", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do
         -- tenue par la base du socle (AzerothCommune#41), datée de ce chargement : faite au chargement de Handshake, après
         -- celui du socle (pas une date restée dans des SavedVariables)
         assertType("number", AzerothCommuneDB.souscriptions[t])
@@ -9,22 +9,16 @@ test("Handshake souscrit à ses types de données", function()
     end
 end)
 
--- Handshake#34 : la réserve Classic (RecettesClassic.lua) est remise au socle à notre chargement ; son relevé des
--- recettes connues sans fenêtre l'interroge (une recette de la réserve, connue d'un perso simulé qui a son métier).
-test("réserve Classic remise au socle : le relevé sans fenêtre l'interroge", function()
-    assertType("table", HandshakeClassicRecipes)
-    local id, c = next(HandshakeClassicRecipes)
-    local vrais = { GetProfessions, GetProfessionInfo, IsPlayerSpell, C_Timer.After }
-    GetProfessions = function() return 1 end
-    GetProfessionInfo = function() return c[4], nil, 100, 300 end
-    IsPlayerSpell = function(s) return s == id end
-    C_Timer.After = function(_, fn) fn() end -- les images du relevé, tout de suite
-    local metiers, fini = {}, false
-    local ok, err = pcall(AzerothCommune.ReleverRecettesSansFenetre, AzerothCommune, metiers, {}, function() fini = true end)
-    GetProfessions, GetProfessionInfo, IsPlayerSpell, C_Timer.After = vrais[1], vrais[2], vrais[3], vrais[4]
-    assertTrue(ok, tostring(err))
-    assertTrue(fini)
-    assertNotNil(metiers[c[4]] and metiers[c[4]].known[id], "recette " .. id .. " (" .. c[4] .. ") relevée sans fenêtre")
+-- Handshake#36 : plus de réserve livrée avec Handshake ni de remise au socle ; ses recettes sont la base des recettes du
+-- socle (recettes vues, puis sa réserve Classic pour les objets qu'aucune recette vue ne fabrique).
+test("recettes lues dans la base des recettes du socle, plus de réserve dans Handshake", function()
+    assertNil(HandshakeClassicRecipes)
+    assertNil(AzerothCommune.RemettreRecettes)
+    local base = AzerothCommune:Lire("base des recettes")
+    assertNotNil(base, "base des recettes vide (RecettesClassic.lua du socle présent ?)")
+    local id, r = next(base)
+    assertType("number", r.output)
+    assertType("string", r.profession)
 end)
 
 test("HandshakeDB sans données relevées après le chargement", function()
