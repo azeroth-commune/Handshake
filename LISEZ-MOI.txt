@@ -28,9 +28,16 @@ FAIRE UNE DEMANDE
   « Offre » : ce que tu proposes de payer (ou laisse vide : l'artisan chiffrera).
   « Préparer la demande », relis-la dans /contrat, puis « Envoyer la proposition ».
 
+COMMANDE À LA MAIN (sans arbre)
+  /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
+  j'apporte ». Tape un objet dans la recherche (ou Maj+clic sur un objet quand la recherche a le focus),
+  mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
+  Une demande reçue se répond aussi en liste : « Répondre en liste » dans /contrat.
+
 COMMANDES
   /contrat            les contrats (lire, signer, refuser, contre-proposer)
   /handshake          la fenêtre des commandes (arbre acheter ou fabriquer, besoins)
+  /handshake liste    la commande à la main
 
 EN CAS DE PROBLÈME
 Une capture d'écran de la fenêtre + le texte de l'erreur s'il y en a une, envoyés à la personne qui t'a donné

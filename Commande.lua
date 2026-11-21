@@ -55,6 +55,7 @@ function ns.estReponse(p) return rangement(p).reponse ~= nil end
 -- (ns.projetTenir) : ce qu'il veut ne change pas ici ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel
 -- sont recopiés à chaque nouvelle version. Ses choix de case, son prix et les blocs qu'il commande restent à l'artisan.
 local FIGE = "c'est sa demande : ce qu'il veut ne change pas ici"
+ns.FIGE = FIGE -- la même raison dans la réponse en liste (CommandeMain.lua)
 function ns.projetReponse(c)
   local key, p, r = ns.ctKey(c), nil, nil
   for id, x in pairs(HandshakeDB.commandes or {}) do
@@ -90,6 +91,7 @@ local function envoyee(c)
   local ct = c.contrat and ns.ctStore()[c.contrat]
   return ct and ct.status ~= "brouillon" and ct or nil
 end
+ns.commandeEnvoyee = envoyee
 local ETATS = { envoye = "demande envoyée", a_signer = "contre-proposée", signe = "signée", clos = "livrée",
   echu = "échue", refuse = "refusée", retire = "retirée" }
 local function etat(ct)
@@ -98,6 +100,7 @@ local function etat(ct)
   if s == "envoye" and ct.v ~= "1" then return "contre-proposée" end -- j'ai répondu à sa contre-proposition
   return ETATS[s] or s
 end
+ns.etatDemande = etat
 
 function ns.projetArtisan(p, name, i) commandes(p)[i or 1].player = name ~= "" and name or nil end
 function ns.projetOffre(p, cuivre, i)
@@ -304,6 +307,17 @@ function ns.demandeApports(res)
   return out
 end
 
+-- Ce que la commande apporte, objets × quantités triés par ID : la liste d'une commande à la main (order.apporte, un
+-- même objet cumulé), sinon les cases apportées de l'arbre de la commande de projet (res, calculé au besoin).
+function ns.commandeApports(order, res)
+  if not order.apporte then return ns.demandeApports(res or ns.projetDemande(order, order.apports)) end
+  local qty, out = {}, {}
+  for _, a in ipairs(order.apporte) do qty[a.id] = (qty[a.id] or 0) + a.qty end
+  for id, q in pairs(qty) do out[#out + 1] = { id = id, qty = q } end
+  table.sort(out, function(a, b) return a.id < b.id end)
+  return out
+end
+
 -- L'objet qui apprend une recette : « Plans : Claymore en mithril », « Formule : … », « Patron : … ».
 -- ponytail: par le nom, faute de lien recette -> objet dans les données ; nil si jamais vu
 local recipeItems = {}
@@ -446,11 +460,12 @@ local function send(kind, lines, extra, target, loop)
 end
 
 -- La demande en clair (pour quelqu'un sans l'addon) : « Commande : 1x[Armure] · j'apporte 4x[Cuir lourd] · offre 5 po ».
--- order = une commande (ns.projetCommande) ; envoyée (figée), ses apports sont ceux de son contrat.
+-- order = une commande (ns.projetCommande, ou à la main : ns.commandeMain) ; envoyée (figée), ses apports sont ceux de
+-- son contrat.
 function ns.sendOrder(order, loop)
   local lines = {}
   for _, l in ipairs(order.lines) do lines[#lines + 1] = l end
-  local brought = order.fige and ns.ctStore()[order.contrat].m or ns.demandeApports(ns.projetDemande(order, order.apports))
+  local brought = order.fige and ns.ctStore()[order.contrat].m or ns.commandeApports(order)
   if #brought > 0 then
     lines[#lines + 1] = { raw = "· j'apporte" }
     for _, l in ipairs(brought) do lines[#lines + 1] = l end

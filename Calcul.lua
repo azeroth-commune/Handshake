@@ -179,6 +179,7 @@ function ns.costCommand(args)
 end
 SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
+  if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end -- la commande à la main (#38)
   if args:match("^%s*demo") then ns.demoOrder(args:match("^%s*demo%s+(%a+)")); return ns.openCraftWindow() end
   ns.costCommand(args)
 end

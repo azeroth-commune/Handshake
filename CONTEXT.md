@@ -9,7 +9,7 @@ Les projets, l'arbre, les cases, les blocs et les choix de case appartiennent à
 ### Commandes
 
 **Commande**:
-Une part d'un projet (le projet entier ou un bloc) adressée à un seul artisan ; tant qu'elle n'est pas partie, elle suit le projet, et elle se fige quand elle devient une demande. Supprimer le projet efface ses commandes pas encore parties, jamais un contrat.
+Ce que je demande à un seul artisan : une part d'un projet (le projet entier ou un bloc), ou une liste faite à la main, sans arbre (ce que je veux, ce que j'apporte). Tant qu'elle n'est pas partie, une commande de projet suit le projet ; toute commande se fige quand elle devient une demande. Supprimer le projet efface ses commandes pas encore parties, jamais un contrat.
 _Avoid_: order (à l'écrit), sous-commande
 
 **Demande**:

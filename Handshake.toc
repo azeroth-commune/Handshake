@@ -12,6 +12,7 @@ Donnees.lua
 Calcul.lua
 Projet.lua
 Commande.lua
+CommandeMain.lua
 Fenetre.lua
 Besoins.lua
 Contrat.lua
