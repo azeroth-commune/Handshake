@@ -73,6 +73,19 @@ test("Commander un bloc ajoute une commande au projet, sur la même page", funct
     assertEquals(2, #commandes())
 end) end)
 
+-- Recettes équivalentes (#46), avec la vraie réserve (extraite du client, transmutations d'essences en boucle) : dans la
+-- démo « set », les essences de terre et d'eau s'achètent, aucune essence n'est fabriquée par une transmutation.
+test("Démo « set » : pas de boucle de transmutation, les essences s'achètent", function() sansRecettes(function()
+    SlashCmdList.HANDSHAKE("demo set")
+    local caseDe = {}
+    for _, c in ipairs(tous(HandshakeFrame, function(c) return c.node ~= nil end)) do caseDe[c.node.id] = c.node end
+    assertNotNil(caseDe[7076], "une case Essence de terre (AzerothCommune/RecettesClassic.lua présent ?)")
+    assertNotNil(caseDe[7080], "une case Essence d'eau")
+    for _, id in ipairs({ 7076, 7078, 7080, 7082, 12803, 12808 }) do
+        assertTrue(caseDe[id] == nil or caseDe[id].made == 0, "essence " .. id .. " fabriquée")
+    end
+end) end)
+
 -- Un contrat porte deux GUID (Handshake#29) : l'artisan d'une demande doit avoir un GUID donné par le serveur. Ici, son
 -- chuchotement : le jeu y joint le GUID de l'expéditeur (12e valeur de CHAT_MSG_WHISPER), Handshake le retient.
 local ARTISAN = "Bel Dupont"

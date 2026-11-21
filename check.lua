@@ -116,6 +116,41 @@ arbre = ns.projetArbre(fer, { bags = true, bank = true, unlearned = true }, ns.p
 assert(arbre.caseDe.I2772.apport == 26 and arbre.caseDe.I2772.need == 0, "minerai apporté : la case entière")
 print("Handshake : cases d'un projet, stock partagé OK")
 
+-- Recettes équivalentes (#46) : vrai-argent par le minage (10098) ou par la transmutation (11480), sans prix. Le choix ne
+-- dépend pas de l'ordre de la base des recettes : personne ne les connaît → le plus petit identifiant ; un perso connaît la
+-- transmutation → elle.
+local function vraiArgent(ordre, persos)
+  local r = { [10098] = { name = "Fonte du vrai-argent", output = 6037, profession = "Minage", reagents = { { id = 7911, qty = 1 } } },
+    [11480] = { name = "Transmutation de mithril en vrai-argent", output = 6037, profession = "Alchimie", reagents = { { id = 3860, qty = 1 } } } }
+  local recettes = {}
+  for _, k in ipairs(ordre) do recettes[k] = r[k] end
+  donnees({ hv = {}, recettes = recettes, persos = persos })
+  return ns.projetArbre(ns.nouveauProjet({ lines = { { id = 6037, qty = 2 } } }), TOUT).caseDe.T1.recipeKey
+end
+for _, ordre in ipairs({ { 10098, 11480 }, { 11480, 10098 } }) do
+  assert(vraiArgent(ordre) == 10098, "personne ne connaît : le plus petit identifiant")
+  assert(vraiArgent(ordre, { ["Player-6942-00000A1C"] = { nom = "Al Dupont", recipes = { Alchimie = { rank = 225, known = { [11480] = "easy" } } } } }) == 11480,
+    "la recette connue d'un perso d'abord")
+end
+-- Boucles de transmutation : Terre ↔ Vie, Eau ↔ Non-mort, et le tour Air → Feu → Terre → Eau → Air. Chaque recette
+-- fabrique son essence à partir d'une essence qu'elle sert elle-même à fabriquer : toutes écartées, les essences
+-- s'achètent. Une recette hors boucle reste prise (Terre à partir d'un cristal, qu'aucune essence ne fabrique).
+local ESS = { terre = 7076, vie = 12803, eau = 7080, nonmort = 12808, air = 7082, feu = 7078 }
+local function transmu(de, en) return { name = "Transmutation", output = ESS[en], profession = "Alchimie", reagents = { { id = ESS[de], qty = 1 } } } end
+donnees({ hv = {}, recettes = { [17559] = transmu("air", "feu"), [17560] = transmu("feu", "terre"), [17561] = transmu("terre", "eau"),
+  [17562] = transmu("eau", "air"), [17563] = transmu("nonmort", "eau"), [17564] = transmu("eau", "nonmort"),
+  [17565] = transmu("vie", "terre"), [17566] = transmu("terre", "vie") } })
+local essences = ns.projetArbre(ns.nouveauProjet({ lines = { { id = ESS.terre, qty = 10 }, { id = ESS.eau, qty = 10 } } }), TOUT)
+for _, n in ipairs(essences.cases) do assert(n.made == 0, "boucle de transmutation : " .. n.id .. " fabriquée") end
+assert(essences.caseDe.T1.need == 10 and essences.caseDe.T2.need == 10, "les essences s'achètent")
+AzerothCommuneDB.recipes[20000] = { name = "Cristal en terre", output = ESS.terre, profession = "Alchimie", reagents = { { id = 7909, qty = 1 } } }
+essences = ns.projetArbre(ns.nouveauProjet({ lines = { { id = ESS.terre, qty = 10 } } }), TOUT)
+assert(essences.caseDe.T1.recipeKey == 20000 and essences.caseDe.I7909.need == 10, "hors boucle : décomposée")
+local forcee = ns.nouveauProjet({ lines = { { id = ESS.vie, qty = 10 } } })
+ns.projetChoix(forcee, ESS.vie, "fabriquer")
+assert(ns.projetArbre(forcee, TOUT).caseDe.T1.recipeKey == 17566, "choix de case « décomposer » : la boucle reprise")
+print("Handshake : recettes équivalentes, choix stable, sans boucle OK")
+
 -- Marteau (10 bronzes) et cuirasse (20 bronzes), bronze = cuivre + étain, ×2 par fonte. Forge : Bel 164 connaît le
 -- marteau, pas la cuirasse ; minage : Alt 90.
 local mk = { [2770] = { tiers = { { price = 10, qty = 999 } } }, [2771] = { tiers = { { price = 10, qty = 999 } } },
