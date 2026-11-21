@@ -3,7 +3,7 @@
 test("Handshake souscrit à ses types de données", function()
     local lib = AzerothCommune
     for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do
-        assertTrue(lib.souscriptions[t] == true)
+        assertType("number", AzerothCommuneDB.souscriptions[t]) -- la souscription est tenue par la base du socle (AzerothCommune#41)
     end
 end)
 
