@@ -206,6 +206,23 @@ do
 end
 print("Handshake : identité stable d'un projet OK")
 
+-- Projet tenu (CONTEXT.md de Composants) : un autre module prend les lignes d'un projet en donnant une raison ; ajouter,
+-- retirer une ligne, changer une quantité sont refusés avec cette raison telle quelle ; les choix de case restent libres.
+do
+  local RAISON = "tenu par le test"
+  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 } } })
+  ns.projetTenir(p, RAISON, { { id = 2870, qty = 2 } })
+  assert(#p.lines == 1 and p.lines[1].id == 2870 and p.lines[1].qty == 2, "celui qui le tient en donne les lignes")
+  local function refuse(quoi, ok, raison) assert(ok == false and raison == RAISON, quoi .. " : refusé avec sa raison, " .. tostring(raison)) end
+  refuse("lignes", ns.projetPeut(p, "lignes"))
+  refuse("ajouter une ligne", ns.projetAjouter(p, 5541, 1))
+  refuse("changer une quantité", ns.projetQuantite(p, 1, 5))
+  refuse("retirer une ligne", ns.projetRetirer(p, 1))
+  assert(#p.lines == 1 and p.lines[1].qty == 2, "ses lignes n'ont pas bougé")
+  assert(ns.projetPeut(p, "choix") and ns.projetChoix(p, 2841, "acheter") and p.choix[2841] == "acheter", "choix de case : libres")
+end
+print("Handshake : projet tenu OK")
+
 -- Dessin (Fenetre.lua) : étages, relais, bandes, titres des blocs.
 mk[2841].tiers[1].price = 100
 local g = ns.dessinArbre(both())

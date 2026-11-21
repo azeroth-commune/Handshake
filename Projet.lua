@@ -69,8 +69,10 @@ function ns.ouvrirProjet(id)
   end
 end
 
--- « Je réponds » : la demande reçue devient une réponse, un projet lié au contrat (p.reponse = sa clé). Ce qu'il veut
--- est figé ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel sont recopiés à chaque nouvelle version.
+-- « Je réponds » : la demande reçue devient une réponse, un projet lié au contrat (p.reponse = sa clé) et tenu : ce qu'il
+-- veut ne change pas ici ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel sont recopiés à chaque nouvelle
+-- version. Ses choix de case, son prix et les blocs qu'il commande restent à l'artisan.
+local FIGE = "c'est sa demande : ce qu'il veut ne change pas ici"
 function ns.projetReponse(c)
   local key, p = ns.ctKey(c), nil
   for i, x in ipairs(db().projets) do if x.reponse == key then p, db().courant = x, i end end
@@ -79,29 +81,28 @@ function ns.projetReponse(c)
   local tout = commandes(p)[1]
   local client = c.peer and c.peer.name or "?" -- le client, sous le nom donné par le serveur
   p.reponseHash, p.name, tout.player = c.hash, "Réponse à " .. client:match("^%S+"), client
-  p.lines, p.apports = {}, nil
-  for _, l in ipairs(c.o) do p.lines[#p.lines + 1] = { id = l.id, qty = l.qty } end
+  local lines = {}
+  for _, l in ipairs(c.o) do lines[#lines + 1] = { id = l.id, qty = l.qty } end
+  ns.projetTenir(p, FIGE, lines)
+  p.apports = nil
   for _, l in ipairs(c.m) do p.apports = p.apports or {}; p.apports[l.id] = true end
   tout.tip = math.max(0, ns.ctTotal(c.o) - ns.ctTotal(c.m))
   return p
 end
 
 ---------------------------------------------------------------------------------------------------
--- Modifications. Ce qu'une réponse permet (CONTEXT.md) est une règle de ce module, appelée à évoluer : une ligne par
--- modification, true = permise, sinon la raison du refus, à afficher telle quelle. Un projet à moi permet tout.
-local FIGE = "c'est sa demande : ce qu'il veut ne change pas ici"
-local REPONSE = {
-  lignes = FIGE, -- ajouter, retirer une ligne, changer une quantité
-  apports = true, -- contre-proposition
-  choix = true, -- décomposer / acheter : l'estimation de l'artisan
-  offre = true, -- son prix
-  commander = true, -- un bloc : la sous-traitance (une commande de sa réponse, dont il est le client)
-}
+-- Projet tenu (CONTEXT.md de Composants) : un autre module prend les lignes du projet (lignes : les nouvelles, sinon
+-- celles qu'il a) en donnant une raison ; ajouter, retirer une ligne ou changer une quantité sont alors refusés avec
+-- cette raison telle quelle, les choix de case restent libres. Le projet ne sait pas pourquoi il est tenu ; raison nil :
+-- il est rendu.
+function ns.projetTenir(p, raison, lignes)
+  p.tenu = raison
+  if lignes then p.lines = lignes end
+end
 
 -- « Peut-on modifier quoi sur ce projet ? » (la fenêtre grise d'après elle) : true, ou false, raison.
 function ns.projetPeut(p, quoi)
-  local r = p.reponse and REPONSE[quoi]
-  if r and r ~= true then return false, r end
+  if quoi == "lignes" and p.tenu then return false, p.tenu end
   return true
 end
 
@@ -131,10 +132,9 @@ function ns.projetRetirer(p, i)
   return true
 end
 
--- choix = "fabriquer" (« + », décomposer), "acheter" (« – », tout fait) ou nil (le calcul des prix décide).
+-- choix = "fabriquer" (« + », décomposer), "acheter" (« – », tout fait) ou nil (le calcul des prix décide) ; libre
+-- même dans un projet tenu.
 function ns.projetChoix(p, id, choix)
-  local ok, raison = ns.projetPeut(p, "choix")
-  if not ok then return false, raison end
   p.choix = p.choix or {}
   p.choix[id] = choix
   if not next(p.choix) then p.choix = nil end

@@ -182,14 +182,14 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
     local ok, err = pcall(function()
         assertTrue(#quantites() > 0, "une case par objet du projet")
         for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
-        p.reponse = "Bob-R#1"
+        p.reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
         bouton("<"):Click(); bouton(">"):Click() -- redessiné
         assertEquals(p, HandshakeDB.projets[HandshakeDB.courant])
         assertTrue(#quantites() > 0, "toujours affichée")
         for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
         assertTrue(bouton("Contre-proposer") ~= nil, "une réponse se contre-propose")
     end)
-    p.reponse = nil
+    p.reponse, p.tenu = nil, nil
     HandshakeFrame:Hide()
     if not ok then error(err, 0) end
 end)
