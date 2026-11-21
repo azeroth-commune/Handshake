@@ -26,7 +26,7 @@ end
 -- recettes sont ceux du test (acns.recettesClassic).
 local acns = {}
 for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+)%.lua") do
-  if f ~= "VendorData" and f ~= "RecettesClassic" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
+  if f ~= "VendorData" and f ~= "RecettesClassic" and f ~= "CatalogueObjets" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
 end
 local ns = {}
 for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "CommandeMain", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
