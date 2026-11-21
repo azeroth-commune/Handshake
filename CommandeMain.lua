@@ -170,7 +170,7 @@ function ns.rechercheObjets(parent, qty, onPick, w)
 end
 
 ---------------------------------------------------------------------------------------------------
--- La fenêtre (/handshake liste ; « Répondre dans la liste » dans Contrats) : l'artisan et l'offre en haut, les deux
+-- La fenêtre (/handshake liste ; « Répondre en liste » dans Contrats) : l'artisan et l'offre en haut, les deux
 -- listes côte à côte, l'état de la demande et les boutons en bas.
 local W, ROW, ROWS = 580, 24, 10
 local frame, reponse -- reponse : la clé du contrat auquel on répond (nil = ma commande à la main)
@@ -275,7 +275,7 @@ local function build()
   frame.status = text("GameFontHighlightSmall", "BOTTOMLEFT", 14, 44)
   frame.status:SetWidth(W - 28)
   frame.status:SetJustifyH("LEFT")
-  text("GameFontDisableSmall", "BOTTOMRIGHT", -14, 44):SetText("Maj+clic sur un objet : il entre dans la liste dont la recherche a le focus")
+  text("GameFontDisableSmall", "BOTTOMRIGHT", -14, 62):SetText("Maj+clic sur un objet : il entre dans la liste dont la recherche a le focus")
   frame.go = button(frame, "Préparer la demande", 160, function()
     local o = order()
     if o.reponse then
