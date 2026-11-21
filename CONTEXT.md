@@ -4,11 +4,21 @@ Un joueur décrit ce qu'il veut faire fabriquer, estime ce que ça coûte, et pa
 
 ## Language
 
-### Projet et commandes
+### Projets d'artisanat (partent dans un add-on solo à nommer, grill du 20/11/2026)
 
 **Projet**:
-Ce que je veux faire fabriquer (des objets × quantités), avec son arbre, ses blocs et mes choix de case ; une seule page pour le suivre, commandes comprises.
+Ce que je veux faire fabriquer (des objets × quantités), avec son arbre, ses blocs et mes choix de case ; une seule page pour le suivre, et ses commandes quand Handshake est là.
 _Avoid_: liste, suivi
+
+**Brouillon**:
+Le projet de passage, unique et toujours là, où atterrit tout Ctrl+clic droit sur un objet ; on le vide ou on en retire des lignes, et « + » en fait un vrai projet. Il n'est pas dans la liste des projets.
+_Avoid_: projet temporaire, scratch
+
+**Besoins**:
+Les objets à réunir pour les projets qu'on y a mis (Brouillon compris), additionnés et toujours à jour de leurs choix de case, avec ce qu'on en a déjà (sacs, banque, autres personnages) ; une petite fenêtre à part pour suivre ce qu'il reste à acheter ou à récolter.
+_Avoid_: liste de courses, shopping
+
+### Commandes (Handshake)
 
 **Commande**:
 Une part d'un projet (le projet entier ou un bloc) adressée à un seul artisan ; tant qu'elle n'est pas partie, elle suit le projet, et elle se fige quand elle devient une demande.
@@ -48,3 +58,7 @@ Tout ce qui n'est pas apporté ; l'artisan la fabrique ou l'achète comme il veu
 **Offre**:
 Le prix proposé pour la part de l'artisan et son travail.
 _Avoid_: pourboire, tip
+
+## Ambiguïtés relevées
+
+- « Brouillon » désignait aussi un contrat préparé mais pas envoyé. Tranché le 20/11/2026 : le mot va au Brouillon des projets ; un tel contrat est **préparé**.
