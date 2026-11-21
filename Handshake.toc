@@ -8,7 +8,6 @@
 ## Dependencies: AzerothCommune
 ## OptionalDeps: BeAGoodPal
 ## SavedVariables: HandshakeDB
-RecettesClassic.lua
 Donnees.lua
 Calcul.lua
 Projet.lua

@@ -22,10 +22,11 @@ local function aucunReleve(quand)
 end
 -- Le socle (dépôt voisin, chargé avant Handshake comme dans le jeu), fichiers dans l'ordre de sa TOC avec son espace de
 -- noms privé : fenêtres, montants, noms d'objets, capture, cours de l'HV (son scan, sinon Auctionator…), la base.
--- ponytail: VendorData.lua (généré, ignoré par git) est sauté : les marchands sont ceux du test.
+-- ponytail: VendorData.lua et RecettesClassic.lua (générés, ignorés par git) sont sautés : les marchands et la réserve des
+-- recettes sont ceux du test (acns.recettesClassic).
 local acns = {}
 for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+)%.lua") do
-  if f ~= "VendorData" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
+  if f ~= "VendorData" and f ~= "RecettesClassic" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
 end
 local ns = {}
 for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
@@ -1050,26 +1051,30 @@ arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true })
 assert(arbreSeul.caseDe.I2770.cost == 5 * 30 and ns.texteHV() == "prix de l'HV : Auctionator", "prix d'Auctionator")
 Auctionator = nil
 aucunReleve("catalogue pas encore relevé, fournisseur")
--- Réserve Classic : ajoutée pour les objets sans recette scannée, jamais par-dessus une recette scannée du même objet.
-HandshakeClassicRecipes = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 } },
-  [9002] = { 4255, 1, 1, "Travail du cuir", "Armure verte en cuir", { 4234, 9 } } }
+-- Base des recettes du socle (Handshake#36, AzerothCommune#48) : Handshake y souscrit et la lit par Lire. La réserve
+-- Classic est celle du socle (privée : acns.recettesClassic), ajoutée pour les objets sans recette vue, jamais par-dessus
+-- une recette vue du même objet.
+assert(AzerothCommuneDB.souscriptions["base des recettes"], "Handshake souscrit à la base des recettes")
+acns.recettesClassic = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 }, 1 },
+  [9002] = { 4255, 1, 1, "Travail du cuir", "Armure verte en cuir", { 4234, 9 }, 175 },
+  [5] = { 2840, 1, 1, "Minage", "Fonte du cuivre", { 2770, 1 }, 25 } }
 local merged = ns.recipes()
-assert(merged[5] and not merged[9001], "barre de cuivre déjà scannée : la recette Classic ne la double pas")
+assert(merged[5] and not merged[9001], "barre de cuivre déjà vue : la recette Classic ne la double pas")
 assert(merged[9002] and merged[9002].output == 4255 and merged[9002].reagents[1].qty == 9, "armure verte en cuir : recette Classic")
--- Remise au socle (Handshake#34, AzerothCommune#46) : Handshake lui remet sa réserve à son chargement, une fois ; le
--- relevé des recettes connues sans fenêtre du socle l'interroge comme quand il lisait le global.
-local remis, vraiRemettre = {}, commune.RemettreRecettes
-commune.RemettreRecettes = function(self, r) remis[#remis + 1] = r return vraiRemettre(self, r) end
-assert(loadfile("Handshake/Donnees.lua"))("Handshake", {})
-commune.RemettreRecettes = vraiRemettre
-assert(#remis == 1 and remis[1][9001].profession == "Minage" and remis[1][9002].profession == "Travail du cuir", "réserve remise une fois")
-GetProfessions, IsPlayerSpell, InCombatLockdown = function() return 1 end, function(id) return id == 9001 end, function() return false end
-GetProfessionInfo = function() return "Minage", nil, 75, 150 end
-local sansFenetre, fini = {}, false
-assert(commune:ReleverRecettesSansFenetre(sansFenetre, {}, function() fini = true end))
-assert(fini and sansFenetre.Minage.known[9001] and sansFenetre.Minage.rank == 75, "relevé sans fenêtre : la réserve remise interrogée")
-GetProfessions, GetProfessionInfo, IsPlayerSpell, InCombatLockdown = nil, nil, nil, nil
-HandshakeClassicRecipes = nil
+-- Compétence requise affichée dans les blocs : celle de la réserve, aussi pour une recette vue pas apprise (5).
+local verte = ns.projetArbre(ns.nouveauProjet({ lines = { { id = 4255, qty = 1 }, { id = 2840, qty = 1 } } }),
+  { unlearned = true, force = { [4255] = "fabriquer", [2840] = "fabriquer" } })
+local niveaux = {}
+for _, g in ipairs(verte.blocs) do for _, r in ipairs(g.recipes) do niveaux[r.key] = r.level end end
+assert(niveaux[9002] == 175 and niveaux[5] == 25, "compétence requise de la réserve : " .. tostring(niveaux[9002]) .. ", " .. tostring(niveaux[5]))
+acns.recettesClassic = nil
+-- Handshake ne livre plus de réserve et ne remet plus rien au socle (Handshake#36).
+local hstoc = io.open("Handshake/Handshake.toc"):read("*a")
+assert(not hstoc:find("RecettesClassic", 1, true), "plus de réserve dans la TOC de Handshake")
+for f in hstoc:gmatch("([%w_]+)%.lua") do
+  local code = io.open("Handshake/" .. f .. ".lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  for _, m in ipairs({ "HandshakeClassicRecipes", "RemettreRecettes" }) do assert(not code:find(m, 1, true), f .. ".lua : " .. m) end
+end
 local demo = ns.demoOrder("hasard")
 assert(demo.name == "Essai : au hasard" and #demo.lines == 1 and demo.lines[1].id == 2841, "essai : le bronze (son cuivre se fabrique)")
 assert(#ns.demoOrder().lines == 3 and ns.demoOrder("ceinture").lines[1].id == 10721, "essais choisis : le set, les ceintures")

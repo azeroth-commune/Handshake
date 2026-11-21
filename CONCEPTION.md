@@ -82,7 +82,7 @@ Le POC « décomposer → blocs par métier → commander bloc par bloc » est v
    - Projet : directement dans l'interface, on tape les objets, etc.
    - Au clic sur un objet : choisir de l'ajouter au projet en cours ou à un nouveau.
 3. **Gestion des recettes : CRITIQUE.** Qui connaît quoi, qui a le métier, quel plan acheter pour pouvoir faire tel
-   objet. Les données fiables (recettes Forever) viendront plus tard ; pour l'instant réserve Classic.
+   objet. Les données fiables (recettes Forever) viendront plus tard ; pour l'instant la réserve Classic de la base des recettes du socle.
 4. **Commandes proposées : un « hôtel des ventes » sans argent, juste des commandes.**
    - On poste sa commande (un bloc, une demande) ; elle est diffusée.
    - Côté artisan, l'addon intercepte les annonces reçues, filtre celles qu'il peut faire (métier, recettes) et les met

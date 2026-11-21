@@ -439,7 +439,7 @@ local function blocs(res, crafters)
       n.who, n.whoKnows = found and found.name or false, knows or false
       local rk = n.recipeKey or n.id
       if not grp.seen[rk] then
-        local r = { key = n.recipeKey, name = n.recipe.name or ns.itemLabel(n.id), level = ns.recipeLevel(n.recipeKey, n.recipe), known = {} }
+        local r = { key = n.recipeKey, name = n.recipe.name or ns.itemLabel(n.id), level = n.recipe.level, known = {} }
         for _, c in ipairs(crafters) do if n.recipeKey and c.known[n.recipeKey] then r.known[#r.known + 1] = c.name end end
         grp.seen[rk], grp.recipes[#grp.recipes + 1] = true, r
         grp.level = math.max(grp.level, r.level or 0)
