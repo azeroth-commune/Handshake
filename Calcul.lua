@@ -1,16 +1,16 @@
 -- Handshake, « acheter ou fabriquer » : pour un objet et une quantité, le moins cher entre l'acheter (marchand
 -- ou hôtel des ventes) et le fabriquer, en redescendant dans les composants (barre de fer -> minerai de fer).
 --   /handshake ou /commande <lien, nom ou ID d'objet> [quantité] [tout]
--- Ouvre la fenêtre (Fenetre.lua). Les données : Donnees.lua (toutes par LibCommune, avec ou sans GameData). Par défaut seules les recettes connues d'un de tes persos comptent ; « tout » ajoute celles vues mais pas apprises.
+-- Ouvre la fenêtre (Fenetre.lua). Les données : Donnees.lua (toutes par le socle Azeroth Commune). Par défaut seules les recettes connues d'un de tes persos comptent ; « tout » ajoute celles vues mais pas apprises.
 -- Les prix de l'HV suivent les paliers du dernier scan : 20 barres coûtent les moins chères, puis les suivantes.
 local _, ns = ...
 
 local MAX_DEPTH = 10 -- garde-fou ; les boucles (A fait B fait A) sont coupées par path
 
 
--- Prix d'achat (marchand ou HV palier par palier) et prix marchands : ceux de la lib commune (lib:PrixAchat,
+-- Prix d'achat (marchand ou HV palier par palier) et prix marchands : ceux du socle (lib:PrixAchat,
 -- lib:PrixMarchands), les mêmes que pour la caution et le Journal du Négoce.
-local lib = LibStub("LibCommune-1.0")
+local lib = AzerothCommune
 
 local function knownRecipes()
   local known = {}
@@ -126,8 +126,8 @@ local function shopping(p, out)
 end
 ns.shopping = shopping
 
--- Le stock selon les options : mes sacs (lus à l'instant), ma banque (dernier passage ; sans GameData, vue cette
--- session), mes autres persos (GameData).
+-- Le stock selon les options : mes sacs (lus à l'instant), ma banque (dernier passage), mes autres persos (relevés par
+-- le socle).
 local function buildStock(opts)
   if not (opts.bags or opts.bank or opts.alts) then return nil end
   local stock = {}
@@ -177,7 +177,6 @@ function ns.costCommand(args)
   if all then HandshakeDB.options.unlearned = true end
   ns.openCraftWindow(id, qty)
 end
-if GameDataAPI then GameDataAPI.costCommand = ns.costCommand end -- /gdata cout, si GameData est là
 SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
   if args:match("^%s*demo") then ns.demoOrder(args:match("^%s*demo%s+(%a+)")); return ns.openCraftWindow() end

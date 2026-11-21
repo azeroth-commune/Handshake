@@ -1,4 +1,4 @@
--- Tests d'intégration dans wow-ui-sim (tools/sim.sh test Handshake) : Handshake chargé avec LibCommune et GameData dans
+-- Tests d'intégration dans wow-ui-sim (tools/sim.sh test Handshake) : Handshake chargé avec le socle Azeroth Commune dans
 -- l'interface Forever simulée (le WTF de session ne contient pas nos SavedVariables : la migration des commandes en
 -- projets est testée dans check.lua).
 test("Handshake se charge : des projets, plus de table globale des choix", function()

@@ -34,7 +34,7 @@ local function now() return GetServerTime() end
 ---------------------------------------------------------------------------------------------------
 -- Noms : « Prénom Nom », la forme que le serveur donne comme expéditeur et qu'il accepte pour un chuchotement
 -- (lib.Destinataire, LibCommune#35). Ils servent à afficher et à chuchoter ; un personnage s'identifie par son GUID.
-local lib = LibStub("LibCommune-1.0")
+local lib = AzerothCommune
 ns.fullName, ns.whisperTarget = lib.Destinataire, lib.Destinataire
 function ns.me() return UnitGUID("player") end -- moi : mon GUID (le mode debug le remplace par celui du Testeur)
 function ns.myName() return lib.Personnage().nom end
