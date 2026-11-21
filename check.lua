@@ -1056,6 +1056,19 @@ HandshakeClassicRecipes = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (C
 local merged = ns.recipes()
 assert(merged[5] and not merged[9001], "barre de cuivre déjà scannée : la recette Classic ne la double pas")
 assert(merged[9002] and merged[9002].output == 4255 and merged[9002].reagents[1].qty == 9, "armure verte en cuir : recette Classic")
+-- Remise au socle (Handshake#34, AzerothCommune#46) : Handshake lui remet sa réserve à son chargement, une fois ; le
+-- relevé des recettes connues sans fenêtre du socle l'interroge comme quand il lisait le global.
+local remis, vraiRemettre = {}, commune.RemettreRecettes
+commune.RemettreRecettes = function(self, r) remis[#remis + 1] = r return vraiRemettre(self, r) end
+assert(loadfile("Handshake/Donnees.lua"))("Handshake", {})
+commune.RemettreRecettes = vraiRemettre
+assert(#remis == 1 and remis[1][9001].profession == "Minage" and remis[1][9002].profession == "Travail du cuir", "réserve remise une fois")
+GetProfessions, IsPlayerSpell, InCombatLockdown = function() return 1 end, function(id) return id == 9001 end, function() return false end
+GetProfessionInfo = function() return "Minage", nil, 75, 150 end
+local sansFenetre, fini = {}, false
+assert(commune:ReleverRecettesSansFenetre(sansFenetre, {}, function() fini = true end))
+assert(fini and sansFenetre.Minage.known[9001] and sansFenetre.Minage.rank == 75, "relevé sans fenêtre : la réserve remise interrogée")
+GetProfessions, GetProfessionInfo, IsPlayerSpell, InCombatLockdown = nil, nil, nil, nil
 HandshakeClassicRecipes = nil
 local demo = ns.demoOrder("hasard")
 assert(demo.name == "Essai : au hasard" and #demo.lines == 1 and demo.lines[1].id == 2841, "essai : le bronze (son cuivre se fabrique)")

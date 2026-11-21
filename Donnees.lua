@@ -21,7 +21,22 @@ local function parPerso(t) local d = lib:Lire(t, "tous") return d and d.persos o
 -- Accès aux données (par la lib)
 -- Recettes : celles relevées dans les fenêtres de métier (par le socle), complétées par la réserve Classic
 -- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
-local classic -- la réserve, mise en forme une fois
+local classic -- la réserve, mise en forme une fois : la forme des recettes de la base du socle
+local function reserve() -- nil sans RecettesClassic.lua (généré, hors du repo)
+  if not classic and HandshakeClassicRecipes then
+    classic = {}
+    for k, c in pairs(HandshakeClassicRecipes) do
+      local reagents = {}
+      for i = 1, #c[6], 2 do reagents[#reagents + 1] = { id = c[6][i], qty = c[6][i + 1] } end
+      classic[k] = { output = c[1], made_min = c[2], made_max = c[3], profession = c[4], name = c[5], reagents = reagents, level = c[7],
+        classic = true }
+    end
+  end
+  return classic
+end
+-- Remise au socle à notre chargement, une fois : ses candidates pour le relevé des recettes connues sans fenêtre de
+-- métier (AzerothCommune#46 : le socle ne lit plus notre global).
+if reserve() then lib:RemettreRecettes(classic) end
 local nomsDemandes = {} -- recettes dont on a déjà demandé les noms d'objets
 function ns.recipes()
   local own = recettesConnues().recettes
@@ -35,15 +50,7 @@ function ns.recipes()
     end
   end
   if not HandshakeClassicRecipes then return own end
-  if not classic then
-    classic = {}
-    for k, c in pairs(HandshakeClassicRecipes) do
-      local reagents = {}
-      for i = 1, #c[6], 2 do reagents[#reagents + 1] = { id = c[6][i], qty = c[6][i + 1] } end
-      classic[k] = { output = c[1], made_min = c[2], made_max = c[3], profession = c[4], name = c[5], reagents = reagents, level = c[7],
-        classic = true }
-    end
-  end
+  reserve()
   local out, made = {}, {}
   for k, r in pairs(own) do out[k] = r; if r.output then made[r.output] = true end end
   for k, r in pairs(classic) do

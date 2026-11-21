@@ -9,6 +9,24 @@ test("Handshake souscrit à ses types de données", function()
     end
 end)
 
+-- Handshake#34 : la réserve Classic (RecettesClassic.lua) est remise au socle à notre chargement ; son relevé des
+-- recettes connues sans fenêtre l'interroge (une recette de la réserve, connue d'un perso simulé qui a son métier).
+test("réserve Classic remise au socle : le relevé sans fenêtre l'interroge", function()
+    assertType("table", HandshakeClassicRecipes)
+    local id, c = next(HandshakeClassicRecipes)
+    local vrais = { GetProfessions, GetProfessionInfo, IsPlayerSpell, C_Timer.After }
+    GetProfessions = function() return 1 end
+    GetProfessionInfo = function() return c[4], nil, 100, 300 end
+    IsPlayerSpell = function(s) return s == id end
+    C_Timer.After = function(_, fn) fn() end -- les images du relevé, tout de suite
+    local metiers, fini = {}, false
+    local ok, err = pcall(AzerothCommune.ReleverRecettesSansFenetre, AzerothCommune, metiers, {}, function() fini = true end)
+    GetProfessions, GetProfessionInfo, IsPlayerSpell, C_Timer.After = vrais[1], vrais[2], vrais[3], vrais[4]
+    assertTrue(ok, tostring(err))
+    assertTrue(fini)
+    assertNotNil(metiers[c[4]] and metiers[c[4]].known[id], "recette " .. id .. " (" .. c[4] .. ") relevée sans fenêtre")
+end)
+
 test("HandshakeDB sans données relevées après le chargement", function()
     assertType("table", HandshakeDB)
     for _, k in ipairs({ "recipes", "chars", "items", "market" }) do assertNil(HandshakeDB[k]) end
