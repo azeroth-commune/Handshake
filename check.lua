@@ -696,8 +696,7 @@ print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
 
 -- Règles de la réponse (#10) : un projet tenu (#37) ; ce que veut le demandeur (lignes, quantités) est figé, avec la
 -- raison que donne la partie commandes, affichée telle quelle ; apports, choix de case, prix et commande d'un bloc
--- restent à l'artisan. La demande
--- est un contrat reçu (seuls son empreinte, son client, o et m comptent ici).
+-- restent à l'artisan. La demande est un contrat reçu (seuls son empreinte, son client, o et m comptent ici).
 as(BEL)
 do
   local function recue(hash, qty)

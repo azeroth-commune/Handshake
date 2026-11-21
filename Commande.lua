@@ -254,7 +254,6 @@ function ns.projetCommandes(p)
   return out
 end
 
-
 ---------------------------------------------------------------------------------------------------
 -- /handshake demo [set|ceinture|hasard] : une commande d'essai parlante. Choisis dans les données (arbres profonds qui
 -- traversent plusieurs métiers, tools/crafts_critiques.py) :
