@@ -166,7 +166,7 @@ function ns.costCommand(args)
   local test = args:match("^%s*essai%s*(%a*)")
   if test then -- /commande essai [besoins] : la commande affichée (ou ses besoins) reçue comme un chuchotement
     local p = ns.projetCourant()
-    if test == "besoins" then return ns.sendNeeds(ns.projetCommande(p), ns.projetArbre(p), true) end
+    if test == "besoins" then return ns.sendNeeds(ns.projetCommande(p), ns.projetArbre(p, nil, ns.projetApports(p)), true) end
     return ns.sendOrder(ns.projetCommande(p), true)
   end
   local all = args:find("%f[%w]tout%f[%W]") ~= nil
