@@ -53,11 +53,11 @@ local market = {
   [3575] = { min = 300, qty = 50, tiers = { { price = 300, qty = 10 }, { price = 310, qty = 40 } } }, -- barre
   [2772] = { min = 270, qty = 15, tiers = { { price = 270, qty = 15 } } },                            -- minerai : 15 seulement
 }
-assert(ns.buyCost(3575, 20, market) == 10 * 300 + 10 * 310, "achat palier par palier")
-local ore, how, partial = ns.buyCost(2772, 20, market)
+assert(commune:PrixAchat(3575, 20, market) == 10 * 300 + 10 * 310, "achat palier par palier")
+local ore, how, partial = commune:PrixAchat(2772, 20, market)
 assert(ore == 20 * 270 and how == "HV" and partial, "pas assez en vente : le reste au dernier prix, signalé")
 GameDataDB.vendors = { [1] = { items = { { id = 2880, price = 90, stack = 1 } } } }
-assert(select(2, ns.buyCost(2880, 2, market)) == "marchand")
+assert(select(2, commune:PrixAchat(2880, 2, market)) == "marchand")
 local by = { [3575] = { { key = 3307, known = true, r = { name = "Fonte du fer", made_min = 1, reagents = { { id = 2772, qty = 1 } } } } } }
 local p = ns.plan(3575, 20, { market = market, by = by }, 0, {})
 assert(p.how == "fabriquer" and p.cost == 5400 and p.buy == 6100 and p.parts[1].qty == 20, "fondre est moins cher")
