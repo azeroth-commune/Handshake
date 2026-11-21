@@ -32,7 +32,6 @@ FAIRE UNE DEMANDE
 COMMANDES
   /contrat            les contrats (lire, signer, refuser, contre-proposer)
   /handshake          la fenêtre des commandes (arbre acheter ou fabriquer, besoins)
-  /handshake noms     un diagnostic des noms (à envoyer si on te le demande)
 
 EN CAS DE PROBLÈME
 Une capture d'écran de la fenêtre + le texte de l'erreur s'il y en a une, envoyés à la personne qui t'a donné

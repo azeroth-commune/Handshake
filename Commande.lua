@@ -251,7 +251,6 @@ StaticPopupDialogs.HANDSHAKE_COMMANDE_RECUE = {
 function ns.onChat(event, msg, sender, ...)
   if type(msg) ~= "string" or (issecretvalue and (issecretvalue(msg) or issecretvalue(sender))) then return end
   if event == "CHAT_MSG_WHISPER" then
-    if ns.rawSenders then ns.rawSenders.whisper = sender end
     -- le jeu joint à chaque chuchotement l'identifiant de l'expéditeur (12e valeur) : source serveur, on le retient
     if ns.learnGUID then ns.learnGUID(ns.fullName(sender), (select(10, ...))) end
   end

@@ -75,7 +75,7 @@ function ns.items() return lib:Lire("objets") or nomsDeSession end
 function ns.market()
   local d, lot = lib:Lire("cours de l'HV")
   if not d then return nil, lot end
-  local h = d.hv and d.hv[GetRealmName() .. "-" .. (UnitFactionGroup("player") or "")]
+  local h = d.hv and d.hv[lib.MaisonHV()] -- sondée par la lib
   -- ponytail: une ligne lue au plus une fois par calcul (un calcul = un ns.market())
   local items = setmetatable({}, { __index = function(t, id)
     local l = d.objet(id) or false

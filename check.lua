@@ -998,6 +998,24 @@ assert(ns.myIdentity() == "Belegard Marteaudefer — CAMWOW EU4 Realm 8 PvP — 
 assert(ns.identity("Carl-AutreRoyaume", nil) == "Carl — AutreRoyaume — identifiant inconnu")
 print("Handshake : identité complète OK")
 
+-- Royaume, faction et maison de l'HV par la lib, qui les sonde (Handshake#27) : plus d'appel direct dans le code chargé ;
+-- le diagnostic /handshake noms est remplacé par les sondes d'identité de la lib.
+local lib27 = LibStub("LibCommune-1.0")
+local vraiRoyaume = lib27.Royaume
+lib27.Royaume = function() return "Royaume de la lib" end
+assert(ns.identity(BOB, GBOB):find(" — Royaume de la lib — ", 1, true), "notre royaume affiché : celui de la lib")
+lib27.Royaume = vraiRoyaume
+for f in io.open("Handshake/Handshake.toc"):read("*a"):gmatch("([%w_]+%.lua)") do
+  local code = io.open("Handshake/" .. f):read("*a")
+  for _, appel in ipairs({ "GetRealmName", "GetNormalizedRealmName", "UnitFactionGroup", "UnitFullName", "namesDiagnostic" }) do
+    assert(not code:find(appel, 1, true), f .. " : " .. appel)
+  end
+end
+for _, f in ipairs({ "LISEZ-MOI.txt", "SECURITE.md" }) do
+  assert(not io.open("Handshake/" .. f):read("*a"):find("handshake noms", 1, true), f .. " cite encore /handshake noms")
+end
+print("Handshake : royaume et faction par la lib OK")
+
 -- Destinataire d'un chuchotement : prénom seul dans mon royaume (Forever lit « Prénom-Royaume » comme un nom de famille).
 assert(ns.whisperTarget(BOB) == "Bob" and ns.whisperTarget("Bob") == "Bob" and ns.whisperTarget("Bob-AutreRoyaume") == "Bob-AutreRoyaume")
 print("Handshake : destinataire des chuchotements OK")
