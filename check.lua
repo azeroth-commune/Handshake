@@ -10,8 +10,9 @@ C_Timer = { After = noop, NewTicker = noop }
 C_Item = { GetItemInfo = noop, GetItemIconByID = noop }
 date, time = os.date, os.time
 GetTime = function() return 0 end
-GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
-UnitGUID = function(u) if u == "player" then return "Player-1-0000000E" end end -- un perso est rangé sous son GUID
+UnitFactionGroup = function() return "Alliance" end
+-- Un perso est rangé sous son GUID ; son numéro de serveur est le royaume de la lib (LibCommune#35).
+UnitGUID = function(u) if u == "player" then return "Player-6942-0000000E" end end
 GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {}, lots = {} }, { items = {} }, {}
 -- GameData installé : la lib commune lit ses données par GameDataAPI, ses vrais accesseurs (GameData/Souscriptions.lua :
 -- inventaires, métiers, marchands, objets, cours de l'HV) ; les recettes connues, même forme que GameData.
@@ -99,7 +100,7 @@ local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = f
     for id, n in pairs(t or {}) do items[#items + 1] = { id = id, count = n } end
     return { b = { items = items } }
   end
-  GameDataMarket = { ["R-Alliance"] = { scanned = "test", items = d.hv } }
+  GameDataMarket = { ["6942-Alliance"] = { scanned = "test", items = d.hv } }
   GameDataDB.recipes = d.recettes
   GameDataDB.chars = d.persos or {}
   GameDataDB.chars[MOI] = { bank = sac(d.banque) }
@@ -128,8 +129,8 @@ donnees({ hv = mk, recettes = {
   [1] = { name = "Marteau", output = 5541, profession = "Forge", level = 100, reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } },
   [2] = { name = "Cuirasse", output = 2870, profession = "Forge", reagents = { { id = 2841, qty = 20 }, { id = 5500, qty = 2 } } },
   [3] = bronzeR },
-  persos = { ["Player-1-00000BE1"] = { adresse = "Bel-R", recipes = { Forge = { rank = 164, known = { [1] = "easy" } } } },
-    ["Player-1-00000A17"] = { adresse = "Alt-R", recipes = { Minage = { rank = 90, known = {} } } } } })
+  persos = { ["Player-6942-00000BE1"] = { nom = "Bel Dupont", recipes = { Forge = { rank = 164, known = { [1] = "easy" } } } },
+    ["Player-6942-00000A17"] = { nom = "Alt Dupont", recipes = { Minage = { rank = 90, known = {} } } } } })
 local function both(choix) -- un projet « marteau + cuirasse », avec ses choix de case
   local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
   for id, c in pairs(choix or {}) do ns.projetChoix(p, id, c) end
@@ -308,7 +309,7 @@ print("Handshake : besoins OK")
 
 aucunReleve("avec GameData, après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
-HandshakeDB = { chars = { [MOI] = { bags = {}, bank = {} } }, items = { [1] = { name = "x" } }, market = { ["R-Alliance"] = {} },
+HandshakeDB = { chars = { [MOI] = { bags = {}, bank = {} } }, items = { [1] = { name = "x" } }, market = { ["6942-Alliance"] = {} },
   recipes = {}, contracts = { k = { status = "signe" } }, projets = { { name = "P", lines = {} } }, courant = 1,
   options = { bags = true }, surnames = { Bob = "Kerys" }, debug = { on = true } }
 local loader
@@ -378,16 +379,15 @@ assert(#popups == (#msgs == 2 and 1 or 0), "le vieux 2/2 a été jeté par le 1/
 print("Handshake : morceaux bornés OK")
 
 -- Contrats entre deux joueurs simulés : Belegard (artisan) et Bob (client), chacun sa base.
-local REALM = "CAMWOWEU4Realm8PvP"
+local REALM = "6942" -- le royaume de la lib : le numéro de serveur du GUID (LibCommune#35)
 local BEL, BOB = "Belegard-" .. REALM, "Bob-" .. REALM
-GetNormalizedRealmName = function() return REALM end
 local clock = 1795000000
 GetServerTime = function() return clock end
 local bases = { [BEL] = { contracts = {} }, [BOB] = { contracts = {} } }
 local current, notes, wire = BEL, {}, {}
 local function as(who) current = who; HandshakeDB = bases[who] end
 UnitName = function() return (current:match("^[^%-]+")) end
-local GBEL, GBOB, GMAL = "Player-1-0000BEEF", "Player-1-00000B0B", "Player-1-0000BAD0"
+local GBEL, GBOB, GMAL = "Player-6942-0000BEEF", "Player-6942-00000B0B", "Player-6942-0000BAD0"
 UnitGUID = function(u) if u == "player" then return current == BEL and GBEL or GBOB end end
 local function P(origin, id, v, parent, client, cg, artisan, ag, m, o, d)
   return table.concat({ "P", "2", origin, id, v, parent, client, cg, artisan, ag, m, o, d }, "|")
@@ -406,7 +406,7 @@ local function inject(from, to, body) -- un message forgé, en un morceau
 end
 local function count(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end
 
-assert(ns.fullName("Bob") == BOB and ns.fullName("Bob", "CAMWOW EU4 Realm 8 PvP") == BOB, "noms normalisés")
+assert(ns.fullName("Bob") == BOB and ns.fullName("Bob", REALM) == BOB, "noms normalisés")
 assert(ns.fullName("Bob|cff") == nil and ns.fullName("") == nil, "nom piégé refusé")
 assert(ns.ctHash("abc") ~= ns.ctHash("abd") and #ns.ctHash("abc") == 16, "empreinte 64 bits")
 
@@ -451,7 +451,7 @@ inject(MAL, BOB, P(MAL, "1795000006", "1", "0", BOB, "0", MAL, GMAL, "", "7963:1
 -- Identité : sans son propre identifiant, avec un identifiant qui n'est pas le mien, avec un identifiant piégé.
 inject(MAL, BOB, P(MAL, "1795000007", "1", "0", BOB, "0", MAL, "0", "", "7963:1:1", clock + 3600))
 inject(MAL, BOB, P(MAL, "1795000008", "1", "0", BOB, GMAL, MAL, GMAL, "", "7963:1:1", clock + 3600))
-inject(MAL, BOB, P(MAL, "1795000009", "1", "0", BOB, "0", MAL, "Player-1-|cff00", "", "7963:1:1", clock + 3600))
+inject(MAL, BOB, P(MAL, "1795000009", "1", "0", BOB, "0", MAL, "Player-6942-|cff00", "", "7963:1:1", clock + 3600))
 -- Mallory annonce l'identifiant de Belegard : le serveur (son chuchotement) a donné le vrai à Bob.
 ns.knownGUID[MAL] = GMAL
 inject(MAL, BOB, P(MAL, "1795000010", "1", "0", BOB, "0", MAL, GBEL, "", "7963:1:1", clock + 3600))
@@ -488,7 +488,7 @@ assert(not ns.ctEvaluate(signed, BOB, { partner = BEL, guid = "x", unknown = tru
 assert(not ns.ctEvaluate(signed, BOB, s1, clock + 4 * 86400).ok, "échu")
 ns.ctRecord(signed, BOB, s1, clock)
 assert(signed.peer.guid == GBEL and signed.peer.verified and signed.got[3858] == nil and signed.gave[3858] == 20 and signed.net == 0, "lot 1 inscrit")
-assert(not ns.ctEvaluate(signed, BOB, { partner = BEL, guid = "Player-1-AUTRE", give = s1.give, get = s1.get }, clock).ok, "même nom, autre identifiant")
+assert(not ns.ctEvaluate(signed, BOB, { partner = BEL, guid = "Player-6942-AUTRE", give = s1.give, get = s1.get }, clock).ok, "même nom, autre identifiant")
 local renamed = ns.ctEvaluate(signed, BOB, { partner = "Belegarde-" .. REALM, guid = GBEL, give = { items = { [3858] = 16 }, money = 0 },
   get = { items = {}, money = 16 * unit } }, clock)
 assert(renamed.ok and renamed.warnings[1]:find("nom a changé"), "même identifiant, nouveau nom : conforme, signalé")
@@ -506,8 +506,8 @@ print("Handshake : échanges vérifiés et contrat clos OK")
 -- Demande (CONCEPTION.md) : Bob veut une claymore (30 minerais + 4 cuirs lourds), il apporte le cuir (Ctrl+clic),
 -- offre 3 po. Contrat v1 : caution = prix de marché du cuir seulement ; la claymore = sa part de caution + l'offre.
 as(BOB)
-GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
-GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } },
+UnitFactionGroup = function() return "Alliance" end
+GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } },
   [4234] = { tiers = { { price = 500, qty = 999 } } }, [7963] = { tiers = { { price = 99999, qty = 9 } } } } } }
 GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 }, { id = 4234, qty = 4 } } } }
 GameDataItems.items[4234] = { name = "Cuir lourd", link = link(4234, "Cuir lourd") }
@@ -623,7 +623,7 @@ local function tiers(prix)
   for id, p in pairs(prix) do t[id] = { tiers = { { price = p, qty = 999 } } } end
   return t
 end
-GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = tiers({ [2770] = 10, [2771] = 10, [5500] = 500, [2841] = 100, [5541] = 99999, [2870] = 99999 }) } }
+GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = tiers({ [2770] = 10, [2771] = 10, [5500] = 500, [2841] = 100, [5541] = 99999, [2870] = 99999 }) } }
 GameDataDB.recipes = {
   [1] = { name = "Marteau", output = 5541, profession = "Forge", reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } },
   [2] = { name = "Cuirasse", output = 2870, profession = "Forge", reagents = { { id = 2841, qty = 20 } } },
@@ -754,7 +754,7 @@ print("Handshake : envoyer une commande (demande figée, état lu dans le contra
 -- L'écart est constaté, jamais expliqué (#18) : un libellé neutre, et l'écart de prix chiffré contre mon scan.
 as(BOB)
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
-GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [2841] = { tiers = { { price = 100, qty = 999 } } } } } }
+GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2841] = { tiers = { { price = 100, qty = 999 } } } } } }
 do
   local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
   ns.projetChoix(p, 2841, "fabriquer")
@@ -777,7 +777,7 @@ do
   assert(not cmd(f).ecart and not cmd(m).ecart, "envoyées, projet inchangé : pas d'écart")
   -- Écart de prix (#18) : la caution du contrat contre MON estimation actuelle, celle de la fiche (P8). Le marché bouge,
   -- le pourcentage suit, sans que le projet change ; un composant sans prix connu : pas de pourcentage.
-  local barres = GameDataMarket["R-Alliance"].items[2841]
+  local barres = GameDataMarket["6942-Alliance"].items[2841]
   assert(cmd(f).ecartPrix == 0 and not cmd(f).alertePrix and not cmd(f).incomplet, "caution = mon estimation : 0 %")
   barres.tiers[1].price = 150
   assert(math.floor(cmd(f).ecartPrix + 0.5) == -33 and cmd(f).alertePrix, "le marché monte : caution trop basse pour moi, en rouge")
@@ -785,10 +785,10 @@ do
   assert(ns.ctDescribe(cf, BOB):find(("caution |cffe64d4d%+.0f %%|r"):format(cmd(f).ecartPrix), 1, true), "le même chiffre que la fiche")
   barres.tiers[1].price = 105
   assert(math.floor(cmd(f).ecartPrix + 0.5) == -5 and not cmd(f).alertePrix, "sous le seuil de 10 % : pas d'alerte")
-  GameDataMarket["R-Alliance"].items[2841] = nil
+  GameDataMarket["6942-Alliance"].items[2841] = nil
   assert(cmd(f).incomplet and cmd(f).ecartPrix == nil, "sans prix connu : estimation incomplète, pas de pourcentage")
   assert(ns.ctDescribe(cf, BOB):find("1 composant(s) sans prix connu", 1, true), "la fiche le dit aussi")
-  GameDataMarket["R-Alliance"].items[2841] = barres
+  GameDataMarket["6942-Alliance"].items[2841] = barres
   barres.tiers[1].price = 100
   assert(cmd(m).ecartPrix == nil and not cmd(m).incomplet, "rien d'apporté : pas de caution à estimer")
   -- Ma perle (apport) sous les cases de la forge : la part de la forge change, pas celle du minage.
@@ -874,8 +874,8 @@ print("Handshake : écart et nouvelle version d'une commande envoyée OK")
 
 -- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
-GetRealmName, UnitFactionGroup = function() return "R" end, function() return "Alliance" end
-GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } } } } }
+UnitFactionGroup = function() return "Alliance" end
+GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } } } } }
 GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 } } } }
 as(BOB)
 local fiche = ns.ctDescribe(signed, BOB)
@@ -889,15 +889,15 @@ print("Handshake : fiche du contrat OK")
 assert(ns.fullName == commune.Adresse and ns.whisperTarget == commune.Destinataire, "noms : ceux de la lib commune, plus de copie")
 assert(ns.fullName("Belegard Marteaudefer-" .. REALM) == BEL, "nom de famille et royaume")
 assert(ns.fullName("Belegard Marteaudefer") == BEL, "nom de famille sans royaume : notre royaume")
-assert(ns.fullName("Riwanon", "Kerys") == "Riwanon-Kerys" and ns.fullName("Riwanon") == "Riwanon-" .. REALM)
+assert(ns.fullName("Riwanon") == "Riwanon-" .. REALM)
 assert(ns.fullName("Bob-AutreRoyaume") == "Bob-AutreRoyaume", "autre royaume")
 UnitName = function() return "Belegard", "Marteaudefer" end
 assert(ns.me() == BEL, "moi = prénom + royaume, pas le nom de famille")
 print("Handshake : noms à la Forever OK")
 
 -- Avec GameData : les recettes connues de tous ses persos, par la lib commune.
-local ALT, SANS = "Player-1-00000A17", "Player-1-00005A25"
-GameDataDB.chars = { [ALT] = { adresse = "Alt-R", nom = "Alt Dupont", recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
+local ALT, SANS = "Player-6942-00000A17", "Player-6942-00005A25"
+GameDataDB.chars = { [ALT] = { nom = "Alt Dupont", recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
   professions = { { name = "Couture", rank = 120 } }, bags = { b = { items = { { id = 2840, count = 4 } } } } }, [SANS] = {} }
 assert(ns.knownRecipes()[ALT].Forge.known[9] and not ns.knownRecipes()[SANS], "recettes connues de GameData, par GUID")
 local alt
@@ -906,7 +906,7 @@ assert(alt and alt.name == "Alt" and alt.ranks.Forge == 50 and alt.known[9], "ar
 assert(alt.ranks.Couture == 120, "métiers des persos (fiche de GameData), par la lib")
 -- Mes autres persos (option « mes autres persos ») : leurs sacs, par la lib.
 GameDataDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
-GameDataMarket = { ["R-Alliance"] = { scanned = "hier", items = { [2840] = { tiers = { { price = 50, qty = 99 } } } } } }
+GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2840] = { tiers = { { price = 50, qty = 99 } } } } } }
 local bronze = ns.nouveauProjet({ lines = { { id = 2841, qty = 6 } } })
 local arbreAlts = ns.projetArbre(bronze, { alts = true, unlearned = true })
 assert(arbreAlts.caseDe.I2840.have[3] == 4 and arbreAlts.caseDe.I2840.need == 2, "sacs d'un autre perso déduits")
@@ -921,7 +921,7 @@ GameDataAPI = nil
 -- Relevés sauvegardés par un Handshake d'avant : purgés (ADR 0001), données propres gardées.
 HandshakeDB.recipes = { [1] = { name = "vieux relevé" } }
 HandshakeDB.chars = { ["Vieux-Perso"] = { recipes = { Forge = { known = { [1] = 1 } } }, bags = { [2770] = 3 } } }
-HandshakeDB.items, HandshakeDB.market = { [2770] = { name = "Minerai" } }, { ["R-Alliance"] = { items = {} } }
+HandshakeDB.items, HandshakeDB.market = { [2770] = { name = "Minerai" } }, { ["6942-Alliance"] = { items = {} } }
 ns.purgerAnciensReleves()
 aucunReleve("sans GameData, purge")
 assert(HandshakeDB.contracts and HandshakeDB.projets, "données propres gardées")
@@ -988,13 +988,12 @@ assert(#ns.demoOrder().lines == 3 and ns.demoOrder("ceinture").lines[1].id == 10
 print("Handshake : sans GameData OK")
 
 -- Identité complète : prénom, nom de famille (lu au serveur, jamais dans un message), royaume, identifiant.
-GetRealmName = function() return "CAMWOW EU4 Realm 8 PvP" end
 UnitExists, UnitIsPlayer = function() return true end, function() return true end
 UnitGUID = function(u) return u == "target" and GBOB or GBEL end
 UnitName = function(u) if u == "target" then return "Bob", "Kerys-de|cffBois" end return "Belegard", "Marteaudefer" end
 ns.learnUnit("target")
-assert(ns.identity(BOB, GBOB) == "Bob Kerys-de||cffBois — CAMWOW EU4 Realm 8 PvP — " .. GBOB, "nom de famille lu, codes échappés")
-assert(ns.myIdentity() == "Belegard Marteaudefer — CAMWOW EU4 Realm 8 PvP — " .. GBEL)
+assert(ns.identity(BOB, GBOB) == "Bob Kerys-de||cffBois — 6942 — " .. GBOB, "nom de famille lu, codes échappés")
+assert(ns.myIdentity() == "Belegard Marteaudefer — 6942 — " .. GBEL)
 assert(ns.identity("Carl-AutreRoyaume", nil) == "Carl — AutreRoyaume — identifiant inconnu")
 print("Handshake : identité complète OK")
 
@@ -1003,7 +1002,7 @@ print("Handshake : identité complète OK")
 local lib27 = LibStub("LibCommune-1.0")
 local vraiRoyaume = lib27.Royaume
 lib27.Royaume = function() return "Royaume de la lib" end
-assert(ns.identity(BOB, GBOB):find(" — Royaume de la lib — ", 1, true), "notre royaume affiché : celui de la lib")
+assert(ns.identity("Bob", GBOB):find(" — Royaume de la lib — ", 1, true), "notre royaume affiché : celui de la lib")
 lib27.Royaume = vraiRoyaume
 for f in io.open("Handshake/Handshake.toc"):read("*a"):gmatch("([%w_]+%.lua)") do
   local code = io.open("Handshake/" .. f):read("*a")
@@ -1016,6 +1015,7 @@ for _, f in ipairs({ "LISEZ-MOI.txt", "SECURITE.md" }) do
 end
 print("Handshake : royaume et faction par la lib OK")
 
--- Destinataire d'un chuchotement : prénom seul dans mon royaume (Forever lit « Prénom-Royaume » comme un nom de famille).
-assert(ns.whisperTarget(BOB) == "Bob" and ns.whisperTarget("Bob") == "Bob" and ns.whisperTarget("Bob-AutreRoyaume") == "Bob-AutreRoyaume")
+-- Destinataire d'un chuchotement : « Prénom Nom », la forme que le serveur accepte (au prénom seul : « Aucun joueur
+-- nommé 'Belegard' », 21/11/2026, LibCommune#35).
+assert(ns.whisperTarget("Belegard Marteaudefer") == "Belegard Marteaudefer")
 print("Handshake : destinataire des chuchotements OK")

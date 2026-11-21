@@ -58,7 +58,7 @@ end
 function ns.identity(nameRealm, guid, surname)
   local first, realm = (nameRealm or "?"):match("^([^%-]+)%-?(.*)$")
   surname = surname or (guid and ns.surnames[guid])
-  local shown = (realm == lib.RoyaumeNormalise() or realm == "") and lib.Royaume() or realm -- sondés par la lib
+  local shown = (realm == lib.Royaume() or realm == "") and lib.Royaume() or realm -- sondé par la lib
   return (("%s%s — %s — %s"):format(first, surname and (" " .. surname) or "", shown, guid or "identifiant inconnu"):gsub("|", "||"))
 end
 function ns.myIdentity()

@@ -107,7 +107,7 @@ end
 -- pas : un perso de GameData pas encore reconnecté depuis le passage au GUID).
 function ns.prenom(guid)
   local p = lib.Personnage(guid)
-  return p and p.adresse and p.adresse:match("^[^%-]+") or "?"
+  return p and p.nom and p.nom:match("^%S+") or "?"
 end
 
 ---------------------------------------------------------------------------------------------------
