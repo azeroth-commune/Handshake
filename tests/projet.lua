@@ -72,13 +72,21 @@ test("Commander un bloc ajoute une commande au projet, sur la même page", funct
     assertEquals(2, #commandes())
 end) end)
 
+-- Un contrat porte deux GUID (Handshake#29) : l'artisan d'une demande doit avoir un GUID donné par le serveur. Ici, son
+-- chuchotement : le jeu y joint le GUID de l'expéditeur (12e valeur de CHAT_MSG_WHISPER), Handshake le retient.
+local ARTISAN = "Bel Dupont"
+local function artisanConnu()
+    FireEvent("CHAT_MSG_WHISPER", "bonjour", ARTISAN, "", "", ARTISAN, "", 0, 0, "", 0, 1, "Player-1-0000BE11")
+end
+
 -- Envoyer une commande (#7) : son état, lu dans son contrat, s'affiche à côté d'elle dans la liste des commandes.
 test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat", function() sansRecettes(function()
     SlashCmdList.HANDSHAKE("demo ceinture")
     boutons(function(t) return t == "Commander" end)[1]:Click()
     for _, b in ipairs(commandes()) do assertTrue(b:GetText():find("pas envoyée", 1, true) ~= nil, b:GetText()) end
     local p = HandshakeDB.projets[#HandshakeDB.projets]
-    p.commandes[1].player = "Bel" -- la commande « tout le projet », à un autre joueur
+    artisanConnu()
+    p.commandes[1].player = ARTISAN -- la commande « tout le projet », à un autre joueur
     commandes()[1]:Click()
     bouton("Préparer la demande"):Click()
     assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon s'ouvre dans les contrats")
@@ -101,7 +109,8 @@ end) end)
 test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant l'envoi", function() sansRecettes(function()
     SlashCmdList.HANDSHAKE("demo ceinture")
     local p = HandshakeDB.projets[#HandshakeDB.projets]
-    p.commandes[1].player = "Bel"
+    artisanConnu()
+    p.commandes[1].player = ARTISAN
     commandes()[1]:Click()
     bouton("Préparer la demande"):Click()
     for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do

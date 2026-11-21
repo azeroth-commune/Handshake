@@ -194,6 +194,11 @@ local function send(kind, lines, extra, target, loop)
   end
   target = target and target:gsub("^%s+", ""):gsub("%s+$", "")
   if not target or target == "" then return print("|cffe64d4dCommandes :|r indique le joueur à qui envoyer.") end
+  local nom = ns.nomComplet(target)
+  if not nom then
+    return print(("|cffe64d4dCommandes :|r « %s » : indique son nom complet « Prénom Nom », le serveur refuse un chuchotement au prénom seul."):format(target))
+  end
+  target = nom
   for _, m in ipairs(msgs) do ns.whisper(m, target) end
   print(("Commandes : %s envoyée à %s (%d message%s)."):format(kind:lower(), target, #msgs, #msgs > 1 and "s" or ""))
 end
@@ -251,7 +256,7 @@ StaticPopupDialogs.HANDSHAKE_COMMANDE_RECUE = {
 function ns.onChat(event, msg, sender, ...)
   if type(msg) ~= "string" or (issecretvalue and (issecretvalue(msg) or issecretvalue(sender))) then return end
   if event == "CHAT_MSG_WHISPER" then
-    -- le jeu joint à chaque chuchotement l'identifiant de l'expéditeur (12e valeur) : source serveur, on le retient
+    -- le jeu joint à chaque chuchotement le GUID de l'expéditeur (12e valeur) : source serveur, on le retient
     if ns.learnGUID then ns.learnGUID(ns.fullName(sender), (select(10, ...))) end
   end
   sender = Ambiguate and Ambiguate(sender or "", "none") or sender
@@ -331,6 +336,10 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
   local db = HandshakeDB
   db.options = db.options or { bags = true, bank = true, alts = false, unlearned = false }
   db.contracts = db.contracts or {}
+  -- Contrats d'avant la signature par GUID (Handshake#29 : signataires « Prénom-Royaume ») : plus lus, purgés.
+  for _, base in ipairs({ db.contracts, db.debug and db.debug.contracts or {} }) do
+    for k, c in pairs(base) do if not tostring(c.client):find("^Player%-") then base[k] = nil end end
+  end
   for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
   ns.migrerProjets(db)
 end)

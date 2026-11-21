@@ -7,14 +7,17 @@
 -- Chaque échange est équilibré par ces valeurs unitaires (P1) : pas de prorata, pas d'arrondi, jamais de crédit.
 -- Échéance dépassée : chacun garde ce qu'il a, plus aucun échange conforme.
 --
--- Sur le fil (messages d'addon, chuchotement uniquement), champs à position fixe, rien de libre (P4) :
---   P|2|origine|id|version|empreinte parente|client|GUID client|artisan|GUID artisan|m|o|échéance
---        m, o = "id:qté:unité,…" triés par id ; GUID = identifiant du perso (« Player-1234-0A1B2C3D »), « 0 » si inconnu
---   A|2|origine|id|version|empreinte|GUID de celui qui accepte        (accepte cette version précise)
---   R|2|origine|id|version                  (refuse)       X|2|origine|id|version   (retire sa proposition)
--- Identité : le contrat retient l'identifiant du perso d'en face (c.peer), pas seulement son nom. Un identifiant
--- annoncé par l'autre addon n'est cru que confirmé par le serveur : celui joint à ses chuchotements, la fiche
--- identifiant -> nom du client, ou à défaut le premier échange (identifiant ET nom doivent alors correspondre).
+-- Sur le fil (messages d'addon, chuchotement uniquement), champs à position fixe, rien de libre (P4). Protocole 3
+-- (Handshake#29) : les signataires sont des GUID, et chaque message porte en 3e champ le GUID de son expéditeur.
+--   P|3|expéditeur|origine|id|version|empreinte parente|client|artisan|m|o|échéance
+--        expéditeur, origine, client, artisan = GUID (« Player-6942-014B6DDC ») ; m, o = "id:qté:unité,…" triés par id
+--   A|3|expéditeur|origine|id|version|empreinte      (accepte cette version précise)
+--   R|3|expéditeur|origine|id|version (refuse)         X|3|expéditeur|origine|id|version (retire sa proposition)
+-- Identité (SECURITE.md, n° 26) : le GUID déclaré dans un message n'est pas une preuve. Il doit concorder avec ce que
+-- le serveur a donné (ns.knownGUID : chuchotement, cible, survol, groupe) : un autre GUID appris pour ce nom, ou ce GUID
+-- appris sous un autre nom, fait rejeter le message. Jamais appris, il est accepté pour négocier et vérifié au premier
+-- échange, avant que rien ne bouge : le GUID du partenaire, donné par le serveur, doit être celui du contrat, sinon NON
+-- CONFORME. Le nom affiché est celui de l'expéditeur authentifié (c.peer.name), jamais déduit du GUID déclaré.
 -- Chaque message part en morceaux « i/n| » (≤ 10, recollés par expéditeur, oubliés après 30 s).
 local _, ns = ...
 
@@ -29,53 +32,45 @@ local store = ns.ctStore
 local function now() return GetServerTime() end
 
 ---------------------------------------------------------------------------------------------------
--- Noms : toujours l'adresse « Prénom-Royaume », royaume sans espace ni tiret (forme des messages d'addon). L'analyse
--- est celle de la lib commune (lib.Adresse : le 2e retour de UnitName est le nom de famille sur Forever, jamais le
--- royaume ; lib.Destinataire : le prénom seul pour un chuchotement sur notre royaume).
--- Un homonyme (même prénom) ne gagne rien : chaque échange est équilibré (P1), et le GUID est figé au 1er échange.
+-- Noms : « Prénom Nom », la forme que le serveur donne comme expéditeur et qu'il accepte pour un chuchotement
+-- (lib.Destinataire, LibCommune#35). Ils servent à afficher et à chuchoter ; un personnage s'identifie par son GUID.
 local lib = LibStub("LibCommune-1.0")
-ns.fullName, ns.whisperTarget = lib.Adresse, lib.Destinataire
-function ns.me() return ns.fullName((UnitName("player"))) end
-function ns.myGUID() return UnitGUID("player") end
-
--- Identifiants appris de sources serveur : l'identifiant que le jeu joint à chaque chuchotement reçu.
-local GUID = "^Player%-%d+%-%x+$"
-ns.knownGUID = {}
-function ns.learnGUID(name, guid)
-  if name and type(guid) == "string" and guid:match(GUID) then ns.knownGUID[name] = guid end
+ns.fullName, ns.whisperTarget = lib.Destinataire, lib.Destinataire
+function ns.me() return UnitGUID("player") end -- moi : mon GUID (le mode debug le remplace par celui du Testeur)
+function ns.myName() return lib.Personnage().nom end
+-- « Prénom Nom » d'un perso vu (UnitName : prénom, puis nom de famille sur Forever).
+function ns.unitName(prenom, nom)
+  if type(prenom) ~= "string" or prenom == "" then return nil end
+  return (type(nom) == "string" and nom ~= "") and (prenom .. " " .. nom) or prenom
 end
--- Nom de famille : lu au serveur sur les persos qu'on voit (cible, groupe, survol, échange), rangé par identifiant ;
--- jamais pris dans un message de l'autre addon (P4 : aucun texte libre ne voyage).
-ns.surnames = {}
+
+-- Grammaire stricte d'un GUID de personnage, comme le reste du contrat.
+local GUID = "^Player%-%d+%-%x%x%x%x%x%x%x%x$"
+function ns.isGUID(g) return type(g) == "string" and #g <= 30 and g:match(GUID) ~= nil end
+
+-- GUID appris de sources serveur, par nom et par GUID : celui que le jeu joint à un chuchotement reçu, ceux des persos
+-- qu'on voit (cible, survol, groupe, échange). Jamais pris dans un message de l'autre addon.
+ns.knownGUID, ns.knownName = {}, {}
+function ns.learnGUID(name, guid)
+  if type(name) == "string" and name ~= "" and ns.isGUID(guid) then ns.knownGUID[name], ns.knownName[guid] = guid, name end
+end
 function ns.learnUnit(unit)
   if not (UnitExists(unit) and UnitIsPlayer(unit)) then return end
-  local guid, _, surname = UnitGUID(unit), UnitName(unit)
-  if type(guid) == "string" and guid:match(GUID) and type(surname) == "string" and surname ~= "" and #surname <= 40 then
-    ns.surnames[guid] = surname
-  end
+  ns.learnGUID(ns.unitName(UnitName(unit)), UnitGUID(unit))
 end
--- « Prénom Nom — Royaume — identifiant » pour l'affichage.
-function ns.identity(nameRealm, guid, surname)
-  local first, realm = (nameRealm or "?"):match("^([^%-]+)%-?(.*)$")
-  surname = surname or (guid and ns.surnames[guid])
-  local shown = (realm == lib.RoyaumeNormalise() or realm == "") and lib.Royaume() or realm -- sondés par la lib
-  return (("%s%s — %s — %s"):format(first, surname and (" " .. surname) or "", shown, guid or "identifiant inconnu"):gsub("|", "||"))
+-- « Prénom Nom — GUID » pour l'affichage (plus de royaume : le jeu ne le donne plus, build 71037).
+function ns.identity(name, guid)
+  return (("%s — %s"):format(name or "?", guid or "GUID inconnu"):gsub("|", "||"))
 end
-function ns.myIdentity()
-  local _, surname = UnitName("player")
-  return ns.identity(ns.me(), ns.myGUID(), surname)
-end
+function ns.myIdentity() return ns.identity(ns.myName(), ns.me()) end
 
--- Un identifiant annoncé pour name : "ok" (confirmé par le serveur), "faux" (le serveur dit autre chose), "inconnu".
+-- Un GUID déclaré par name : "ok" (le serveur l'a donné pour ce nom), "faux" (le serveur a donné un autre GUID pour ce
+-- nom, ou ce GUID pour un autre nom), "inconnu" (jamais appris : vérifié au premier échange).
+-- ponytail: pas de GetPlayerInfoByGUID (forme de ses retours pas relevée sur Forever) ; à ajouter quand une sonde l'aura vu.
 function ns.ctCheckClaim(name, guid)
-  local known = ns.knownGUID[name]
+  local known, other = ns.knownGUID[name], ns.knownName[guid]
   if known then return known == guid and "ok" or "faux" end
-  if GetPlayerInfoByGUID then
-    local _, _, _, _, _, gname, grealm = GetPlayerInfoByGUID(guid)
-    if type(gname) == "string" and gname ~= "" then
-      return ns.fullName(gname, grealm ~= "" and grealm or nil) == name and "ok" or "faux"
-    end
-  end
+  if other and other ~= name then return "faux" end
   return "inconnu"
 end
 
@@ -99,10 +94,11 @@ local function listText(list)
   for i, l in ipairs(list) do t[i] = l.id .. ":" .. l.qty .. ":" .. l.unit end
   return table.concat(t, ",")
 end
-function ns.ctCanonical(c)
-  return table.concat({ "P", "2", c.origin, c.id, c.v, c.parent, c.client, c.clientGUID, c.artisan, c.artisanGUID,
-    listText(c.m), listText(c.o), c.d }, "|")
-end
+local function terms(c) return c.origin, c.id, c.v, c.parent, c.client, c.artisan, listText(c.m), listText(c.o), c.d end
+function ns.ctCanonical(c) return table.concat({ "P", "3", terms(c) }, "|") end
+-- Un message de moi : son type, le protocole, mon GUID, puis ses champs.
+local function wire(kind, ...) return table.concat({ kind, "3", ns.me(), ... }, "|") end
+function ns.ctMessage(c) return wire("P", terms(c)) end
 function ns.ctTotal(list)
   local s = 0
   for _, l in ipairs(list) do s = s + l.qty * l.unit end
@@ -159,33 +155,28 @@ local function fields(body)
   return f
 end
 
--- Une proposition reçue de sender, adressée à me. Renvoie le contrat (forme locale) ou nil, raison.
-function ns.ctParse(body, sender, me, t)
+-- Une proposition reçue, adressée à me (mon GUID). Renvoie le contrat (forme locale) et le GUID déclaré de son
+-- expéditeur, ou nil, raison.
+function ns.ctParse(body, me, t)
   local f = fields(body)
-  if f[1] ~= "P" or #f ~= 13 or f[2] ~= "2" then return nil, "format" end
-  local c = { origin = f[3], id = f[4], v = int(f[5], 2, 1, 99), parent = f[6], client = f[7], clientGUID = f[8],
-    artisan = f[9], artisanGUID = f[10], m = parseList(f[11]), o = parseList(f[12]), d = int(f[13], 12, 0, 9e11) }
+  if f[1] ~= "P" or #f ~= 12 or f[2] ~= "3" then return nil, "format" end
+  local from = f[3]
+  local c = { origin = f[4], id = f[5], v = int(f[6], 2, 1, 99), parent = f[7], client = f[8], artisan = f[9],
+    m = parseList(f[10]), o = parseList(f[11]), d = int(f[12], 12, 0, 9e11) }
   if not (c.v and c.m and c.o and c.d) or #c.o == 0 then return nil, "champs" end
   if not (c.id:match("^%d+$") and #c.id <= 12) then return nil, "id" end
   if not (c.parent == "0" or c.parent:match("^%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x%x$")) then return nil, "parent" end
-  for _, k in ipairs({ "origin", "client", "artisan" }) do
-    if ns.fullName(c[k]) ~= c[k] then return nil, "nom" end -- une adresse « Prénom-Royaume » telle quelle, rien d'autre
+  for _, g in ipairs({ from, c.origin, c.client, c.artisan }) do
+    if not ns.isGUID(g) then return nil, "GUID" end -- un GUID tel quel : ni nom, ni adresse, ni GUID malformé
   end
-  if c.client == c.artisan or not ((c.client == me and c.artisan == sender) or (c.artisan == me and c.client == sender)) then
+  if c.client == c.artisan or not ((c.client == me and c.artisan == from) or (c.artisan == me and c.client == from)) then
     return nil, "parties"
   end
   if c.origin ~= c.client and c.origin ~= c.artisan then return nil, "origine" end
-  for _, g in ipairs({ c.clientGUID, c.artisanGUID }) do
-    if not (g == "0" or (#g <= 40 and g:match(GUID))) then return nil, "identifiant" end
-  end
-  local senderGUID, myField = c.client == sender and c.clientGUID or c.artisanGUID, c.client == me and c.clientGUID or c.artisanGUID
-  if senderGUID == "0" then return nil, "identifiant de l'expéditeur manquant" end
-  if myField ~= "0" and myField ~= ns.myGUID() then return nil, "ce n'est pas ton identifiant" end
   if c.d < t - 60 or c.d > t + MAX_DAYS * 86400 then return nil, "échéance" end
   if ns.ctTotal(c.m) > MAX_TOTAL or ns.ctTotal(c.o) > MAX_TOTAL then return nil, "montant" end
   c.v = tostring(c.v)
-  c.d = c.d
-  return c
+  return c, from
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -203,9 +194,8 @@ ns.ctSendRaw = send
 
 local buffers, rate = {}, {}
 function ns.ctOnAddon(prefix, text, channel, sender)
-  if prefix ~= PREFIX or channel ~= "WHISPER" or type(text) ~= "string" then return end
-  sender = ns.fullName(sender)
-  if not sender then return end
+  if prefix ~= PREFIX or channel ~= "WHISPER" or type(text) ~= "string" or type(sender) ~= "string" or sender == "" then return end
+  sender = ns.fullName(sender) -- « Prénom Nom », donné par le serveur
   local r = rate[sender] or { t = GetTime(), n = 0 } -- 30 messages par minute et par expéditeur
   if GetTime() - r.t > 60 then r.t, r.n = GetTime(), 0 end
   r.n, rate[sender] = r.n + 1, r
@@ -237,9 +227,9 @@ end
 
 local function notify(text) if ns.ctNotify then ns.ctNotify(text) end end
 
-local function pendingFrom(sender)
+local function pendingFrom(sender) -- par nom authentifié : un GUID déclaré ne coûte rien à changer
   local n = 0
-  for _, c in pairs(store()) do if c.status == "a_signer" and c.author == sender then n = n + 1 end end
+  for _, c in pairs(store()) do if c.status == "a_signer" and c.peer and c.peer.name == sender then n = n + 1 end end
   return n
 end
 
@@ -250,49 +240,46 @@ end
 function ns.ctReceive(sender, body)
   local me, t = ns.me(), now()
   local f = fields(body)
+  local from = f[3]
+  if f[2] ~= "3" or not ns.isGUID(from) then -- chaque message porte le GUID de son expéditeur
+    if f[1] == "P" then notify(("proposition de %s rejetée (format)."):format(sender)) end
+    return
+  end
+  local claim = ns.ctCheckClaim(sender, from)
+  if claim == "faux" then return notify(("message de %s rejeté : le GUID annoncé n'est pas le sien."):format(sender)) end
   if f[1] == "P" then
-    local c, why = ns.ctParse(body, sender, me, t)
+    local c, why = ns.ctParse(body, me, t)
     if not c then return notify(("proposition de %s rejetée (%s)."):format(sender, why)) end
-    local senderGUID = c.client == sender and c.clientGUID or c.artisanGUID
-    local claim = ns.ctCheckClaim(sender, senderGUID)
-    if claim == "faux" then return notify(("proposition de %s rejetée : l'identifiant annoncé n'est pas le sien."):format(sender)) end
     local cur = store()[key(c)]
-    if cur and cur.peer and cur.peer.guid ~= senderGUID then return end -- l'identifiant ne change pas en cours de route
+    if cur and (cur.peer or {}).name ~= sender then return end -- seul l'autre signataire, sous le nom donné par le serveur (n° 19)
     if not cur then
-      if c.v ~= "1" or c.origin ~= sender or c.parent ~= "0" then return end
+      if c.v ~= "1" or c.origin ~= from or c.parent ~= "0" then return end
       if pendingFrom(sender) >= MAX_PENDING then return notify(sender .. " a déjà 3 propositions en attente : ignorée.") end
     else
       if cur.status ~= "envoye" and cur.status ~= "a_signer" then return end -- signé, refusé, retiré : figé (P5)
       if tonumber(c.v) ~= tonumber(cur.v) + 1 or c.parent ~= cur.hash or c.client ~= cur.client or c.artisan ~= cur.artisan then return end
       c.prev = snapshot(cur)
     end
-    c.hash, c.author, c.status, c.received = ns.ctHash(ns.ctCanonical(c)), sender, "a_signer", t
-    c.peer = { guid = senderGUID, verified = claim == "ok" or (cur and cur.peer and cur.peer.verified) or nil }
+    c.hash, c.author, c.status, c.received = ns.ctHash(ns.ctCanonical(c)), from, "a_signer", t
+    c.peer = { guid = from, name = sender, verified = claim == "ok" or (cur and cur.peer and cur.peer.verified) or nil }
     store()[key(c)] = c
     return notify(("%s te propose un contrat (v%s) : /contrat pour le lire."):format(sender, c.v))
   end
-  local origin, id, v = f[3], f[4], f[5]
-  if f[2] ~= "2" or type(origin) ~= "string" or type(id) ~= "string" then return end
-  local c = store()[origin .. "#" .. id]
-  if not c or sender ~= ns.other(c, me) then return end -- seul l'autre signataire peut agir (n° 19)
+  local origin, id, v = f[4], f[5], f[6]
+  local c = type(origin) == "string" and type(id) == "string" and store()[origin .. "#" .. id]
+  -- seul l'autre signataire peut agir (n° 19) : son GUID, sous le nom que le serveur donne
+  if not c or from ~= ns.other(c, me) or not c.peer or sender ~= c.peer.name then return end
   if f[1] == "A" and #f == 7 then
     if c.status ~= "envoye" or c.author ~= me then return end
-    local guid = f[7]
-    local field = c.client == sender and c.clientGUID or c.artisanGUID
-    if not guid:match(GUID) or (field ~= "0" and field ~= guid) or (c.peer and c.peer.guid and c.peer.guid ~= guid) then
-      return notify(sender .. " a accepté avec un identifiant qui n'est pas celui du contrat : rien n'est signé.")
-    end
-    local claim = ns.ctCheckClaim(sender, guid)
-    if claim == "faux" then return notify(sender .. " a accepté avec un identifiant qui n'est pas le sien : rien n'est signé.") end
     if v ~= c.v then return notify(("%s a accepté la v%s, mais ta v%s l'a remplacée : rien n'est signé."):format(sender, v, c.v)) end
-    if f[6] ~= c.hash then return notify(sender .. " a accepté un texte différent du tien : rien n'est signé.") end
+    if f[7] ~= c.hash then return notify(sender .. " a accepté un texte différent du tien : rien n'est signé.") end
     c.status, c.signed = "signe", t
-    c.peer = { guid = guid, verified = claim == "ok" or (c.peer and c.peer.verified) or nil }
+    c.peer.verified = claim == "ok" or c.peer.verified
     notify(("contrat avec %s signé (v%s)."):format(sender, c.v))
-  elseif f[1] == "R" and #f == 5 and v == c.v and (c.status == "envoye" or c.status == "a_signer") then
+  elseif f[1] == "R" and #f == 6 and v == c.v and (c.status == "envoye" or c.status == "a_signer") then
     c.status = "refuse"
     notify(sender .. " a refusé le contrat.")
-  elseif f[1] == "X" and #f == 5 and v == c.v and c.status == "a_signer" and c.author == sender then
+  elseif f[1] == "X" and #f == 6 and v == c.v and c.status == "a_signer" and c.author == from then
     c.status = "retire"
     notify(sender .. " a retiré sa proposition.")
   end
@@ -302,6 +289,7 @@ end
 -- Tout ce qui part (v1, contre-proposition, nouvelle version) passe d'abord nos propres bornes (n° 11, 14, 15) : les listes
 -- relues par la lecture stricte, montants, version et échéance comme les vérifie celui qui reçoit.
 local function horsBornes(c)
+  if not (ns.isGUID(c.client) and ns.isGUID(c.artisan) and c.peer and c.peer.name) then return "GUID de l'autre joueur inconnu" end
   local m, o = parseList(listText(c.m)), parseList(listText(c.o))
   if not (m and o) or #o == 0 then return "termes hors bornes (30 lignes, 1000 par ligne au plus)" end
   if ns.ctTotal(m) > MAX_TOTAL or ns.ctTotal(o) > MAX_TOTAL then return "montant trop élevé" end
@@ -320,10 +308,8 @@ function ns.ctPropose(c)
   if err then return nil, err end
   store()[c.origin .. "#" .. c.id .. "+"] = nil -- une nouvelle version part : un brouillon de la suivante ne vaut plus
   c.hash, c.author, c.status = ns.ctHash(ns.ctCanonical(c)), ns.me(), "envoye"
-  local otherGUID = c.client == ns.me() and c.artisanGUID or c.clientGUID
-  if otherGUID ~= "0" and not c.peer then c.peer = { guid = otherGUID, verified = ns.knownGUID[ns.other(c, ns.me())] == otherGUID or nil } end
   store()[key(c)] = c
-  send(ns.other(c, ns.me()), ns.ctCanonical(c))
+  send(c.peer.name, ns.ctMessage(c))
   return c
 end
 
@@ -331,20 +317,20 @@ function ns.ctAccept(c, shownHash)
   -- Le bouton porte l'empreinte affichée : si une autre version est arrivée entre-temps, rien n'est signé (n° 5).
   if c.status ~= "a_signer" or c.author == ns.me() or shownHash ~= c.hash then return false end
   c.status, c.signed = "signe", now()
-  send(ns.other(c, ns.me()), table.concat({ "A", "2", c.origin, c.id, c.v, c.hash, ns.myGUID() }, "|"))
+  send(c.peer.name, wire("A", c.origin, c.id, c.v, c.hash))
   return true
 end
 
 function ns.ctRefuse(c)
   if c.status ~= "a_signer" then return end
   c.status = "refuse"
-  send(ns.other(c, ns.me()), table.concat({ "R", "2", c.origin, c.id, c.v }, "|"))
+  send(c.peer.name, wire("R", c.origin, c.id, c.v))
 end
 
 function ns.ctWithdraw(c)
   if c.status ~= "envoye" then return end
   c.status = "retire"
-  send(ns.other(c, ns.me()), table.concat({ "X", "2", c.origin, c.id, c.v }, "|"))
+  send(c.peer.name, wire("X", c.origin, c.id, c.v))
 end
 
 -- Contre-proposition : nouveaux totaux (caution, livraison) et échéance ; les unités sont mises à l'échelle.
@@ -361,10 +347,8 @@ local function scale(list, total)
 end
 -- Une nouvelle version de c (m, o, échéance), pas encore envoyée.
 local function nextVersion(c, m, o, d)
-  local me, peerGUID = ns.me(), c.peer and c.peer.guid or "0"
   return { origin = c.origin, id = c.id, v = tostring(tonumber(c.v) + 1), parent = c.hash, client = c.client, artisan = c.artisan,
-    clientGUID = c.client == me and ns.myGUID() or peerGUID, artisanGUID = c.artisan == me and ns.myGUID() or peerGUID, peer = c.peer,
-    m = m, o = o, d = d, prev = snapshot(c) }
+    peer = c.peer, m = m, o = o, d = d, prev = snapshot(c) }
 end
 local function newVersion(c, m, o, d) return ns.ctPropose(nextVersion(c, m, o, d)) end
 function ns.ctCounter(c, caution, delivery, days)
@@ -417,16 +401,21 @@ local function demandeTerms(order, keep)
 end
 
 -- Le contrat tiré d'une demande : moi client, le joueur de la commande artisan. Sans offre, l'artisan chiffre.
+-- Son GUID doit avoir été donné par le serveur (chuchotement, cible, survol, groupe) : un contrat porte deux GUID.
 function ns.ctFromDemande(order, days)
-  local me, artisan = ns.me(), ns.fullName(order.player or "")
-  if not artisan or artisan == me then return nil, "indique l'artisan (le joueur) dans la commande" end
+  local me, name = ns.me(), ns.fullName(order.player or "")
+  if not name or name == "" or name == ns.myName() then return nil, "indique l'artisan (le joueur) dans la commande" end
+  if not ns.nomComplet(name) then return nil, ("indique le nom complet « Prénom Nom » de l'artisan (%s seul ne suffit pas)"):format(name) end
+  local artisan = ns.knownGUID[name]
+  if not artisan then return nil, ("GUID de %s inconnu : cible-le, survole-le ou chuchote-lui d'abord"):format(name) end
+  if artisan == me then return nil, "indique l'artisan (le joueur) dans la commande" end
   if #order.lines == 0 then return nil, "la commande est vide" end
   local m, o = demandeTerms(order)
   if not m then return nil, o end
   local id = now() -- plusieurs commandes d'un projet peuvent partir dans la même seconde : une clé chacune
   while store()[me .. "#" .. id] do id = id + 1 end
   return { origin = me, id = tostring(id), v = "1", parent = "0", client = me, artisan = artisan, m = m, o = o,
-    clientGUID = ns.myGUID(), artisanGUID = ns.knownGUID[artisan] or "0", d = now() + math.floor((days or 3) * 86400) }
+    peer = { guid = artisan, name = name, verified = true }, d = now() + math.floor((days or 3) * 86400) }
 end
 
 -- « Je réponds » (l'artisan, depuis l'arbre de sa réponse ; order = sa 1re commande) : ses apports et son prix, envoyés
@@ -484,14 +473,14 @@ function ns.ctEvaluate(c, me, snap, t)
   local status = ns.ctStatus(c, t)
   if status == "echu" then bad("contrat échu : chacun garde ce qu'il a")
   elseif status ~= "signe" then bad("contrat pas signé") end
-  local other, peer = ns.other(c, me), c.peer or {}
-  if peer.guid then -- identifiant du contrat : c'est lui qui fait foi
-    if snap.guid ~= peer.guid then bad("pas le bon personnage : son identifiant n'est pas celui du contrat") end
-    if snap.partner ~= other then
-      if peer.verified then warn("même personnage, mais son nom a changé (" .. tostring(snap.partner) .. ")")
-      else bad("ce n'est pas " .. other) end
-    end
-  elseif snap.partner ~= other then bad("ce n'est pas " .. other) end
+  -- Le GUID du contrat fait foi ; le serveur donne celui du partenaire (n° 26, 31, 63). Un GUID déclaré jamais appris
+  -- est vérifié ici, au premier échange, avant que rien ne bouge.
+  local peer = c.peer or {}
+  if snap.guid ~= peer.guid then bad("pas le bon personnage : son GUID n'est pas celui du contrat")
+  elseif snap.partner ~= peer.name then
+    if peer.verified then warn("même personnage, mais son nom a changé (" .. tostring(snap.partner) .. ")")
+    else bad("ce n'est pas " .. tostring(peer.name)) end
+  end
   if snap.api then bad("fonctions de l'échange modifiées par un autre addon : non vérifiable") end
   if snap.unknown then bad("objet illisible (pas encore chargé) : attends ou retire-le") end
   if snap.slot7 then warn("un objet est dans la case « ne sera pas échangé » : il ne compte pas") end
@@ -532,12 +521,12 @@ function ns.ctRecord(c, me, snap, t)
   for id, q in pairs(snap.get.items) do c.got[id] = (c.got[id] or 0) + q end
   for id, q in pairs(snap.give.items) do c.gave[id] = (c.gave[id] or 0) + q end
   c.net = (c.net or 0) + r.valueIn - r.valueOut
-  -- Identité confirmée par le serveur au premier échange où nom et identifiant correspondent.
+  -- Identité confirmée par le serveur au premier échange où nom et GUID correspondent ; confirmée, un nouveau nom sous
+  -- le même GUID est un renommage : le nom du serveur est gardé.
   c.peer = c.peer or {}
-  if snap.partner == ns.other(c, me) and (not c.peer.guid or c.peer.guid == snap.guid) then
-    c.peer.guid, c.peer.verified = snap.guid, true
+  if snap.guid == c.peer.guid then
+    if snap.partner == c.peer.name then c.peer.verified = true elseif c.peer.verified then c.peer.name = snap.partner end
   end
-  if c.peer.guid == snap.guid and snap.surname then c.peer.surname = snap.surname end
   c.ledger = c.ledger or {}
   table.insert(c.ledger, { t = t, give = snap.give, get = snap.get, conforme = r.ok, net = c.net })
   local artisan = me == c.artisan
@@ -550,13 +539,15 @@ function ns.ctRecord(c, me, snap, t)
   return r
 end
 
--- Les contrats en cours avec un joueur (pour le panneau d'échange).
+-- Les contrats signés du perso connecté (n° 53) avec un joueur, par son GUID ou son nom (pour le panneau d'échange :
+-- même nom mais autre GUID, le panneau dit NON CONFORME).
 function ns.ctActiveWith(partner, guid)
   local list, me = {}, ns.me()
   for _, c in pairs(store()) do
     local peer = c.peer or {}
-    local named = ns.other(c, me) == partner and (c.client == me or c.artisan == me)
-    if c.status == "signe" and ((peer.guid and peer.guid == guid) or (named and not peer.verified)) then list[#list + 1] = c end
+    if c.status == "signe" and (c.client == me or c.artisan == me) and (peer.guid == guid or (partner and peer.name == partner)) then
+      list[#list + 1] = c
+    end
   end
   table.sort(list, function(a, b) return (a.signed or 0) < (b.signed or 0) end)
   return list
@@ -571,8 +562,7 @@ f:SetScript("OnEvent", function(_, event, ...)
   if event == "ADDON_LOADED" then
     if ... == "Handshake" then
       HandshakeDB = HandshakeDB or {}
-      HandshakeDB.surnames = HandshakeDB.surnames or {}
-      ns.surnames = HandshakeDB.surnames
+      HandshakeDB.surnames = nil -- noms de famille d'avant : le nom complet vient maintenant du serveur
     end
   elseif event == "PLAYER_LOGIN" then
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then C_ChatInfo.RegisterAddonMessagePrefix(PREFIX) end

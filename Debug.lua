@@ -9,14 +9,14 @@
 --   * faux échange : ce que chacun pose, évalué par le vrai panneau, puis inscrit.
 local _, ns = ...
 
-local TESTER = { first = "Testeur", surname = "Bac-à-Sable", guid = "Player-0-00000DEB" }
+local TESTER = { name = "Testeur Bacasable", guid = "Player-0-00000DEB" } -- numéro de serveur 0 : il n'existe pas
 local dbg = { on = false, as = nil, auto = true, log = {} }
 local frame
 
-local realMe, realGUID = ns.me, ns.myGUID
-local function testerName() return ns.fullName(TESTER.first) end
-ns.me = function() if dbg.as then return testerName() end return realMe() end
-ns.myGUID = function() if dbg.as then return TESTER.guid end return realGUID() end
+local realGUID, realName = ns.me, ns.myName
+local function testerName() return TESTER.name end
+ns.me = function() if dbg.as then return TESTER.guid end return realGUID() end
+ns.myName = function() if dbg.as then return TESTER.name end return realName() end
 
 -- Base de contrats du Testeur (gardée dans HandshakeDB.debug, jamais mélangée aux tiennes).
 ns.debugStore = function()
@@ -26,7 +26,7 @@ ns.debugStore = function()
   return HandshakeDB.debug.contracts
 end
 
-local function other() return dbg.as and realMe() or testerName() end
+local function other() return dbg.as and realName() or testerName() end
 local function refreshAll()
   if ns.refreshContracts then ns.refreshContracts() end
   if ns.refreshCraftWindow then ns.refreshCraftWindow() end
@@ -44,7 +44,7 @@ end
 
 local function deliver(kind, from, to, text)
   local toTester = to == testerName()
-  if not toTester and to ~= realMe() then return false end
+  if not toTester and to ~= realName() then return false end
   as(toTester and "tester" or nil, function()
     if kind == "addon" then ns.ctOnAddon(ns.PREFIX, text, "WHISPER", from)
     else ns.onChat("CHAT_MSG_WHISPER", text, from) end
@@ -58,7 +58,7 @@ ns.debugSend = function(kind, target, text)
   local to = ns.fullName(target) or target
   local involvesTester = to == testerName() or dbg.as
   if not (dbg.on or involvesTester) then return false end
-  local from = ns.me()
+  local from = ns.myName()
   local delivered = (dbg.auto or not dbg.on) and deliver(kind, from, to, text)
   table.insert(dbg.log, ("[%s] %s -> %s%s : %s"):format(kind, from, tostring(target), delivered and " (livré)" or "", text))
   while #dbg.log > 60 do table.remove(dbg.log, 1) end
@@ -184,7 +184,7 @@ local function build()
   finish:SetPoint("LEFT", evalB, "RIGHT", 6, 0)
   local reset = button("Effacer les contrats de test", 200, function()
     for key, c in pairs(HandshakeDB.contracts) do
-      if c.client == testerName() or c.artisan == testerName() then HandshakeDB.contracts[key] = nil end
+      if c.client == TESTER.guid or c.artisan == TESTER.guid then HandshakeDB.contracts[key] = nil end
     end
     if HandshakeDB.debug then HandshakeDB.debug.contracts = {} end
     print("Handshake debug : contrats avec le Testeur effacés des deux côtés.")
@@ -198,10 +198,10 @@ local function build()
   frame.refresh = function()
     sandbox:SetChecked(dbg.on)
     auto:SetChecked(dbg.auto)
-    frame.who:SetText(("Tu es : |cffa98fff%s|r%s"):format(ns.identity(ns.me(), ns.myGUID(), dbg.as and TESTER.surname or select(2, UnitName("player"))),
+    frame.who:SetText(("Tu es : |cffa98fff%s|r%s"):format(ns.myIdentity(),
       dbg.on and "" or "  |cffe64d4d(bac à sable coupé : les envois partent vraiment)|r"))
     swap:SetText(dbg.as and "Redevenir moi" or "Jouer Testeur")
-    if from:GetText() == "" or from:GetText() == realMe() or from:GetText() == testerName() then from:SetText(other()) end
+    if from:GetText() == "" or from:GetText() == realName() or from:GetText() == testerName() then from:SetText(other()) end
     -- « | » doublé : sinon le jeu lit « |3… », « |c… » comme des codes de mise en forme et mange le texte
     if not log:HasFocus() then log:SetText((table.concat(dbg.log, "\n"):gsub("|", "||"))) end
   end
@@ -209,8 +209,9 @@ local function build()
 end
 
 local function open()
-  ns.surnames[TESTER.guid] = TESTER.surname
-  ns.surnames[realGUID()] = ns.surnames[realGUID()] or select(2, UnitName("player"))
+  -- chacun connaît le GUID de l'autre, comme s'il l'avait ciblé : les demandes partent dans les deux sens
+  ns.learnGUID(TESTER.name, TESTER.guid)
+  ns.learnGUID(realName(), realGUID())
   if not frame then build() end
   if not dbg.on then setSandbox(true) end
   frame:Show()
