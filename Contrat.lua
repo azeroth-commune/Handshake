@@ -114,14 +114,14 @@ end
 local function estimate(list, items, vendors)
   local total, missing = 0, 0
   for _, l in ipairs(list) do
-    local cost = ns.buyCost(l.id, l.qty, items, vendors)
+    local cost = lib:PrixAchat(l.id, l.qty, items, vendors)
     if cost then total = total + cost else missing = missing + 1 end
   end
   return total, missing
 end
 function ns.ctEstimation(c, me)
   local m = ns.market()
-  local items, artisan, caution, vendors = m and m.items, me == c.artisan, ns.ctTotal(c.m), ns.vendorPrices()
+  local items, artisan, caution, vendors = m and m.items, me == c.artisan, ns.ctTotal(c.m), lib:PrixMarchands()
   local e = { scanned = m and (m.scanned or m.source), valeur = (estimate(c.o, items, vendors)) }
   e.composants, e.manquants = estimate(c.m, items, vendors)
   e.ecart = e.composants > 0 and (caution - e.composants) / e.composants * 100 or 0
@@ -372,10 +372,10 @@ end
 local function demandeTerms(order, keep)
   local res = ns.projetDemande(order)
   local market = ns.market()
-  local items, vendors = market and market.items, ns.vendorPrices()
+  local items, vendors = market and market.items, lib:PrixMarchands()
   local m, unit = {}, {}
   for _, a in ipairs(ns.demandeApports(res)) do
-    local cost = ns.buyCost(a.id, a.qty, items, vendors)
+    local cost = lib:PrixAchat(a.id, a.qty, items, vendors)
     unit[a.id] = keep and keep[a.id] or cost and math.floor(cost / a.qty + 0.5) or 0
     m[#m + 1] = { id = a.id, qty = a.qty, unit = unit[a.id] }
   end
