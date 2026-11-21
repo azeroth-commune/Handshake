@@ -8,8 +8,9 @@ Deux analyses indépendantes, fusionnées ici (18/11/2026), avant d'écrire la m
 
 ## Ce sur quoi la sécurité repose (et rien d'autre)
 
-1. **Ce que le serveur garantit** : le nom de l'expéditeur d'un message ou d'un courrier, le partenaire d'échange
-   (nom et GUID), le contenu réel de la fenêtre d'échange, les pièces jointes et le montant d'un contre-remboursement,
+1. **Ce que le serveur garantit** : le nom de l'expéditeur d'un message ou d'un courrier (« Prénom Nom » sur Forever,
+   sans GUID), le GUID d'un perso qu'on voit (cible, survol, groupe) ou qui chuchote, le partenaire d'échange (nom et
+   GUID), le contenu réel de la fenêtre d'échange, les pièces jointes et le montant d'un contre-remboursement,
    tes sacs et ton or.
 2. **Ta copie locale du contrat**, telle que tu l'as vue et acceptée.
 3. **Tes clics**, sur un affichage clair.
@@ -26,8 +27,8 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
   fractionne au prorata, avec une règle d'arrondi fixe (solde exact au dernier lot). Jamais de crédit, jamais de
   mélange entre contrats.
 - **P2 — Le registre prime sur les étapes.** Dû = termes du contrat − transferts que *ton* addon a constatés (fin
-  d'échange confirmée + mouvement réel de ton or et de tes sacs, courrier réellement pris). Un message de l'autre ne
-  change jamais l'état ; il s'affiche « Bob dit : … ».
+  d'échange confirmée + mouvement réel de ton or et de tes sacs, courrier réellement pris). Un message de l'autre, ni
+  le GUID qu'il y déclare, ne change jamais l'état ; il s'affiche « Bob dit : … ».
 - **P3 — Ce qu'on affiche = ce qu'on stocke = ce qu'on vérifie = ce qu'on hache.** Le message reçu est lu dans une
   structure provisoire, validé champ par champ, puis reconstruit localement sous forme canonique ; seule cette forme
   est affichée, signée, vérifiée. La copie locale n'est jamais remplacée par des données réseau.
@@ -50,13 +51,13 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | # | Attaque | Contre-mesure | Reste |
 |---|---|---|---|
 | 1 | **Faux nom d'objet** : lien « [Claymore en mithril] » pointant vers un autre ID. | P4 : seul l'ID compte ; nom, icône, qualité et ID affichés depuis le client local. | — |
-| 2 | **Usurpation de l'auteur** : `CT1|P|Belegard-…` envoyé par Mallory. | Le préfixe de l'ID doit être l'expéditeur authentifié ; on affiche toujours le nom authentifié, jamais celui de l'ID. | — |
+| 2 | **Usurpation de l'auteur** : `P|3|<GUID de Belegard>|…` envoyé par Mallory. | L'origine de l'ID doit être le GUID déclaré par l'expéditeur, qui doit concorder avec le serveur (n° 26) ; on affiche toujours le nom authentifié, jamais déduit du GUID. | — |
 | 3 | **Rôles incohérents ou inversés** : la victime se retrouve à verser la caution en se croyant cliente. | Rejet si {client, artisan} ≠ {moi, l'expéditeur} ; affichage écrit depuis mon rôle : « TU donnes … / IL donne … ». | — |
 | 4 | **Contre-proposition piégée** : « juste la date », mais 36 → 3 minerais, ou caution / fournisseur / paiement changés. | Différentiel champ par champ avec la version précédente, champs changés surlignés, alerte forte sur caution, prix, rôles, fournisseur. Jamais d'acceptation automatique. | Inattention |
 | 5 | **Version qui change pendant la lecture** : v4 arrive, le clic accepte autre chose que ce qui était lu. | Le bouton Accepter est lié à l'empreinte *affichée* ; une nouvelle version ferme la vue, montre le différentiel, réarme le bouton après 1–2 s. | — |
 | 6 | **Rejeu, versions concurrentes** : vieil « accepté », deux v4 différentes. | v(n+1) retire les versions ≤ n ; un « accepté » ne vaut que pour la dernière version et vient de l'autre signataire ; chaque proposition porte l'empreinte de sa version parente (conflit → tout annulé, on repropose) ; dédoublonnage (ID, version, type). | — |
 | 7 | **Empreinte truquée ou collision**. | Sans effet sur les valeurs (P3) : l'empreinte ne sert qu'à constater qu'on a signé la même chose. Empreinte d'au moins 64 bits quand même, recalculée sur la forme canonique locale. | — |
-| 8 | **ID réutilisé** (contrat clos renvoyé, même horodatage). | Contrats indexés par (signataire normalisé, ID) ; un ID connu ne peut que progresser en version avant acceptation. | — |
+| 8 | **ID réutilisé** (contrat clos renvoyé, même horodatage). | Contrats indexés par (GUID du signataire d'origine, ID) ; un ID connu ne peut que progresser en version avant acceptation, et seulement de la part du nom authentifié de sa première version. | Un GUID jamais appris revendiqué par un autre nom occupe cet ID : la proposition s'affiche sous le vrai nom, rien ne passe à l'échange (n° 26) |
 | 9 | **Repli « sans addon » forcé** : il ne répond pas, puis conteste ou chuchote un texte « accepté » modifié. | La copie locale reste la référence ; jamais de contrat importé depuis une réponse en discussion ; le panneau vérifie pareil avec ou sans addon en face. | — |
 | 10 | **Texte lisible ≠ données** : le chuchotement dit 5 po, le message addon 55 po. | On n'approuve que la vue de l'addon ; un texte qui l'accompagne est comparé et l'écart signalé. | Lecteur humain du texte |
 | 11 | **Termes irréalisables** : objet ou composant lié (impossible à échanger), montant au-delà du plafond d'or, échéance absurde, quantités énormes. | Vérification à la signature : type de liaison, bornes, échéance en heure serveur (`GetServerTime`) affichée en relatif (« dans 2 j 5 h »). | — |
@@ -70,7 +71,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | 14 | **Nombres et clés piégés** : clé en double (`p=40000|p=1`), clé inconnue, `0x10`, `1e9`, `inf`, `nan`, négatifs, décimales. | Grammaire stricte : chaque valeur `^%d+$`, longueur et plage bornées ; clé dupliquée ou inconnue → message rejeté en entier. | — |
 | 15 | **Listes énormes**. | ≤ 30 lignes, quantité ≤ 1000, ≤ 3 propositions en attente par expéditeur. | — |
 | 16 | **Morceaux abusés** : (1/9999), morceaux jamais complétés, entrelacés. | **Fait dans les commandes** : ≤ 10 morceaux, un « 1/n » repart de zéro, un tampon par expéditeur, oublié après 30 s. Contrats : chaque morceau porte (ID, version, i/n), le tout vérifié par l'empreinte. | — |
-| 17 | **Délimiteurs et noms** : `|`, `,`, `=` glissés dans une valeur ; noms accentués, avec royaume. | Caractères autorisés par champ ; noms normalisés et stockés en `Nom-Royaume`. | — |
+| 17 | **Délimiteurs et noms** : `|`, `,`, `=` glissés dans une valeur ; noms accentués, avec royaume. | Caractères autorisés par champ ; aucun nom ne voyage dans un contrat : les signataires sont des GUID, grammaire stricte (`Player-<n°>-<8 hex>`) ; un nom, une adresse ou un GUID malformé à la place → rejeté. | — |
 | 18 | **Message qui fait planter l'addon** (état à moitié écrit, gestionnaire mort). | Lecture sous `pcall` dans une structure provisoire, validation, puis écriture en une fois ; jamais de `loadstring`, jamais de motif Lua bâti avec un texte reçu. | — |
 | 19 | **Tiers** qui envoie accepté/refus/annulation/étape, ou passage par guilde ou groupe. | Contrats : chuchotement uniquement, et seulement de l'autre signataire. | — |
 | 20 | **Fausse étape ou annulation tardive** pour avancer ou effacer un état. | P2 ; une annulation après un transfert ne touche pas au registre : elle affiche ce qu'il reste à échanger pour solder. | — |
@@ -84,7 +85,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | 23 | **Injection d'affichage** : `|c`, `|T`, `|H`, `|n` pour fabriquer un faux « ✓ CONFORME » ou un lien piégé. | P4 ; tout texte reçu affiché est échappé (`|` → `||`), sans caractères de contrôle, tronqué ; la zone de verdict n'affiche jamais de texte venu d'ailleurs. | — |
 | 24 | **Faux verdict dans la discussion** : « [Contrat] CONFORME, Bob a payé ». | L'addon n'écrit jamais de verdict dans la discussion ; seul le panneau fait foi, et le dit. | Crédulité |
 | 25 | **Clic piégé par le timing** : une fenêtre surgit pendant que tu tapes, Entrée accepte. | P7 : pas de fenêtre surgissante pour accepter un contrat, pas de bouton par défaut, pas d'Entrée. | — |
-| 26 | **Homonymes** : Bélegard / Belegard, même nom sur un autre royaume, perso supprimé puis recréé. | `Nom-Royaume` toujours affiché ; alerte si un nom ne diffère d'un contact que par les accents ; **GUID du partenaire noté au premier échange, exigé ensuite** ; réputation indexée par GUID. | Avant le 1ᵉʳ échange (aucune valeur n'a encore bougé) |
+| 26 | **Homonymes** : Bélegard / Belegard, même nom sur un autre serveur, perso supprimé puis recréé. | Les signataires sont des **GUID** ; « Prénom Nom » (celui du serveur) et GUID toujours affichés ; alerte si un nom ne diffère d'un contact que par les accents. **Chaque message porte le GUID de son expéditeur**, qui n'est pas une preuve : un autre GUID appris du serveur pour ce nom (chuchotement, cible, survol), ou ce GUID appris sous un autre nom → message rejeté ; jamais appris, il est accepté pour négocier et **vérifié au premier échange** : le GUID du partenaire, donné par le serveur, doit être celui du contrat, sinon NON CONFORME et rien ne passe. Réputation indexée par GUID. | Avant le 1ᵉʳ échange (aucune valeur n'a encore bougé) |
 | 27 | **Confusions** : po/pa/pc, Minerai / Barre de mithril, 19 au lieu de 20. | Le ✓ ne dépend que de l'ID et du compte exact ; l'or est affiché en entier, avec l'écart chiffré. | — |
 | 28 | **Verdict trompeur ou périmé** : il ne regarde que l'autre côté, il n'est pas recalculé, un objet absent du cache passe. | Verdict dans **les deux sens** (tu ne donnes pas plus que dû, tu reçois au moins le dû) ; recalcul à chaque événement d'échange + contrôle périodique ; bandeau « CHANGEMENT, revérifie » 2 s ; objet illisible → INCONNU, jamais CONFORME. | — |
 | 29 | **Panneau masqué** par une autre fenêtre, verdict seulement en couleur. | Ancré à la fenêtre d'échange, au-dessus ; verdict en texte + icône. | — |
@@ -94,7 +95,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | # | Attaque | Contre-mesure | Reste |
 |---|---|---|---|
 | 30 | **7ᵉ case** (« ne sera pas échangé »). | Seules les cases 1 à 6 comptent ; objet en case 7 signalé. | — |
-| 31 | **Mauvais partenaire ou mauvais contrat** (deux contrats : faire valider l'étape du moins cher). | Panneau actif seulement si nom normalisé + GUID correspondent ; un échange = un seul (contrat, lot), choisi et affiché en gros ; pas de contrats combinés. | — |
+| 31 | **Mauvais partenaire ou mauvais contrat** (deux contrats : faire valider l'étape du moins cher). | Panneau ouvert si le GUID ou le nom du partenaire est celui d'un contrat, CONFORME seulement si son GUID est celui du contrat (et son nom, tant que le GUID n'est pas confirmé) ; un échange = un seul (contrat, lot), choisi et affiché en gros ; pas de contrats combinés. | — |
 | 32 | **Échange au dernier moment** après une vérification correcte. | Le jeu annule les deux acceptations ; P7 (réarmement) ; **« Accepter » grisé tant que c'est NON CONFORME**, dérogation explicite et chiffrée (n° 60). À vérifier en jeu : griser ce bouton ne doit pas bloquer le jeu. | — |
 | 33 | **Bon ID, objet différent** : suffixe aléatoire, emballage cadeau (l'ID devient celui du papier), durabilité entamée. | Objets fabriqués : chaîne d'objet comparée hors identifiant unique ; emballage → NON CONFORME ; durabilité lue dans l'infobulle. | Durabilité (réduit) |
 | 34 | **Je donne trop** : « Remplir ma part » prend mon arme enchantée ou une pile entière, or dans la mauvaise unité. | Remplissage : seulement des exemplaires non liés, non enchantés, jamais l'équipement porté ; division de pile vers une case libre, ou échec propre ; or plafonné au dû ; déclenché uniquement par ton clic ; verdict aussi sur ton côté (n° 28). | — |
@@ -108,7 +109,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | # | Attaque | Contre-mesure | Reste |
 |---|---|---|---|
 | 39 | **Contre-remboursement non conforme** : quantité, objet voisin, montant gonflé. | Avant de payer, pièces jointes et montant comparés au dû du registre ; verdict dans la confirmation du jeu et sur la ligne du courrier. | — |
-| 40 | **Expéditeur alt ou homonyme**. | Expéditeur (fourni par le serveur) exactement égal au signataire, alerte accents. | — |
+| 40 | **Expéditeur alt ou homonyme**. | Expéditeur (fourni par le serveur) exactement égal au nom du signataire, celui lié à son GUID, alerte accents. | — |
 | 41 | **Courrier gratuit + contre-remboursement** combinés (le bon dans le gratuit, la camelote dans le payant), ou scindés. | Chaque contre-remboursement est équilibré à lui seul ; on n'additionne jamais plusieurs courriers pour valider un paiement. | — |
 | 42 | **« Envoie sans contre-remboursement, je te paie après ».** | L'addon ne prépare que des contre-remboursements, envoyés par celui qui fournit les objets ; le reste est signalé non protégé. | Passer outre |
 | 43 | **Courrier ouvert par un autre addon** (« tout ouvrir »). | Documenté ; alerte si un addon de courrier connu est chargé. | Réduit |
@@ -131,7 +132,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | 50 | **Perte de données** (dossier WTF effacé, autre PC). | Export / import d'un contrat en chaîne ; alerte si la dernière sauvegarde est plus vieille que le dernier transfert. | Réduit |
 | 51 | **« Synchronisons, prends ma version »**. | Jamais de fusion automatique : différentiel affiché, tout changement = nouvelle version signée. | — |
 | 52 | **Autre addon chez la victime** qui modifie l'état ou dessine un faux panneau. | État en variables locales, rien en global ; n° 38. | Hors de portée |
-| 53 | **Mauvais personnage** (contrats enregistrés pour tout le compte). | Le signataire est le personnage ; comparé au perso connecté. | — |
+| 53 | **Mauvais personnage** (contrats enregistrés pour tout le compte). | Le signataire est le personnage, par son GUID ; comparé au GUID du perso connecté. | — |
 | 54 | **Retard** : réclamations après coup, livraison après clôture. | Règle écrite dans le contrat : échéance dépassée → chacun garde ce qu'il détient (le client la caution, l'artisan les composants), contrat soldé, étape 2 refusée ensuite. | — |
 
 ### H. Économie
@@ -151,7 +152,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | 60 | **« Ton addon bugue, accepte quand même. »** | Dérogation possible mais avec une confirmation qui énonce la perte (« tu reçois 30/36 barres, −X po »), inscrite au registre. | Réduit |
 | 61 | **« Pas de contrat cette fois », « à crédit ».** | Avertissement hors contrat (n° 36), documentation. | Réduit |
 | 62 | **Pression du temps.** | Aucun compte à rebours imposé par l'addon ; différentiel obligatoire avant d'accepter une nouvelle version. | Réduit |
-| 63 | **Intermédiaire** : « je récupère pour Belegard », « envoie à mon alt ». | Pas de cession de contrat : partenaire d'échange et destinataire = exactement le signataire, sinon NON CONFORME. | — |
+| 63 | **Intermédiaire** : « je récupère pour Belegard », « envoie à mon alt ». | Pas de cession de contrat : partenaire d'échange et destinataire = exactement le signataire (même GUID), sinon NON CONFORME. | — |
 | 64 | **Fausse réputation**, menace de signalement « preuves de l'addon » à l'appui. | Les journaux sont présentés comme des notes personnelles, sans valeur de preuve ; ceux de l'autre sont tout aussi falsifiables. | Réduit |
 | 65 | **Version piégée** de l'addon (faux site, « mise à jour » envoyée en chuchotement). | Une seule source, versions publiées avec sommes de contrôle ; l'addon ne demande jamais de mise à jour par la discussion. | Hors de portée |
 | 66 | **Addons d'acceptation automatique** (échange, courrier). | Détectés et signalés. | Réduit |
@@ -172,7 +173,8 @@ Les deux derniers sortent du périmètre « addon officiel, non modifié, et jou
 
 1. Le contrat porte **une valeur par unité** de chaque composant et de chaque objet fabriqué, pas seulement des totaux.
 2. Un **registre** des transferts constatés remplace les « étapes » comme source de vérité.
-3. Le partenaire est identifié par **Nom-Royaume + GUID** (figé au premier échange).
+3. Le partenaire est identifié par son **GUID** : déclaré dans chaque message, concordant avec ce que le serveur a donné,
+   vérifié au premier échange.
 4. **Grammaire stricte et bornée**, chuchotement uniquement, empreinte de 64 bits ou plus, version de protocole dans l'empreinte.
 5. Acceptation **sans fenêtre surgissante**, bouton lié à l'empreinte affichée et réarmé après tout changement.
 6. **Besoins recalculés par le client** depuis les recettes, **caution recalculée** par chacun, **pertes maximales** affichées.
@@ -186,7 +188,7 @@ Fait et testé hors jeu (`luajit BeAGoodPal_Commandes/check.lua`, deux joueurs s
 lecture stricte et bornée (n° 2, 3, 11, 14, 15, 17, 22), morceaux bornés (16), signature liée à l'empreinte affichée
 (5), versions chaînées et contrat signé figé (6, 8, P5), tiers ignorés (19), 3 propositions en attente au plus (12 —
 inondation), valeurs unitaires et équilibre cumulé (P1, 45, 46, 48), registre (P2, 35), cases 1–6 et objets par ID
-(30, 33), partenaire Nom-Royaume + GUID figé (26, 31), échéance (54), verdict dans les deux sens (28), besoins
+(30, 33), partenaire par GUID, vérifié au premier échange (26, 31), échéance (54), verdict dans les deux sens (28), besoins
 vérifiés contre les recettes (12), estimation et perte maximale de chaque côté (13, 57), différentiel (4), nom proche
 d'un autre partenaire (26), objets liés quand ramassés (11).
 
@@ -202,21 +204,28 @@ d'acceptation automatique (66).
 
 Les persos de Forever ont un nom de famille, sans tiret ni espace (le jeu refuse le tiret : « Marteaudefer », relevé
 du 20/11/2026, LibCommune#19). `UnitName`, `UnitFullName` et `GetUnitName(unité, true)` rendent ce nom de famille là où
-le retail rend le royaume : le royaume vient seulement de `GetNormalizedRealmName()`. L'identité retenue est l'adresse
-« Prénom-Royaume » (royaume normalisé ; dans une adresse, le dernier tiret sépare toujours le prénom du royaume), plus
-le GUID figé au premier échange. L'analyse est celle de la lib commune (`lib.Adresse`, `lib.Destinataire` pour le
-prénom seul d'un chuchotement sur notre royaume) ; un nom reçu dans un contrat doit être une adresse telle quelle.
-Si deux joueurs partagent un prénom, un homonyme ne gagne rien : chaque échange est équilibré (P1). Encore à relever en
-jeu : la forme du `sender` d'un chuchotement ou d'un message d'addon reçu d'un autre joueur (plus d'outil pour la voir
-depuis Handshake#27 ; les sondes d'identité de la lib ne couvrent que notre personnage), et si les prénoms sont uniques
-sur un royaume.
+le retail rend le royaume. Depuis le build 71037 (21/11/2026), le jeu ne donne plus le royaume du tout (`GetRealmName()`
+rend ""), l'expéditeur d'un message d'add-on est « Prénom Nom », et un chuchotement au prénom seul échoue (« Aucun joueur
+nommé 'Belegard' ») : il part vers « Prénom Nom » (`lib.Destinataire`). L'adresse « Prénom-Royaume » a disparu : le nom
+sert à afficher et à chuchoter, l'identité est le GUID (protocole 3 ci-dessous). Si deux joueurs partagent un prénom, un
+homonyme ne gagne rien : chaque échange est équilibré (P1), et le GUID fait foi.
 
-## Ajout : identifiants de personnage (protocole 2)
+## Ajout : signature par GUID (protocole 3, Handshake#29)
 
-Le contrat porte l'identifiant (GUID) de chaque perso, en plus du nom ; c'est l'identifiant qui fait foi à
-l'échange. Un identifiant annoncé par l'autre addon n'est cru que confirmé par une source serveur : l'identifiant que
-le jeu joint à ses chuchotements, la fiche identifiant -> nom du client (`GetPlayerInfoByGUID`), ou le premier échange
-où identifiant ET nom correspondent. Rejeté : identifiant de l'expéditeur absent, identifiant attribué à moi qui
-n'est pas le mien, identifiant qui change entre deux versions, identifiant que le serveur attribue à quelqu'un
-d'autre. Un perso renommé reste le même (identifiant identique) : échange conforme, changement de nom signalé.
-Le protocole passe à « 2 » ; les messages « 1 » sont refusés.
+Les signataires d'un contrat sont des GUID (`Player-<n° de serveur>-<8 hex>`), plus des noms : unique, fourni par le
+serveur, le GUID survit à un renommage. Chaque message de contrat porte en 3e champ le GUID de son expéditeur. Ce GUID
+déclaré n'est pas une preuve (« Ce sur quoi la sécurité repose ») ; il devient sûr à trois conditions :
+
+- **il concorde** avec ce que le serveur a déjà donné : si un GUID est déjà appris pour ce nom (le GUID que le jeu joint
+  à un chuchotement, celui d'une cible, d'un survol, d'un membre du groupe), un GUID déclaré différent fait rejeter le
+  message ; de même si le GUID déclaré est déjà appris sous un autre nom ;
+- **il est vérifié avant que rien ne bouge** : au premier échange, le GUID du partenaire, donné par le serveur, doit être
+  égal au GUID du contrat, sinon NON CONFORME et rien ne passe (n° 26 : « aucune valeur n'a encore bougé ») ;
+- **l'affichage reste celui du serveur** : le nom affiché est l'expéditeur authentifié, jamais déduit du GUID déclaré ;
+  un contrat ne se poursuit que de la part de ce nom-là (n° 19).
+
+Un GUID déclaré mais jamais appris est donc accepté pour négocier. Une demande n'est envoyée qu'à un artisan dont le
+serveur a donné le GUID. `GetPlayerInfoByGUID` n'est plus lu : la forme de ses retours n'a pas été relevée sur Forever.
+Un perso renommé reste le même (GUID identique) : une fois son GUID confirmé, l'échange est conforme et le changement de
+nom signalé. Le protocole passe à « 3 » ; les messages « 2 » (adresses « Prénom-Royaume ») sont refusés, et les contrats
+enregistrés sous l'ancien format sont purgés au chargement (perte de données acceptée).

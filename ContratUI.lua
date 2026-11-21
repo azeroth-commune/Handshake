@@ -56,18 +56,17 @@ local function plain(name) return name:lower():gsub("[\128-\255]", "") end
 
 function ns.ctDescribe(c, me)
   local t, status = {}, ns.ctStatus(c)
-  local other, artisan = ns.other(c, me), me == c.artisan
+  local peer, artisan = c.peer or {}, me == c.artisan
+  local other = peer.name or "?" -- le nom donné par le serveur, jamais déduit du GUID
   local add = function(s) t[#t + 1] = s end
   local caution, delivery = ns.ctTotal(c.m), ns.ctTotal(c.o)
-  local peer = c.peer or {}
-  add(("|cffffd100Contrat avec %s|r"):format(ns.identity(other, peer.guid, peer.surname)))
+  add(("|cffffd100Contrat avec %s|r"):format(ns.identity(other, peer.guid)))
   add(("Toi : %s   ·   v%s   ·   empreinte %s"):format(ns.myIdentity(), c.v, (c.hash or "—"):sub(1, 8)))
   add((STATUS[status] or status) .. ("   ·   tu es %s   ·   échéance %s"):format(artisan and "l'ARTISAN" or "le CLIENT", rel(c.d - GetServerTime())))
-  add(peer.verified and ("Identité de %s : |cff59cc73confirmée|r (identifiant %s)"):format(other, peer.guid)
-    or peer.guid and ("Identité de %s : |cffe6994dannoncée, à confirmer au premier échange|r (identifiant %s)"):format(other, peer.guid)
-    or ("Identité de %s : |cffe6994dinconnue, fixée au premier échange|r"):format(other))
+  add(peer.verified and ("Identité de %s : |cff59cc73confirmée par le serveur|r (GUID %s)"):format(other, tostring(peer.guid))
+    or ("Identité de %s : |cffe6994dGUID annoncé, vérifié au premier échange|r (GUID %s)"):format(other, tostring(peer.guid)))
   for _, x in pairs(ns.ctStore()) do -- n° 26 : nom presque identique à un autre partenaire
-    local o2 = ns.other(x, me)
+    local o2 = x.peer and x.peer.name or other
     if o2 ~= other and plain(o2) == plain(other) then add(("|cffe64d4d! Nom très proche de %s : vérifie que c'est bien la bonne personne.|r"):format(o2)) break end
   end
   if c.prev then -- n° 4 : ce qui a changé
@@ -88,7 +87,7 @@ function ns.ctDescribe(c, me)
     add(("|cffe6994dChangé depuis la v%s : %s|r"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
   end
   -- « tu donnes » / « Bob donne » : le client et l'artisan vus depuis ma place, prénom seul.
-  local otherShort = other:match("^[^%-]+")
+  local otherShort = other:match("^%S+")
   local function verb(isMe, tu, il) return isMe and ("Tu " .. tu) or (otherShort .. " " .. il) end
   add(" ")
   if #c.m > 0 then
@@ -237,8 +236,7 @@ end
 -- Le texte du contrat en clair, pour quelqu'un qui n'a pas l'addon (il ne vaut pas signature).
 local function readable(c)
   local SendChatMessage = function(msg, _, _, target) ns.whisper(msg, target) end
-  local me = ns.me()
-  local other = ns.other(c, me)
+  local other = c.peer and c.peer.name
   if #c.m > 0 then
     for _, msg in ipairs(ns.listMessages("Contrat", c.m, ("· composants fournis par le client, caution %s"):format(ns.poText(ns.ctTotal(c.m))))) do
       SendChatMessage(msg, "WHISPER", nil, other)
@@ -290,8 +288,6 @@ local function build()
     -- Il n'a pas l'addon : tu notes son accord. Ton panneau vérifiera tes échanges contre TA copie.
     if c.status == "envoye" then
       c.status, c.signed, c.manual = "signe", GetServerTime(), true
-      local known = ns.knownGUID[ns.other(c, ns.me())]
-      if known and not c.peer then c.peer = { guid = known, verified = true } end
     end
   end)
   frame.readable = button("Envoyer en clair", 130, function(c) readable(c) end)

@@ -33,9 +33,7 @@ local function read()
     if theirs then s.get.items[theirs] = (s.get.items[theirs] or 0) + (theirQty or 1) elseif theirName then s.unknown = true end
   end
   if API.GetTradeTargetItemInfo(7) or API.GetTradePlayerItemInfo(7) then s.slot7 = true end
-  local name, surname = API.UnitName("NPC") -- 2e valeur = nom de famille sur Forever, pas le royaume
-  s.partner, s.guid = name and ns.fullName(name), API.UnitGUID("NPC")
-  s.surname = type(surname) == "string" and surname ~= "" and #surname <= 40 and surname or nil
+  s.partner, s.guid = ns.unitName(API.UnitName("NPC")), API.UnitGUID("NPC") -- « Prénom Nom » et GUID, donnés par le serveur
   return s
 end
 
@@ -95,7 +93,7 @@ local function lineText(c, me, s, r)
   local inList, outList = artisan and c.m or c.o, artisan and c.o or c.m
   local got, gave = c.got or {}, c.gave or {}
   local peer = c.peer or {}
-  local t = { ("|cffa98fff%s|r"):format(ns.identity(ns.other(c, me), peer.guid, peer.surname)),
+  local t = { ("|cffa98fff%s|r"):format(ns.identity(peer.name, peer.guid)),
     ("v%s · empreinte %s"):format(c.v, c.hash:sub(1, 8)) }
   local function block(title, list, here, done, word)
     if #list == 0 then return end
@@ -215,7 +213,7 @@ local function confirm(snapshot, tries)
   if ok then
     ns.ctRecord(c, ns.me(), s, GetServerTime())
     print(("Contrats : échange avec %s inscrit%s. Fais /reload (ou « Sauvegarder » dans /contrat) pour l'enregistrer sur le disque.")
-      :format(ns.other(c, ns.me()), c.status == "clos" and ", contrat CLOS" or ""))
+      :format(tostring(c.peer and c.peer.name), c.status == "clos" and ", contrat CLOS" or ""))
   else
     c.unconfirmed = c.unconfirmed or {}
     table.insert(c.unconfirmed, { t = GetServerTime(), give = s.give, get = s.get })
@@ -230,8 +228,7 @@ for _, e in ipairs({ "TRADE_SHOW", "TRADE_CLOSED", "TRADE_PLAYER_ITEM_CHANGED", 
   "TRADE_ACCEPT_UPDATE", "UI_INFO_MESSAGE", "GET_ITEM_INFO_RECEIVED" }) do f:RegisterEvent(e) end
 f:SetScript("OnEvent", function(_, event, a1, a2)
   if event == "TRADE_SHOW" then
-    local name = API.UnitName("NPC")
-    contracts, index, override, last = ns.ctActiveWith(name and ns.fullName(name), API.UnitGUID("NPC")), 1, nil, nil
+    contracts, index, override, last = ns.ctActiveWith(ns.unitName(API.UnitName("NPC")), API.UnitGUID("NPC")), 1, nil, nil
     if #contracts == 0 then return end
     if not panel then build(); panel.fill:SetScript("OnClick", fill); panel.force:SetScript("OnClick", forceClick) end
     panel:ClearAllPoints()

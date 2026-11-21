@@ -66,7 +66,8 @@ function ns.projetReponse(c)
   p = p or ns.nouveauProjet({ reponse = key })
   if p.reponseHash == c.hash then return p end -- même version : on garde ce que tu as changé
   local tout = commandes(p)[1]
-  p.reponseHash, p.name, tout.player = c.hash, "Réponse à " .. c.client:match("^[^%-]+"), c.client
+  local client = c.peer and c.peer.name or "?" -- le client, sous le nom donné par le serveur
+  p.reponseHash, p.name, tout.player = c.hash, "Réponse à " .. client:match("^%S+"), client
   p.lines, p.apports = {}, nil
   for _, l in ipairs(c.o) do p.lines[#p.lines + 1] = { id = l.id, qty = l.qty } end
   for _, l in ipairs(c.m) do p.apports = p.apports or {}; p.apports[l.id] = true end
@@ -223,7 +224,7 @@ end
 local function brouillonEcart(v, ct)
   local arrondi = 0
   for _, l in ipairs(ct.o) do arrondi = arrondi + l.qty / 2 end
-  return ns.fullName(v.player or "") ~= ct.artisan or math.abs((v.tip or 0) - (ns.ctTotal(ct.o) - ns.ctTotal(ct.m))) > arrondi
+  return ns.fullName(v.player or "") ~= (ct.peer and ct.peer.name) or math.abs((v.tip or 0) - (ns.ctTotal(ct.o) - ns.ctTotal(ct.m))) > arrondi
     or ecart(v, ct)
 end
 
@@ -241,7 +242,7 @@ local function vue(p, c, dem)
   local v = { id = c.id, part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
   local ct = envoyee(c)
   if ct then
-    v.fige, v.player, v.tip, v.lines, v.apports = true, ct.artisan:match("^[^%-]+"), math.max(0, ns.ctTotal(ct.o) - ns.ctTotal(ct.m)), {}, {}
+    v.fige, v.player, v.tip, v.lines, v.apports = true, ct.peer and ct.peer.name, math.max(0, ns.ctTotal(ct.o) - ns.ctTotal(ct.m)), {}, {}
     for _, l in ipairs(ct.o) do v.lines[#v.lines + 1] = { id = l.id, qty = l.qty } end
     for _, l in ipairs(ct.m) do v.apports[l.id] = true end
     local s = ns.ctStatus(ct)

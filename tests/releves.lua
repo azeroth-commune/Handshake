@@ -39,3 +39,16 @@ test("mon perso par son GUID : recettes connues sous mon GUID, mon nom par la li
     assertTrue(HandshakeFrame:IsShown())
     HandshakeFrame:Hide()
 end)
+
+-- Handshake#29 : les contrats sont signés par GUID ; ceux d'avant (signataires « Prénom-Royaume ») sont purgés au
+-- chargement, et les noms de famille d'avant aussi (le nom complet vient maintenant du serveur).
+test("chargement : contrats signés par GUID seulement, plus de noms de famille gardés", function()
+    assertType("table", HandshakeDB.contracts)
+    for cle, c in pairs(HandshakeDB.contracts) do
+        assertTrue(tostring(c.client):find("^Player%-") ~= nil, "contrat d'avant le GUID resté : " .. tostring(cle))
+    end
+    assertNil(HandshakeDB.surnames)
+    local lib = LibStub("LibCommune-1.0")
+    assertNil(lib.Adresse) -- plus d'adresse dans la lib : Handshake était son dernier appelant
+    assertEquals(lib.Personnage().nom, lib.Destinataire(lib.Personnage().nom)) -- chuchoté par son nom complet
+end)
