@@ -371,7 +371,14 @@ end
 --       prix d'achat (mon scan) ;
 --   o = ce qui est voulu, payé par objet : sa part de caution + sa part de l'offre (order.tip). Projet : au prorata de
 --       l'estimation de la part de l'artisan pour chaque ligne, et la caution de ce que consomme chaque ligne. À la main :
---       les deux au prorata du prix d'achat de chaque ligne (à parts égales sans prix).
+--       les deux au prorata du prix d'achat de chaque ligne ; à parts égales dès qu'une ligne n'a pas de prix connu
+--       (sinon elle vaudrait 0 pc par objet au contrat).
+-- Le prix d'achat d'une ligne (qty objets), nil s'il n'est pas connu (ni marchand ni HV) ; la liste l'affiche.
+function ns.prixAchatLigne(id, qty)
+  local market = ns.market()
+  return lib:PrixAchat(id, qty, market and market.items, lib:PrixMarchands())
+end
+
 local function demandeTerms(order, keep)
   local res = not order.apporte and ns.projetDemande(order, order.apports) or nil
   local market = ns.market()
@@ -393,7 +400,13 @@ local function demandeTerms(order, keep)
     for i, r in ipairs(res.roots) do shares[i] = { a = apportValue(r), c = r.cost or 0 }; totalCost = totalCost + shares[i].c end
   else
     local caution, w = ns.ctTotal(m), {}
-    for i, l in ipairs(order.lines) do w[i] = lib:PrixAchat(l.id, l.qty, items, vendors) or 0; totalCost = totalCost + w[i] end
+    local inconnu = false
+    for i, l in ipairs(order.lines) do
+      w[i] = lib:PrixAchat(l.id, l.qty, items, vendors)
+      if not w[i] then w[i], inconnu = 0, true end
+      totalCost = totalCost + w[i]
+    end
+    if inconnu then totalCost = 0 end -- une ligne sans prix : tout à parts égales
     for i in ipairs(order.lines) do shares[i] = { a = totalCost > 0 and caution * w[i] / totalCost or caution / #order.lines, c = w[i] } end
   end
   local offer = order.tip or 0

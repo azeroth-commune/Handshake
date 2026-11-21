@@ -725,6 +725,11 @@ do
   local function objets(l) local t = {} for _, x in ipairs(l) do t[#t + 1] = x.id .. "x" .. x.qty end return table.concat(t, ",") end
   assert(txt(a.m) == txt(b.m) and objets(a.o) == objets(b.o), "deux lignes : mêmes objets et apports")
   assert(math.abs(ns.ctTotal(a.o) - ns.ctTotal(b.o)) <= 3, "deux lignes : caution + offre à l'arrondi près")
+  -- Une ligne sans prix d'achat connu : caution et offre à parts égales entre les lignes (jamais 0 pc par objet).
+  assert(ns.prixAchatLigne(12345, 1) == nil and ns.prixAchatLigne(7963, 1), "prix d'achat d'une ligne, nil si inconnu")
+  local cm3 = { lines = { { id = 7963, qty = 1 }, { id = 12345, qty = 1 } }, apporte = { { id = 4234, qty = 4 } }, player = BELN, tip = 30000 }
+  local c3 = assert(ns.ctFromDemande(cm3, 3))
+  assert(#c3.o == 2 and c3.o[1].unit == 16000 and c3.o[2].unit == 16000, "prix inconnu : parts égales : " .. txt(c3.o))
   -- Le texte lisible : le même qu'aujourd'hui.
   local function enClair(order)
     local msgs, real = {}, ns.whisper

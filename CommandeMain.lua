@@ -327,7 +327,8 @@ function refresh()
       if l then
         r.i = i
         r.icon:SetTexture(C_Item.GetItemIconByID(l.id))
-        r.name:SetText(ns.itemLabel(l.id))
+        local inconnu = col.liste == "lines" and not ns.prixAchatLigne(l.id, l.qty)
+        r.name:SetText(ns.itemLabel(l.id) .. (inconnu and "  |cff999999prix inconnu|r" or ""))
         if not r.qty:HasFocus() then r.qty:SetText(tostring(l.qty)) end
         r.qty:SetEnabled(peut and true or false)
         r.del:SetShown(peut)
