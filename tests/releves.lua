@@ -16,7 +16,7 @@ test("recettes lues dans la base des recettes du socle, plus de réserve dans Ha
     assertNil(AzerothCommune.RemettreRecettes)
     local base = AzerothCommune:Lire("base des recettes")
     assertNotNil(base, "base des recettes vide (RecettesClassic.lua du socle présent ?)")
-    local id, r = next(base)
+    local _, r = next(base)
     assertType("number", r.output)
     assertType("string", r.profession)
 end)
