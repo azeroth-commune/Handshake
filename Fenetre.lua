@@ -671,7 +671,6 @@ local function refresh()
   for i = usedLines + 1, #lines do lines[i]:Hide() end
   for i = usedLabels + 1, #labels do labels[i]:Hide() end
 
-  frame.apportGameData:SetText(ns.apportGameData() or "")
   frame.status:SetText(ns.texteHV(market)
     .. " · « + » décompose, « – » achète tout fait (violet = ton choix) · molette : zoom, glisser : déplacer, clic milieu : ajuster")
 end
@@ -961,12 +960,6 @@ local function build()
     cb:SetScript("OnClick", function(self) opts()[o[1]] = self:GetChecked() and true or false; refresh() end)
     prev = cb
   end
-  -- Sans GameData : ce qu'il apporterait (rerolls, banque, HV), à la suite des options.
-  frame.apportGameData = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  frame.apportGameData:SetPoint("LEFT", prev.label, "RIGHT", 16, 0)
-  frame.apportGameData:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
-  frame.apportGameData:SetJustifyH("LEFT")
-  frame.apportGameData:SetWordWrap(true)
 
   -- Légende des couleurs
   local legend = { { COLORS.target, "commandé" }, { COLORS.apport, "fourni par toi" }, { COLORS.fabriquer, "à fabriquer" }, { COLORS[1], "sacs" }, { COLORS[2], "banque" },
@@ -1045,13 +1038,9 @@ function ns.openCraftWindow(id, qty)
   frame:Show()
   if id then track(id, qty or 1) else refresh() end
 end
-if GameDataAPI then GameDataAPI.openCraftWindow = ns.openCraftWindow end -- minicarte et menu de GameData
 -- Bouton de minicarte et entrée des options communs d'Azeroth Commune (LibCommune#3) : clic ou ligne du menu = cette fenêtre.
-local commune = LibStub and LibStub("LibCommune-1.0", true)
-if commune and commune.Regrouper then
-  commune.Regrouper({ nom = "Handshake", dossier = "Handshake", icone = "Interface\\Icons\\Trade_BlackSmithing",
-    ouvrir = function() ns.openCraftWindow() end, store = function() return HandshakeDB end })
-end
+AzerothCommune.Regrouper({ nom = "Handshake", dossier = "Handshake", icone = "Interface\\Icons\\Trade_BlackSmithing",
+  ouvrir = function() ns.openCraftWindow() end, store = function() return HandshakeDB end })
 
 -- Ctrl+clic droit sur un objet n'importe où dans le jeu (sacs, banque, lien du chat, butin, fenêtre de métier, HV) : il
 -- entre dans la commande affichée et la fenêtre s'ouvre. Un objet-recette (« Plans : Claymore ») donne l'objet fabriqué.

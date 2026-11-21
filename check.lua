@@ -1,7 +1,7 @@
 -- Vérification hors jeu (non chargée par le TOC) : luajit Handshake/check.lua
--- Juste assez de l'API WoW pour le calcul et le texte. Les premiers tests jouent « GameData installé » (ses tables
--- globales servent de données, lues par la lib commune via les vrais accesseurs de GameData) ; un test à la fin joue
--- Handshake seul. Dans les deux cas, rien de relevé n'est écrit dans HandshakeDB (ADR 0001 de l'atelier).
+-- Juste assez de l'API WoW pour le calcul et le texte. Le socle Azeroth Commune est chargé avant, comme dans le jeu : ses
+-- SavedVariables (AzerothCommuneDB, AzerothCommuneItems, AzerothCommuneMarket) servent de données, lues par ses vrais
+-- accesseurs. Rien de relevé n'est écrit dans HandshakeDB (ADR 0001 de l'atelier).
 local noop = function() end
 local stubMT = { __index = function() return noop end }
 CreateFrame = function() return setmetatable({}, stubMT) end
@@ -11,41 +11,30 @@ C_Item = { GetItemInfo = noop, GetItemIconByID = noop }
 date, time = os.date, os.time
 GetTime = function() return 0 end
 UnitFactionGroup = function() return "Alliance" end
--- Un perso est rangé sous son GUID ; son numéro de serveur est le royaume de la lib (LibCommune#35).
+-- Un perso est rangé sous son GUID ; son numéro de serveur est le royaume du socle (LibCommune#35).
 UnitGUID = function(u) if u == "player" then return "Player-6942-0000000E" end end
-GameDataDB, GameDataItems, GameDataMarket = { recipes = {}, chars = {}, lots = {} }, { items = {} }, {}
--- GameData installé : la lib commune lit ses données par GameDataAPI, ses vrais accesseurs (GameData/Souscriptions.lua :
--- inventaires, métiers, marchands, objets, cours de l'HV) ; les recettes connues, même forme que GameData.
-GameDataAPI = {}
-assert(loadfile("GameData/Souscriptions.lua"))("GameData", GameDataAPI)
-GameDataAPI.recettesConnues = function()
-  local persos = {}
-  for k, c in pairs(GameDataDB.chars) do persos[k] = c.recipes end
-  return { recettes = GameDataDB.recipes, persos = persos }
-end
+AzerothCommuneDB, AzerothCommuneItems, AzerothCommuneMarket = { recipes = {}, chars = {}, lots = {} }, { items = {} }, {}
 HandshakeDB = {}
 -- Rien de relevé dans les SavedVariables de Handshake : seulement ses données propres.
 local RELEVES = { "recipes", "chars", "items", "market" }
 local function aucunReleve(quand)
   for _, k in ipairs(RELEVES) do assert(HandshakeDB[k] == nil, quand .. " : relevé « " .. k .. " » écrit dans HandshakeDB") end
 end
--- La lib commune (dépôt voisin, chargée avant Handshake comme dans le jeu) ; son cadre garde son script d'événements.
-local libCadre
-CreateFrame = function() local f = setmetatable({}, stubMT); f.SetScript = function(self, _, fn) self.onEvent = fn end; libCadre = f; return f end
-assert(loadfile("LibCommune/LibStub.lua"))()
-assert(loadfile("LibCommune/LibCommune.lua"))()
-CreateFrame = function() return setmetatable({}, stubMT) end
-assert(loadfile("LibCommune/Interface.lua"))() -- fenêtres, montants, noms d'objets
-assert(loadfile("LibCommune/Capture.lua"))()
-assert(loadfile("LibCommune/Fournisseurs.lua"))() -- cours de l'HV : GameData, sinon Auctionator…
+-- Le socle (dépôt voisin, chargé avant Handshake comme dans le jeu), fichiers dans l'ordre de sa TOC avec son espace de
+-- noms privé : fenêtres, montants, noms d'objets, capture, cours de l'HV (son scan, sinon Auctionator…), la base.
+-- ponytail: VendorData.lua (généré, ignoré par git) est sauté : les marchands sont ceux du test.
+local acns = {}
+for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+)%.lua") do
+  if f ~= "VendorData" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
+end
 local ns = {}
 for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
   assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
 end
 assert(ns.findItem and ns.itemLabel and ns.newWindow, "base chargée")
-local commune = LibStub("LibCommune-1.0")
+local commune = AzerothCommune
 assert(ns.newWindow == commune.Fenetre and ns.money == commune.Argent and ns.moneyShort == commune.ArgentCourt
-  and ns.moneySigned == commune.ArgentSigne, "fenêtres et montants : ceux de la lib commune, plus de copie")
+  and ns.moneySigned == commune.ArgentSigne, "fenêtres et montants : ceux du socle, plus de copie")
 assert(not io.open("Handshake/Donnees.lua"):read("*a"):find("CreateFrame(\"Frame\", name", 1, true), "plus de copie de la fenêtre")
 
 -- Acheter ou fabriquer : 20 barres de fer, barre à l'HV plus chère que son minerai fondu.
@@ -57,7 +46,7 @@ local market = {
 assert(commune:PrixAchat(3575, 20, market) == 10 * 300 + 10 * 310, "achat palier par palier")
 local ore, how, partial = commune:PrixAchat(2772, 20, market)
 assert(ore == 20 * 270 and how == "HV" and partial, "pas assez en vente : le reste au dernier prix, signalé")
-GameDataDB.vendors = { [1] = { items = { { id = 2880, price = 90, stack = 1 } } } }
+AzerothCommuneDB.vendors = { [1] = { items = { { id = 2880, price = 90, stack = 1 } } } }
 assert(select(2, commune:PrixAchat(2880, 2, market)) == "marchand")
 local by = { [3575] = { { key = 3307, known = true, r = { name = "Fonte du fer", made_min = 1, reagents = { { id = 2772, qty = 1 } } } } } }
 local p = ns.plan(3575, 20, { market = market, by = by }, 0, {})
@@ -90,20 +79,20 @@ assert(b.have[1] == 0 and b.parts[1].have[1] == 9 and b.parts[1].have[2] == 5 an
 assert(b.cost == 6 * 270)
 
 -- Les cases d'un projet (Projet.lua) : une par objet, le même stock pour toutes ses lignes. Les données sont celles que
--- Handshake lit (GameData installé) : HV, recettes, persos ; mes sacs et ma banque.
+-- Handshake lit (par le socle) : HV, recettes, persos ; mes sacs et ma banque.
 UnitName = function() return "Moi" end
 local MOI = UnitGUID("player")
 local TOUT = { unlearned = true } -- options de calcul : toutes les recettes, aucun stock
-local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = fiches GameData des autres persos
+local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = fiches des autres persos dans la base du socle
   local function sac(t)
     local items = {}
     for id, n in pairs(t or {}) do items[#items + 1] = { id = id, count = n } end
     return { b = { items = items } }
   end
-  GameDataMarket = { ["6942-Alliance"] = { scanned = "test", items = d.hv } }
-  GameDataDB.recipes = d.recettes
-  GameDataDB.chars = d.persos or {}
-  GameDataDB.chars[MOI] = { bank = sac(d.banque) }
+  AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "test", items = d.hv } }
+  AzerothCommuneDB.recipes = d.recettes
+  AzerothCommuneDB.chars = d.persos or {}
+  AzerothCommuneDB.chars[MOI] = { bank = sac(d.banque) }
   commune.Conteneurs = function(garder) return garder("Backpack") and sac(d.sacs) or {} end -- mes sacs, lus à l'instant
 end
 local realContainers = commune.Conteneurs
@@ -256,12 +245,12 @@ do
   end
   bronzeR.profession = "Minage"
 end
-commune.Conteneurs, GameDataDB.chars = realContainers, {}
+commune.Conteneurs, AzerothCommuneDB.chars = realContainers, {}
 print("Handshake : dessin de l'arbre (étages, relais, bandes) OK")
 
 -- Suggestions : fabricables d'abord, puis début de nom, puis noms courts.
-GameDataItems.items = { [1] = { name = "Barre de bronze" }, [2] = { name = "Bronze" }, [3] = { name = "Lame en bronze" }, [4] = { name = "Fer" } }
-GameDataDB.recipes = { [9] = { name = "Lame en bronze", output = 3 }, [8] = { name = "Cuirasse changeante", output = 210794 } }
+AzerothCommuneItems.items = { [1] = { name = "Barre de bronze" }, [2] = { name = "Bronze" }, [3] = { name = "Lame en bronze" }, [4] = { name = "Fer" } }
+AzerothCommuneDB.recipes = { [9] = { name = "Lame en bronze", output = 3 }, [8] = { name = "Cuirasse changeante", output = 210794 } }
 local sug = ns.suggestItems(ns.itemIndex(), "bron")
 assert(#sug == 3 and sug[1].id == 3 and sug[2].id == 2 and sug[3].id == 1, "ordre des suggestions")
 assert(ns.suggestItems(ns.itemIndex(), "chang")[1].id == 210794, "recette dont l'objet n'a pas de nom")
@@ -271,7 +260,7 @@ print("Handshake : suggestions OK")
 
 -- Texte échangé : liens réels (~80 caractères), découpés sous 255, relus à l'identique.
 local function link(id, name) return ("|cff1eff00|Hitem:%d::::::::31:::::::::|h[%s]|h|r"):format(id, name) end
-GameDataItems.items = { [7963] = { name = "Claymore en mithril", link = link(7963, "Claymore en mithril") },
+AzerothCommuneItems.items = { [7963] = { name = "Claymore en mithril", link = link(7963, "Claymore en mithril") },
   [7920] = { name = "Camail en mithril", link = link(7920, "Camail en mithril") },
   [7927] = { name = "Gants ornés en mithril", link = link(7927, "Gants ornés en mithril") },
   [3858] = { name = "Minerai de mithril", link = link(3858, "Minerai de mithril") },
@@ -309,7 +298,7 @@ assert(#rows == 2 and rows[1].id == 3858 and rows[1].required == 36 and rows[2].
 assert(#recipes == 1 and recipes[1].item == 7989, "recette trouvée par son nom")
 print("Handshake : besoins OK")
 
-aucunReleve("avec GameData, après les calculs")
+aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
 HandshakeDB = { chars = { [MOI] = { bags = {}, bank = {} } }, items = { [1] = { name = "x" } }, market = { ["6942-Alliance"] = {} },
   recipes = {}, contracts = { k = { status = "signe" } }, projets = { { name = "P", lines = {} } }, courant = 1,
@@ -321,7 +310,7 @@ loader(nil, "ADDON_LOADED", "Handshake")
 aucunReleve("au chargement")
 assert(HandshakeDB.contracts.k and HandshakeDB.projets[1].name == "P" and HandshakeDB.options.bags and HandshakeDB.surnames.Bob
   and HandshakeDB.debug.on, "données propres gardées")
--- Première ouverture : réglages par défaut, aucun projet repris de GameData (ses vieux suivis ne sont plus lus).
+-- Première ouverture : réglages par défaut, aucun projet repris d'ailleurs (les vieux suivis de GameData ne sont plus lus).
 HandshakeDB = nil
 assert(loadfile("Handshake/Commande.lua"))("Handshake", ns)
 loader(nil, "ADDON_LOADED", "Handshake")
@@ -574,10 +563,10 @@ print("Handshake : échanges vérifiés et contrat clos OK")
 -- offre 3 po. Contrat v1 : caution = prix de marché du cuir seulement ; la claymore = sa part de caution + l'offre.
 as(BOB)
 UnitFactionGroup = function() return "Alliance" end
-GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } },
+AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } },
   [4234] = { tiers = { { price = 500, qty = 999 } } }, [7963] = { tiers = { { price = 99999, qty = 9 } } } } } }
-GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 }, { id = 4234, qty = 4 } } } }
-GameDataItems.items[4234] = { name = "Cuir lourd", link = link(4234, "Cuir lourd") }
+AzerothCommuneDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 }, { id = 4234, qty = 4 } } } }
+AzerothCommuneItems.items[4234] = { name = "Cuir lourd", link = link(4234, "Cuir lourd") }
 HandshakeDB.projets = {}
 local demande = ns.nouveauProjet({ player = BELN, tip = 30000, lines = { { id = 7963, qty = 1 } } })
 ns.projetApport(demande, 4234, true)
@@ -718,8 +707,8 @@ local function tiers(prix)
   for id, p in pairs(prix) do t[id] = { tiers = { { price = p, qty = 999 } } } end
   return t
 end
-GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = tiers({ [2770] = 10, [2771] = 10, [5500] = 500, [2841] = 100, [5541] = 99999, [2870] = 99999 }) } }
-GameDataDB.recipes = {
+AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = tiers({ [2770] = 10, [2771] = 10, [5500] = 500, [2841] = 100, [5541] = 99999, [2870] = 99999 }) } }
+AzerothCommuneDB.recipes = {
   [1] = { name = "Marteau", output = 5541, profession = "Forge", reagents = { { id = 2841, qty = 10 }, { id = 5500, qty = 1 } } },
   [2] = { name = "Cuirasse", output = 2870, profession = "Forge", reagents = { { id = 2841, qty = 20 } } },
   [3] = { name = "Fonte du bronze", output = 2841, made_min = 2, profession = "Minage", reagents = { { id = 2770, qty = 1 }, { id = 2771, qty = 1 } } },
@@ -821,14 +810,14 @@ do
   -- En clair (#7) : le texte part de la commande, avec ses lignes, ses apports et son offre ; envoyée, ce sont ceux de son
   -- contrat, même si la recette a changé depuis (la cuirasse prend maintenant 25 bronzes).
   for id, nom in pairs({ [5541] = "Marteau", [2870] = "Cuirasse", [2841] = "Barre de bronze" }) do
-    GameDataItems.items[id] = { name = nom, link = link(id, nom) }
+    AzerothCommuneItems.items[id] = { name = nom, link = link(id, nom) }
   end
-  GameDataDB.recipes[2].reagents[1].qty = 25
+  AzerothCommuneDB.recipes[2].reagents[1].qty = 25
   popups = {}
   ns.whisper = function(msg) ns.onChat("CHAT_MSG_WHISPER", msg, BOBN) end
   ns.sendOrder(cmd())
   ns.whisper = realWhisper
-  GameDataDB.recipes[2].reagents[1].qty = 20
+  AzerothCommuneDB.recipes[2].reagents[1].qty = 20
   local voulu, _, offre, apporte = ns.parseList(popups[1].data.text)
   table.sort(voulu, function(a, b) return a.id < b.id end)
   assert(#voulu == 2 and voulu[1].id == 2870 and voulu[1].qty == 1 and voulu[2].id == 5541 and voulu[2].qty == 1, "ses lignes")
@@ -849,7 +838,7 @@ print("Handshake : envoyer une commande (demande figée, état lu dans le contra
 -- L'écart est constaté, jamais expliqué (#18) : un libellé neutre, et l'écart de prix chiffré contre mon scan.
 as(BOB)
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
-GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2841] = { tiers = { { price = 100, qty = 999 } } } } } }
+AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2841] = { tiers = { { price = 100, qty = 999 } } } } } }
 do
   local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
   ns.projetChoix(p, 2841, "fabriquer")
@@ -872,7 +861,7 @@ do
   assert(not cmd(f).ecart and not cmd(m).ecart, "envoyées, projet inchangé : pas d'écart")
   -- Écart de prix (#18) : la caution du contrat contre MON estimation actuelle, celle de la fiche (P8). Le marché bouge,
   -- le pourcentage suit, sans que le projet change ; un composant sans prix connu : pas de pourcentage.
-  local barres = GameDataMarket["6942-Alliance"].items[2841]
+  local barres = AzerothCommuneMarket["6942-Alliance"].items[2841]
   assert(cmd(f).ecartPrix == 0 and not cmd(f).alertePrix and not cmd(f).incomplet, "caution = mon estimation : 0 %")
   barres.tiers[1].price = 150
   assert(math.floor(cmd(f).ecartPrix + 0.5) == -33 and cmd(f).alertePrix, "le marché monte : caution trop basse pour moi, en rouge")
@@ -880,10 +869,10 @@ do
   assert(ns.ctDescribe(cf, BOB):find(("caution |cffe64d4d%+.0f %%|r"):format(cmd(f).ecartPrix), 1, true), "le même chiffre que la fiche")
   barres.tiers[1].price = 105
   assert(math.floor(cmd(f).ecartPrix + 0.5) == -5 and not cmd(f).alertePrix, "sous le seuil de 10 % : pas d'alerte")
-  GameDataMarket["6942-Alliance"].items[2841] = nil
+  AzerothCommuneMarket["6942-Alliance"].items[2841] = nil
   assert(cmd(f).incomplet and cmd(f).ecartPrix == nil, "sans prix connu : estimation incomplète, pas de pourcentage")
   assert(ns.ctDescribe(cf, BOB):find("1 composant(s) sans prix connu", 1, true), "la fiche le dit aussi")
-  GameDataMarket["6942-Alliance"].items[2841] = barres
+  AzerothCommuneMarket["6942-Alliance"].items[2841] = barres
   barres.tiers[1].price = 100
   assert(cmd(m).ecartPrix == nil and not cmd(m).incomplet, "rien d'apporté : pas de caution à estimer")
   -- Ma perle (apport) sous les cases de la forge : la part de la forge change, pas celle du minage.
@@ -970,8 +959,8 @@ print("Handshake : écart et nouvelle version d'une commande envoyée OK")
 -- Fiche du contrat : besoins gonflés signalés (n° 12), perte maximale de chaque côté (P8).
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
 UnitFactionGroup = function() return "Alliance" end
-GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } } } } }
-GameDataDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 } } } }
+AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858] = { tiers = { { price = 200, qty = 999 } } } } } }
+AzerothCommuneDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 } } } }
 as(BOB)
 local fiche = ns.ctDescribe(signed, BOB)
 assert(fiche:find("36 demandés, la recette en consomme 30"), "minerai gonflé signalé")
@@ -981,8 +970,8 @@ assert(ns.ctDescribe(bases[BEL].contracts[k], BEL):find("tu es l'ARTISAN"), "rô
 print("Handshake : fiche du contrat OK")
 
 -- Noms à la Forever (LibCommune#35, Handshake#29) : « Prénom Nom », la forme du serveur, pour afficher et chuchoter ;
--- un personnage s'identifie par son GUID. Plus d'adresse « Prénom-Royaume » : lib.Adresse est retirée de la lib.
-assert(ns.fullName == commune.Destinataire and ns.whisperTarget == commune.Destinataire, "noms : ceux de la lib commune, plus de copie")
+-- un personnage s'identifie par son GUID. Plus d'adresse « Prénom-Royaume » : lib.Adresse est retirée du socle.
+assert(ns.fullName == commune.Destinataire and ns.whisperTarget == commune.Destinataire, "noms : ceux du socle, plus de copie")
 assert(commune.Adresse == nil, "lib.Adresse retirée (plus d'appelant)")
 assert(ns.fullName("Belegard Marteaudefer-CAMWOWEU4Realm8PvP") == BELN, "un « -Royaume » retiré")
 UnitName = function() return "Belegard", "Marteaudefer" end
@@ -990,49 +979,43 @@ as(BEL)
 assert(ns.me() == GBEL and ns.myName() == BELN, "moi : mon GUID ; mon nom : prénom et nom de famille")
 print("Handshake : noms à la Forever OK")
 
--- Avec GameData : les recettes connues de tous ses persos, par la lib commune.
+-- Les recettes connues de tous les persos de la base, par le socle.
 local ALT, SANS = "Player-6942-00000A17", "Player-6942-00005A25"
-GameDataDB.chars = { [ALT] = { nom = "Alt Dupont", recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
+AzerothCommuneDB.chars = { [ALT] = { nom = "Alt Dupont", recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
   professions = { { name = "Couture", rank = 120 } }, bags = { b = { items = { { id = 2840, count = 4 } } } } }, [SANS] = {} }
-assert(ns.knownRecipes()[ALT].Forge.known[9] and not ns.knownRecipes()[SANS], "recettes connues de GameData, par GUID")
+assert(ns.knownRecipes()[ALT].Forge.known[9] and not ns.knownRecipes()[SANS], "recettes connues de la base, par GUID")
 local alt
 for _, e in ipairs(ns.crafters()) do if e.key == ALT then alt = e end end
-assert(alt and alt.name == "Alt Dupont" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData, prénom tiré de sa fiche")
-assert(alt.ranks.Couture == 120, "métiers des persos (fiche de GameData), par la lib")
--- Mes autres persos (option « mes autres persos ») : leurs sacs, par la lib.
-GameDataDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
-GameDataMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2840] = { tiers = { { price = 50, qty = 99 } } } } } }
+assert(alt and alt.name == "Alt Dupont" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans la base, prénom tiré de sa fiche")
+assert(alt.ranks.Couture == 120, "métiers des persos (fiche de la base), par le socle")
+-- Mes autres persos (option « mes autres persos ») : leurs sacs, par le socle.
+AzerothCommuneDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
+AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2840] = { tiers = { { price = 50, qty = 99 } } } } } }
 local bronze = ns.nouveauProjet({ lines = { { id = 2841, qty = 6 } } })
 local arbreAlts = ns.projetArbre(bronze, { alts = true, unlearned = true })
 assert(arbreAlts.caseDe.I2840.have[3] == 4 and arbreAlts.caseDe.I2840.need == 2, "sacs d'un autre perso déduits")
-assert(ns.texteHV() == "HV du hier" and ns.apportGameData() == nil, "avec GameData : la date de son scan, rien à réclamer")
-GameDataDB.chars = {}
-aucunReleve("avec GameData")
-print("Handshake : recettes connues avec GameData OK")
+assert(ns.texteHV() == "HV du hier", "la date du scan du socle")
+AzerothCommuneDB.chars = {}
+aucunReleve("recettes connues")
+print("Handshake : recettes connues des persos de la base OK")
 
--- Handshake seul (sans GameData) : tout vient du relevé de repli de la lib (le perso connecté, en mémoire : recettes
--- connues dans la fenêtre de métier, sacs, banque vue cette session), d'un fournisseur pour l'HV, jamais de HandshakeDB.
-GameDataAPI = nil
+-- Relevés d'un Handshake d'avant purgés, catalogue des objets pas encore relevé (noms demandés au serveur), sacs et
+-- banque du perso connecté, l'HV d'un fournisseur ; jamais rien de relevé dans HandshakeDB.
 -- Relevés sauvegardés par un Handshake d'avant : purgés (ADR 0001), données propres gardées.
 HandshakeDB.recipes = { [1] = { name = "vieux relevé" } }
 HandshakeDB.chars = { ["Vieux-Perso"] = { recipes = { Forge = { known = { [1] = 1 } } }, bags = { [2770] = 3 } } }
 HandshakeDB.items, HandshakeDB.market = { [2770] = { name = "Minerai" } }, { ["6942-Alliance"] = { items = {} } }
 ns.purgerAnciensReleves()
-aucunReleve("sans GameData, purge")
+aucunReleve("purge")
 assert(HandshakeDB.contracts and HandshakeDB.projets, "données propres gardées")
-assert(not ns.recipes()[5] and not next(ns.knownRecipes()), "rien de relevé cette session")
-UnitName = function() return "Belegard", "Marteaudefer" end
-Enum = Enum or {}
-C_TradeSkillUI = {
-  GetBaseProfessionInfo = function() return { professionName = "Minage", skillLevel = 75, maxSkillLevel = 150 } end,
-  GetAllRecipeIDs = function() return { 5, 6 } end,
-  GetRecipeInfo = function(id) return { name = id == 5 and "Fonte du cuivre" or "Fonte du bronze", learned = id == 5, relativeDifficulty = 1 } end,
-  GetRecipeSchematic = function(id) return { outputItemID = id == 5 and 2840 or 2841, quantityMin = 1, quantityMax = 1,
-    reagentSlotSchematics = { { reagents = { { itemID = id == 5 and 2770 or 2840 } }, quantityRequired = 1, required = true } } } end,
-}
-C_Timer.After = function(_, fn) fn() end
-libCadre.onEvent(libCadre, "TRADE_SKILL_LIST_UPDATE")
-C_Timer.After = noop
+AzerothCommuneDB.recipes, AzerothCommuneItems.items, AzerothCommuneMarket = {}, {}, {}
+assert(not ns.recipes()[5] and not next(ns.knownRecipes()), "rien de relevé")
+-- Minage relevé par le socle (fenêtre de métier) ; le catalogue des objets, lui, pas encore.
+local GMOI = UnitGUID("player")
+AzerothCommuneDB.recipes = {
+  [5] = { name = "Fonte du cuivre", profession = "Minage", output = 2840, reagents = { { id = 2770, qty = 1 } } },
+  [6] = { name = "Fonte du bronze", profession = "Minage", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
+AzerothCommuneDB.chars = { [GMOI] = { recipes = { Minage = { rank = 75, max = 150, known = { [5] = "medium" } } } } }
 -- Les noms des produits et composants des recettes relevées sont demandés au serveur ; arrivés, gardés en mémoire.
 local demandes = {}
 C_Item.RequestLoadItemDataByID = function(id) demandes[id] = true end
@@ -1042,34 +1025,31 @@ C_Item.RequestLoadItemDataByID = nil
 C_Item.GetItemInfo = function(id) if id == 2840 then return "Barre de cuivre", "|Hitem:2840|h[Barre de cuivre]|h" end end
 ns.rememberItem(2840)
 C_Item.GetItemInfo = noop
-assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "relevé de repli, noms en mémoire")
-assert(ns.knownRecipes()[UnitGUID("player")].Minage.known[5] and not ns.knownRecipes()[UnitGUID("player")].Minage.known[6], "recettes connues du perso")
+assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "noms en mémoire")
+assert(ns.knownRecipes()[GMOI].Minage.known[5] and not ns.knownRecipes()[GMOI].Minage.known[6], "recettes connues du perso")
 local moi = ns.crafters()[1]
-assert(moi.key == UnitGUID("player") and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
--- Sacs (lus à l'instant) et banque (vue cette session) du perso connecté : par la lib, déduits du calcul.
+assert(moi.key == GMOI and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
+-- Sacs (lus à l'instant, par le socle) et banque (dernier passage, dans la base) du perso connecté, déduits du calcul.
+Enum = Enum or {}
 Enum.BagIndex = { Backpack = 0, Bank = -1 }
-local slots = { [0] = { { itemID = 2770, stackCount = 2 } }, [-1] = { { itemID = 2770, stackCount = 3 } } }
+local slots = { [0] = { { itemID = 2770, stackCount = 2, hyperlink = "|Hitem:2770|h" } }, [-1] = {} }
 C_Container = { GetContainerNumSlots = function(b) return #slots[b] end, GetContainerItemInfo = function(b, i) return slots[b][i] end }
-GetBuildInfo = function() return "1.16.1", "64000" end
-libCadre.onEvent(libCadre, "BANKFRAME_OPENED")
+AzerothCommuneDB.chars[GMOI].bank = { Bank = { items = { { id = 2770, count = 3 } } } }
 local cuivre = ns.nouveauProjet({ lines = { { id = 2840, qty = 10 } } })
 local arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true, alts = true })
 local minerai = arbreSeul.caseDe.I2770
 assert(minerai.have[1] == 2 and minerai.have[2] == 3 and minerai.have[3] == 0 and minerai.need == 5, "sacs et banque du perso, pas d'autres persos")
--- HV : ni GameData ni fournisseur, rien à acheter ; la fenêtre dit ce que GameData apporterait.
+-- HV : ni scan du socle ni fournisseur, rien à acheter ; la fenêtre dit comment l'avoir.
 assert(minerai.unpriced and ns.market() == nil, "pas de prix de l'HV")
-assert(ns.texteHV():find("GameData", 1, true) and ns.texteHV():find("Auctionator", 1, true), "HV : ce qui l'apporterait")
-local apport = ns.apportGameData()
-assert(apport and apport:find("rerolls", 1, true) and apport:find("banque", 1, true) and apport:find("HV", 1, true), "ce que GameData apporterait")
--- Avec Auctionator (fournisseur) : ses prix du jour, sans paliers ; l'HV n'est plus dans ce qui manque.
+assert(ns.texteHV() == "HV jamais scanné : ouvre l'hôtel des ventes", "HV : " .. ns.texteHV())
+-- Avec Auctionator (fournisseur) : ses prix du jour, sans paliers.
 time = os.time
 Auctionator = { API = { v1 = { GetAuctionPriceByItemID = function(_, id) return id == 2770 and 30 or nil end,
   GetAuctionAgeByItemID = function() return 0 end } } }
 arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true })
 assert(arbreSeul.caseDe.I2770.cost == 5 * 30 and ns.texteHV() == "prix de l'HV : Auctionator", "prix d'Auctionator")
-assert(not ns.apportGameData():find("HV", 1, true), "fournisseur présent : GameData pour les rerolls et la banque")
 Auctionator = nil
-aucunReleve("sans GameData")
+aucunReleve("catalogue pas encore relevé, fournisseur")
 -- Réserve Classic : ajoutée pour les objets sans recette scannée, jamais par-dessus une recette scannée du même objet.
 HandshakeClassicRecipes = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 } },
   [9002] = { 4255, 1, 1, "Travail du cuir", "Armure verte en cuir", { 4234, 9 } } }
@@ -1080,7 +1060,7 @@ HandshakeClassicRecipes = nil
 local demo = ns.demoOrder("hasard")
 assert(demo.name == "Essai : au hasard" and #demo.lines == 1 and demo.lines[1].id == 2841, "essai : le bronze (son cuivre se fabrique)")
 assert(#ns.demoOrder().lines == 3 and ns.demoOrder("ceinture").lines[1].id == 10721, "essais choisis : le set, les ceintures")
-print("Handshake : sans GameData OK")
+print("Handshake : purge, noms demandés, sacs et banque, fournisseur de l'HV OK")
 
 -- Identité affichée : « Prénom Nom — GUID », plus de royaume (Handshake#29) ; le nom vient du serveur, codes échappés.
 UnitExists, UnitIsPlayer = function() return true end, function() return true end
@@ -1093,9 +1073,9 @@ assert(ns.myIdentity() == "Belegard Marteaudefer — " .. GBEL)
 assert(ns.identity("Carl", nil) == "Carl — GUID inconnu")
 print("Handshake : identité complète OK")
 
--- Royaume, faction et maison de l'HV par la lib, qui les sonde (Handshake#27) : plus d'appel direct dans le code chargé ;
--- le diagnostic /handshake noms est remplacé par les sondes d'identité de la lib.
-local lib27 = LibStub("LibCommune-1.0")
+-- Royaume, faction et maison de l'HV par le socle, qui les sonde (Handshake#27) : plus d'appel direct dans le code chargé ;
+-- le diagnostic /handshake noms est remplacé par les sondes d'identité du socle.
+local lib27 = AzerothCommune
 assert(not ns.myIdentity():find(" — " .. lib27.Royaume() .. " — ", 1, true), "plus de royaume dans l'identité")
 for f in io.open("Handshake/Handshake.toc"):read("*a"):gmatch("([%w_]+%.lua)") do
   local code = io.open("Handshake/" .. f):read("*a")

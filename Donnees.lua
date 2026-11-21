@@ -1,15 +1,14 @@
--- Handshake, la base : les données dont le calcul a besoin (fenêtres, montants, noms d'objets : la lib commune).
+-- Handshake, la base : les données dont le calcul a besoin (fenêtres, montants, noms d'objets : le socle).
 -- Aucune donnée relevée n'est sauvegardée ici (ADR 0001 de l'atelier) : recettes connues, inventaires, métiers, marchands,
--- objets et cours de l'HV sont lus par la lib commune (LibCommune, lib:Lire), avec ou sans GameData. Sans lui, c'est son
--- relevé de repli (le perso connecté, en mémoire, le temps de la session : recettes connues, sacs, banque vue cette
--- session) ; l'HV passe par un fournisseur (Auctionator…) ou attend GameData, les autres persos aussi.
+-- objets et cours de l'HV sont lus par le socle (requis, lib:Lire) ; l'HV passe par son scan ou par un fournisseur
+-- (Auctionator…).
 -- HandshakeDB ne garde que les données propres de Handshake : commandes, contrats, projets, réglages.
 local _, ns = ...
 
-local lib = LibStub("LibCommune-1.0") -- embarquée (OptionalDeps en développement)
--- Ce que Handshake lit : GameData ne relève que les types auxquels un add-on a souscrit (GameData#4).
-if lib.Souscrire then for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do lib:Souscrire(t) end end
--- Recettes connues de tous les persos relevés (sans GameData : le perso connecté) et recettes vues, ou rien.
+local lib = AzerothCommune
+-- Ce que Handshake lit : le socle ne relève que les types auxquels un add-on a souscrit (GameData#4).
+for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do lib:Souscrire(t) end
+-- Recettes connues de tous les persos relevés et recettes vues, ou rien.
 local function recettesConnues()
   return lib:Lire("recettes connues", "tous") or { recettes = {}, persos = {} }
 end
@@ -20,13 +19,13 @@ local function parPerso(t) local d = lib:Lire(t, "tous") return d and d.persos o
 
 ---------------------------------------------------------------------------------------------------
 -- Accès aux données (par la lib)
--- Recettes : celles relevées dans les fenêtres de métier (par la lib commune), complétées par la réserve Classic
+-- Recettes : celles relevées dans les fenêtres de métier (par le socle), complétées par la réserve Classic
 -- (RecettesClassic.lua) pour les objets qu'aucune recette scannée ne fabrique (les métiers que tu n'as pas).
 local classic -- la réserve, mise en forme une fois
 local nomsDemandes = {} -- recettes dont on a déjà demandé les noms d'objets
 function ns.recipes()
   local own = recettesConnues().recettes
-  if not lib:Lire("objets") then -- sans catalogue des objets (GameData), personne d'autre ne demande ces noms au serveur
+  if not lib:Lire("objets") then -- catalogue des objets pas encore relevé : personne d'autre ne demande ces noms au serveur
     for k, r in pairs(own) do
       if not nomsDemandes[k] then
         nomsDemandes[k] = true
@@ -65,13 +64,13 @@ function ns.vendors() return lib:Lire("marchands") or {} end
 -- Mes sacs, lus à l'instant (la fenêtre se recalcule à chaque changement de sac).
 function ns.mesSacs() return lib.Conteneurs(lib.EstSac) end
 
--- Noms d'objets : le catalogue des objets (GameData), sinon ceux arrivés du serveur cette session, en mémoire seulement.
+-- Noms d'objets : le catalogue des objets du socle, sinon ceux arrivés du serveur cette session, en mémoire seulement.
 local nomsDeSession = {}
 function ns.items() return lib:Lire("objets") or nomsDeSession end
 
--- Cours de l'HV (scan de GameData, sinon un fournisseur : Auctionator, TSM, AuctionDB), même forme qu'avant :
--- { items = { [id] = { min, qty, tiers, … } }, scanned (date du scan de GameData), source (le fournisseur) }, ou nil et
--- la raison de la lib.
+-- Cours de l'HV (scan du socle, sinon un fournisseur : Auctionator, TSM, AuctionDB), même forme qu'avant :
+-- { items = { [id] = { min, qty, tiers, … } }, scanned (date du scan du socle), source (le fournisseur) }, ou nil et
+-- la raison du socle.
 function ns.market()
   local d, lot = lib:Lire("cours de l'HV")
   if not d then return nil, lot end
@@ -84,27 +83,16 @@ function ns.market()
   end })
   return { items = items, scanned = h and h.scanned, source = lot and lot.fournisseur }
 end
--- L'état des prix de l'HV, pour la barre d'état : d'où ils viennent, ou ce qui les apporterait.
+-- L'état des prix de l'HV, pour la barre d'état : d'où ils viennent, ou comment les avoir.
 function ns.texteHV(m)
-  local raison
-  if not m then m, raison = ns.market() end
+  if not m then m = ns.market() end
   if m and m.scanned then return "HV du " .. m.scanned end
   if m then return "prix de l'HV : " .. (m.source or "?") end
-  if raison == "pas de GameData ni de fournisseur" then
-    return "pas de prix de l'HV : GameData (scan à l'ouverture de l'HV) ou Auctionator les apporterait"
-  end
   return "HV jamais scanné : ouvre l'hôtel des ventes"
-end
--- Ce que GameData apporterait, quand il n'est pas là (la lib dit « pas de GameData » pour un type qu'elle ne relève pas
--- sans lui) : une ligne pour la fenêtre, nil s'il est là.
-function ns.apportGameData()
-  if select(2, lib:Lire("objets")) ~= "pas de GameData" then return nil end
-  return "Sans GameData : ce perso seul, sa banque vue cette session. GameData ajouterait tes rerolls, ta banque à tout moment"
-    .. (ns.market() and "." or " et les prix de l'HV.")
 end
 
 -- Un perso du joueur est rangé sous son GUID (LibCommune#19) ; son nom « Prénom Nom », celui qu'on chuchote (« ? » si la
--- lib ne le connaît pas : un perso de GameData pas encore reconnecté depuis le passage au GUID) ; son prénom, pour un
+-- socle ne le connaît pas : un perso pas encore reconnecté depuis le passage au socle) ; son prénom, pour un
 -- affichage court.
 function ns.nomPerso(guid)
   local p = lib.Personnage(guid)
@@ -120,7 +108,7 @@ function ns.nomComplet(nom)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Montants, noms d'objets, fenêtres : ceux de la lib commune. Un nom d'objet arrivé du serveur est retenu en mémoire
+-- Montants, noms d'objets, fenêtres : ceux du socle. Un nom d'objet arrivé du serveur est retenu en mémoire
 -- (nomsDeSession), jamais sauvegardé.
 ns.money, ns.moneyShort, ns.moneySigned, ns.newWindow = lib.Argent, lib.ArgentCourt, lib.ArgentSigne, lib.Fenetre
 function ns.rememberItem(id) return lib.RetenirObjet(id, nomsDeSession) end

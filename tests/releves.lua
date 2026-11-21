@@ -1,7 +1,7 @@
 -- Handshake#1 (ADR 0001 de l'atelier) : Handshake ne sauvegarde aucune donnée relevée ; il souscrit à ses types de
--- données et les lit par la lib commune (avec GameData dans le simulateur).
+-- données et les lit par le socle Azeroth Commune.
 test("Handshake souscrit à ses types de données", function()
-    local lib = LibStub("LibCommune-1.0")
+    local lib = AzerothCommune
     for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences", "marchands", "objets", "cours de l'HV" }) do
         assertTrue(lib.souscriptions[t] == true)
     end
@@ -23,13 +23,13 @@ end)
 
 -- LibCommune#19, #35 : mes persos sont rangés sous leur GUID ; la lib rend mon GUID et mon nom, plus d'adresse.
 test("mon perso par son GUID : recettes connues sous mon GUID, mon nom par la lib", function()
-    local lib = LibStub("LibCommune-1.0")
+    local lib = AzerothCommune
     local moi = lib.Personnage()
     assertEquals(UnitGUID("player"), moi.guid)
     assertType("string", moi.nom)
     assertNil(moi.adresse)
     local d = lib:Lire("inventaires", "tous")
-    if not d then SlashCmdList.GAMEDATA("") d = lib:Lire("inventaires", "tous") end -- /gdata : relevé tout de suite
+    if not d then SlashCmdList.AZEROTHCOMMUNE("") d = lib:Lire("inventaires", "tous") end -- /ac : relevé tout de suite
     assertNotNil(d, "inventaires relevés (Handshake y souscrit)")
     local n = 0
     for cle in pairs(d.persos) do n = n + 1; assertTrue(cle:find("^Player%-") ~= nil, "clé " .. cle) end
@@ -48,7 +48,7 @@ test("chargement : contrats signés par GUID seulement, plus de noms de famille 
         assertTrue(tostring(c.client):find("^Player%-") ~= nil, "contrat d'avant le GUID resté : " .. tostring(cle))
     end
     assertNil(HandshakeDB.surnames)
-    local lib = LibStub("LibCommune-1.0")
-    assertNil(lib.Adresse) -- plus d'adresse dans la lib : Handshake était son dernier appelant
+    local lib = AzerothCommune
+    assertNil(lib.Adresse) -- plus d'adresse dans le socle : Handshake était son dernier appelant
     assertEquals(lib.Personnage().nom, lib.Destinataire(lib.Personnage().nom)) -- chuchoté par son nom complet
 end)
