@@ -194,6 +194,11 @@ local function send(kind, lines, extra, target, loop)
   end
   target = target and target:gsub("^%s+", ""):gsub("%s+$", "")
   if not target or target == "" then return print("|cffe64d4dCommandes :|r indique le joueur à qui envoyer.") end
+  local nom = ns.nomComplet(target)
+  if not nom then
+    return print(("|cffe64d4dCommandes :|r « %s » : indique son nom complet « Prénom Nom », le serveur refuse un chuchotement au prénom seul."):format(target))
+  end
+  target = nom
   for _, m in ipairs(msgs) do ns.whisper(m, target) end
   print(("Commandes : %s envoyée à %s (%d message%s)."):format(kind:lower(), target, #msgs, #msgs > 1 and "s" or ""))
 end

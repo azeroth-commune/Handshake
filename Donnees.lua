@@ -103,11 +103,20 @@ function ns.apportGameData()
     .. (ns.market() and "." or " et les prix de l'HV.")
 end
 
--- Un perso du joueur est rangé sous son GUID (LibCommune#19) ; son prénom pour l'affichage (« ? » si la lib ne le connaît
--- pas : un perso de GameData pas encore reconnecté depuis le passage au GUID).
-function ns.prenom(guid)
+-- Un perso du joueur est rangé sous son GUID (LibCommune#19) ; son nom « Prénom Nom », celui qu'on chuchote (« ? » si la
+-- lib ne le connaît pas : un perso de GameData pas encore reconnecté depuis le passage au GUID) ; son prénom, pour un
+-- affichage court.
+function ns.nomPerso(guid)
   local p = lib.Personnage(guid)
-  return p and p.nom and p.nom:match("^%S+") or "?"
+  return p and p.nom or "?"
+end
+function ns.prenom(guid) return (ns.nomPerso(guid):match("^%S+")) end
+
+-- Le nom complet « Prénom Nom » d'un destinataire (un « -Royaume » retiré, lib.Destinataire), nil s'il n'y a qu'un
+-- prénom : le serveur refuse un chuchotement au prénom seul (LibCommune#35). Aucun nom de famille n'est deviné.
+function ns.nomComplet(nom)
+  nom = lib.Destinataire(nom)
+  return type(nom) == "string" and nom:match("^%S+ %S+$") or nil
 end
 
 ---------------------------------------------------------------------------------------------------

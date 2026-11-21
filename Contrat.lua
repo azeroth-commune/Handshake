@@ -405,6 +405,7 @@ end
 function ns.ctFromDemande(order, days)
   local me, name = ns.me(), ns.fullName(order.player or "")
   if not name or name == "" or name == ns.myName() then return nil, "indique l'artisan (le joueur) dans la commande" end
+  if not ns.nomComplet(name) then return nil, ("indique le nom complet « Prénom Nom » de l'artisan (%s seul ne suffit pas)"):format(name) end
   local artisan = ns.knownGUID[name]
   if not artisan then return nil, ("GUID de %s inconnu : cible-le, survole-le ou chuchote-lui d'abord"):format(name) end
   if artisan == me then return nil, "indique l'artisan (le joueur) dans la commande" end

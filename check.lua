@@ -151,18 +151,20 @@ assert(both({ [2841] = "fabriquer" }).caseDe.I2841.made == 30, "décomposé à l
 local res = both({ [2841] = "fabriquer" })
 local hammer, plate = res.caseDe.T1, res.caseDe.T2
 bronze = res.caseDe.I2841
-assert(hammer.who == "Bel" and hammer.whoKnows and plate.who == "Bel" and not plate.whoKnows, "forge : Bel (marteau connu, cuirasse à apprendre)")
-assert(bronze.who == "Alt" and not bronze.whoKnows, "bronze : Alt a le minage")
+-- Les artisans par leur nom complet « Prénom Nom » : c'est lui qui devient le joueur d'une commande, et chuchoter au
+-- prénom seul échoue sur le serveur (LibCommune#35).
+assert(hammer.who == "Bel Dupont" and hammer.whoKnows and plate.who == "Bel Dupont" and not plate.whoKnows, "forge : Bel (marteau connu, cuirasse à apprendre)")
+assert(bronze.who == "Alt Dupont" and not bronze.whoKnows, "bronze : Alt a le minage")
 local forge, mine = res.blocDe.Forge, res.blocDe.Minage
 assert(#res.blocs == 2 and res.blocs[1] == forge and #forge.cases == 2 and #forge.recipes == 2 and forge.level == 100, "un bloc par métier")
-assert(forge.best == "Bel" and mine.best == "Alt", "qui peut faire chaque bloc")
+assert(forge.best == "Bel Dupont" and mine.best == "Alt Dupont", "qui peut faire chaque bloc, par son nom complet")
 -- Un bloc = une commande, par étapes : le minage (étape 1) livre 30 bronzes ; la forge (étape 2) livre le marteau et la
 -- cuirasse, et reçoit le bronze en apport.
 assert(mine.step == 1 and #mine.deliver == 1 and mine.qty[2841] == 30 and not next(mine.inputs), "étape 1 : le minage")
 assert(forge.step == 2 and forge.qty[5541] == 1 and forge.qty[2870] == 1 and forge.inputs[2841], "étape 2 : la forge, bronze fourni")
 -- Le bronze du minage pour le marteau et la cuirasse = UNE livraison Minage -> Forge, par Alt.
 local o = res.livraisons[1]
-assert(#res.livraisons == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt", "une livraison Minage -> Forge")
+assert(#res.livraisons == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt Dupont", "une livraison Minage -> Forge")
 assert(#o.lines == 1 and o.lines[1] == 2841 and o.qty[2841] == 30 and #o.edges == 2, "30 barres de bronze, deux liens regroupés")
 -- Commandes (#6) : « Commander » un bloc ajoute une commande au projet affiché, pas un nouveau projet. Elle livre ce
 -- que le bloc produit ; ses apports = ce qui entre dans le bloc (le bronze) + mes apports dans sa part (la perle).
@@ -180,11 +182,11 @@ do
   local i = ns.projetCommander(p, arbre().blocDe.Forge)
   assert(i == 2 and ns.projetCourant() == p and select(2, ns.numeroProjet()) == nb, "la commande s'ajoute au projet affiché")
   local cf = vue(i)
-  assert(cf.part == "Forge" and cf.player == "Bel" and not cf.vide, "le bloc de la forge, à Bel")
+  assert(cf.part == "Forge" and cf.player == "Bel Dupont" and not cf.vide, "le bloc de la forge, à Bel")
   assert(#cf.lines == 2 and qte(cf, 5541) == 1 and qte(cf, 2870) == 1, "il livre le marteau et la cuirasse")
   assert(nbApports(cf) == 2 and cf.apports[2841] and cf.apports[5500], "apports : le bronze qui entre, ma perle")
   local cm = vue(ns.projetCommander(p, arbre().blocDe.Minage))
-  assert(cm.part == "Minage" and cm.player == "Alt" and #cm.lines == 1 and qte(cm, 2841) == 30 and nbApports(cm) == 0, "le minage livre 30 bronzes")
+  assert(cm.part == "Minage" and cm.player == "Alt Dupont" and #cm.lines == 1 and qte(cm, 2841) == 30 and nbApports(cm) == 0, "le minage livre 30 bronzes")
   assert(ns.projetCommander(p, arbre().blocDe.Forge) == 2, "le même bloc commandé deux fois : la même commande")
   ns.projetArtisan(p, "Cid", 2)
   ns.projetOffre(p, 700, 2)
@@ -230,7 +232,7 @@ end
 do
   local gr = ns.dessinArbre(both({ [2841] = "fabriquer" }))
   local forge = gr.groupOf.Forge
-  assert(forge.label == "Étape 2 · Forge · niv. 100 requis · Bel 164 (1/2)", forge.label)
+  assert(forge.label == "Étape 2 · Forge · niv. 100 requis · Bel Dupont 164 (1/2)", forge.label)
   -- Rectangles : chaque métier dans sa bande, aucune case d'un autre dans son rectangle.
   for _, grp in ipairs(gr.groups) do
     local top, bottom, left, right = math.huge, -math.huge, math.huge, -math.huge
@@ -373,6 +375,11 @@ ns.costCommand("essai")
 print = realPrint
 assert(#popups == 1 and popups[1].who == "Belegard" and popups[1].kind == "commande", "essai : import proposé")
 print("Handshake : essai OK")
+
+-- Protocole 3 (signature par GUID) incompatible avec le 2 : la version de l'add-on change (0.2.0-beta).
+local toc = assert(io.open("Handshake/Handshake.toc")):read("*a")
+assert(toc:find("\n## Version: 0.2.0-beta\n", 1, true), "version 0.2.0-beta dans le TOC")
+print("Handshake : version OK")
 
 -- Morceaux bornés : (1/9999) ignoré, un « 1/n » repart de zéro.
 local t0 = 0
@@ -582,6 +589,26 @@ assert(dres.roots[1].how == "fabriquer" and dres.roots[1].cost == 30 * 200, "par
 local inconnu = ns.nouveauProjet({ player = CARLN, tip = 30000, lines = { { id = 7963, qty = 1 } } })
 local pas, pourquoi = ns.ctFromDemande(ns.projetCommande(inconnu), 3)
 assert(pas == nil and pourquoi:find("GUID de " .. CARLN .. " inconnu", 1, true), "artisan jamais vu : pas de contrat, " .. tostring(pourquoi))
+-- Un projet d'avant le nom complet (« Belegard » seul) : il faut « Prénom Nom », pas un message sur le GUID.
+local prenomSeul = ns.nouveauProjet({ player = "Belegard", tip = 30000, lines = { { id = 7963, qty = 1 } } })
+pas, pourquoi = ns.ctFromDemande(ns.projetCommande(prenomSeul), 3)
+assert(pas == nil and pourquoi:find("nom complet", 1, true) and pourquoi:find("Prénom Nom", 1, true) and not pourquoi:find("GUID", 1, true),
+  "prénom seul : le nom complet est demandé, " .. tostring(pourquoi))
+-- La commande en clair au prénom seul : refusée à l'écran, rien ne part dans le vide.
+do
+  local partis, dit = {}, {}
+  local realWhisper, realPrint = ns.whisper, print
+  ns.whisper = function(msg, cible) partis[#partis + 1] = cible end
+  print = function(t) dit[#dit + 1] = t end
+  ns.sendOrder(ns.projetCommande(prenomSeul))
+  ns.sendNeeds(ns.projetCommande(prenomSeul), ns.projetDemande(prenomSeul))
+  print = realPrint
+  assert(#partis == 0 and #dit == 2 and dit[1]:find("nom complet", 1, true) and dit[1]:find("Belegard", 1, true),
+    "prénom seul : rien chuchoté, " .. tostring(dit[1]))
+  ns.sendOrder(ns.projetCommande(ns.nouveauProjet({ player = "Belegard Marteaudefer-CAMWOWEU4Realm8PvP", lines = { { id = 7963, qty = 1 } } })))
+  ns.whisper = realWhisper
+  assert(#partis == 1 and partis[1] == BELN, "chuchoté au nom complet « Prénom Nom »")
+end
 local v1 = ns.ctFromDemande(ns.projetCommande(demande), 3)
 assert(v1.client == BOB and v1.artisan == BEL and v1.peer.name == BELN and v1.peer.verified, "moi client, l'autre artisan (son GUID appris)")
 assert(#v1.m == 1 and v1.m[1].id == 4234 and v1.m[1].unit == 500 and v1.o[1].unit == 4 * 500 + 30000, "caution sur l'apport + offre")
@@ -970,7 +997,7 @@ GameDataDB.chars = { [ALT] = { nom = "Alt Dupont", recipes = { Forge = { rank = 
 assert(ns.knownRecipes()[ALT].Forge.known[9] and not ns.knownRecipes()[SANS], "recettes connues de GameData, par GUID")
 local alt
 for _, e in ipairs(ns.crafters()) do if e.key == ALT then alt = e end end
-assert(alt and alt.name == "Alt" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData, prénom tiré de sa fiche")
+assert(alt and alt.name == "Alt Dupont" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans GameData, prénom tiré de sa fiche")
 assert(alt.ranks.Couture == 120, "métiers des persos (fiche de GameData), par la lib")
 -- Mes autres persos (option « mes autres persos ») : leurs sacs, par la lib.
 GameDataDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }

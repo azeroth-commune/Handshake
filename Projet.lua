@@ -382,7 +382,7 @@ function ns.crafters()
   local list, me, byKey = {}, UnitGUID("player"), {}
   local function entry(key) -- un perso peut avoir ses recettes relevées sans fiche (ou l'inverse)
     if not byKey[key] then
-      byKey[key] = { key = key, name = ns.prenom(key), ranks = {}, known = {} } -- key : le GUID du perso
+      byKey[key] = { key = key, name = ns.nomPerso(key), ranks = {}, known = {} } -- key : le GUID ; name : « Prénom Nom »
       list[#list + 1] = byKey[key]
     end
     return byKey[key]
@@ -402,7 +402,7 @@ function ns.crafters()
   end
   table.sort(list, function(a, b)
     if (a.key == me) ~= (b.key == me) then return a.key == me end
-    if a.name ~= b.name then return a.name < b.name end -- par prénom (la clé est un GUID)
+    if a.name ~= b.name then return a.name < b.name end -- par nom (la clé est un GUID)
     return a.key < b.key
   end)
   return list
