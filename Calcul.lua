@@ -22,6 +22,20 @@ local function knownRecipes()
   return known
 end
 
+-- Choix entre recettes équivalentes (plusieurs recettes fabriquent l'objet d'une case qu'on décompose), règle fixe (#46) :
+--   1. une recette en boucle est écartée (voir enBoucle) : on achète la case, ou on la décompose avec une autre recette ;
+--   2. la moins chère l'emporte ;
+--   3. à coût égal ou inconnu : la recette connue d'un personnage, puis le plus petit identifiant de recette.
+-- Les recettes d'un objet sont donc essayées dans l'ordre 3 (connues d'abord, puis par identifiant) et une suivante ne
+-- prend la place que si elle est strictement moins chère : le même projet donne le même arbre, quel que soit l'ordre de
+-- la base des recettes (avant, celui de pairs, qui change avec la taille de la base).
+local function avant(a, b)
+  if (a.known or false) ~= (b.known or false) then return a.known or false end
+  local ta, tb = type(a.key), type(b.key)
+  if ta ~= tb then return ta == "number" end -- identifiants numériques (sortID) d'abord, puis les clés texte
+  return a.key < b.key
+end
+
 local function recipesByOutput(all, known)
   local by = {}
   for key, r in pairs(ns.recipes()) do
@@ -30,6 +44,7 @@ local function recipesByOutput(all, known)
       table.insert(by[r.output], { key = key, r = r, known = known[key] })
     end
   end
+  for _, recs in pairs(by) do table.sort(recs, avant) end
   return by
 end
 

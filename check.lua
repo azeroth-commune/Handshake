@@ -116,6 +116,24 @@ arbre = ns.projetArbre(fer, { bags = true, bank = true, unlearned = true }, ns.p
 assert(arbre.caseDe.I2772.apport == 26 and arbre.caseDe.I2772.need == 0, "minerai apporté : la case entière")
 print("Handshake : cases d'un projet, stock partagé OK")
 
+-- Recettes équivalentes (#46) : vrai-argent par le minage (10098) ou par la transmutation (11480), sans prix. Le choix ne
+-- dépend pas de l'ordre de la base des recettes : personne ne les connaît → le plus petit identifiant ; un perso connaît la
+-- transmutation → elle.
+local function vraiArgent(ordre, persos)
+  local r = { [10098] = { name = "Fonte du vrai-argent", output = 6037, profession = "Minage", reagents = { { id = 7911, qty = 1 } } },
+    [11480] = { name = "Transmutation de mithril en vrai-argent", output = 6037, profession = "Alchimie", reagents = { { id = 3860, qty = 1 } } } }
+  local recettes = {}
+  for _, k in ipairs(ordre) do recettes[k] = r[k] end
+  donnees({ hv = {}, recettes = recettes, persos = persos })
+  return ns.projetArbre(ns.nouveauProjet({ lines = { { id = 6037, qty = 2 } } }), TOUT).caseDe.T1.recipeKey
+end
+for _, ordre in ipairs({ { 10098, 11480 }, { 11480, 10098 } }) do
+  assert(vraiArgent(ordre) == 10098, "personne ne connaît : le plus petit identifiant")
+  assert(vraiArgent(ordre, { ["Player-6942-00000A1C"] = { nom = "Al Dupont", recipes = { Alchimie = { rank = 225, known = { [11480] = "easy" } } } } }) == 11480,
+    "la recette connue d'un perso d'abord")
+end
+print("Handshake : recettes équivalentes, choix stable OK")
+
 -- Marteau (10 bronzes) et cuirasse (20 bronzes), bronze = cuivre + étain, ×2 par fonte. Forge : Bel 164 connaît le
 -- marteau, pas la cuirasse ; minage : Alt 90.
 local mk = { [2770] = { tiers = { { price = 10, qty = 999 } } }, [2771] = { tiers = { { price = 10, qty = 999 } } },
