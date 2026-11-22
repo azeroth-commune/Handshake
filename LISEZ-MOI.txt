@@ -21,22 +21,24 @@ INSTALLER (2 minutes)
 - Handshake demande l'addon Azeroth Commune (à installer avec lui) : il relève tes persos (sacs, banque, recettes)
   et les prix de l'HV (son scan à l'ouverture de l'HV, ou Auctionator s'il est installé).
 
-FAIRE UNE DEMANDE
-  /handshake, tape l'objet voulu, « Ajouter », mets le nom de l'artisan dans « Joueur ».
-  Ou Ctrl+clic droit sur un objet n'importe où (sacs, lien du chat, recette…) : il s'ajoute à la commande.
-  Dans l'arbre, Ctrl+clic sur un composant que tu fournis toi-même (il passe en bleu).
+FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
+  Composants est un addon à part (l'arbre de fabrication et tes projets) ; Handshake marche sans lui.
+  S'il est installé : /handshake (ou /composants) ouvre la fenêtre des projets. Tape l'objet voulu, « Ajouter »,
+  ou Ctrl+clic droit sur un objet n'importe où (sacs, lien du chat, recette…) ; mets le nom de l'artisan dans « Joueur ».
+  Dans l'arbre, Ctrl+clic sur un composant que tu fournis toi-même (il passe en bleu) ; « Commander » sur un bloc
+  le commande à part, à l'artisan de ce métier.
   « Offre » : ce que tu proposes de payer (ou laisse vide : l'artisan chiffrera).
   « Préparer la demande », relis-la dans /contrat, puis « Envoyer la proposition ».
 
 COMMANDE À LA MAIN (sans arbre)
-  /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
+  /handshake (sans Composants), /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
   j'apporte ». Tape un objet dans la recherche (ou glisse un objet de tes sacs sur la liste),
   mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
-  Une demande reçue se répond aussi en liste : « Répondre en liste » dans /contrat.
+  Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre dans l'arbre » avec Composants).
 
 COMMANDES
   /contrat            les contrats (lire, signer, refuser, contre-proposer)
-  /handshake          la fenêtre des commandes (arbre acheter ou fabriquer, besoins)
+  /handshake          avec Composants : la fenêtre des projets et leurs commandes ; sans : la commande à la main
   /handshake liste    la commande à la main
 
 EN CAS DE PROBLÈME

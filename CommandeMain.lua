@@ -3,7 +3,7 @@
 -- Elle part par le chemin d'une commande de projet : brouillon de contrat (ns.ctFromDemande), relu et envoyé dans
 -- Contrats, ou texte lisible (ns.sendOrder). Côté artisan, une demande reçue se répond dans la même liste : ce qu'il veut
 -- en lecture seule, apports et prix modifiables, contre-proposition (ns.ctReplyFromOrder).
--- Ctrl+clic droit n'est jamais pris ici : il appartient aux projets.
+-- Ctrl+clic droit n'est jamais pris ici : il appartient à Composants.
 local _, ns = ...
 
 ---------------------------------------------------------------------------------------------------
@@ -99,7 +99,7 @@ end
 -- Barre de recherche avec suggestions (la recherche d'objets du socle, AzerothCommune#49) : flèches haut/bas, Entrée ou
 -- Tab pour choisir, ou clic ; un objet déposé sur le champ l'ajoute aussitôt. onPick(id, quantité).
 -- Maj+clic n'est pas pris : dans le jeu, il sépare une pile ou colle le lien dans la discussion.
--- Partagée par cette fenêtre et celle des projets. w = largeur du champ (280 par défaut).
+-- (Composants en a sa copie pour sa fenêtre des projets.) w = largeur du champ (280 par défaut).
 function ns.rechercheObjets(parent, qty, onPick, w)
   w = w or 280
   local name = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
