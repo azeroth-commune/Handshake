@@ -83,9 +83,18 @@ local function build()
   panel.fill:SetPoint("BOTTOMLEFT", 14, 12)
   panel.force = button("Accepter quand même", 160)
   panel.force:SetPoint("BOTTOMRIGHT", -14, 12)
-  panel.switch = button(">", 24)
-  panel.switch:SetPoint("TOPRIGHT", -34, -8)
-  panel.switch:SetScript("OnClick", function() index = index % #contracts + 1; ns.refreshTradePanel() end)
+  -- Plusieurs contrats avec lui : un menu déroulant pour choisir celui que l'échange doit respecter (skill ui-addon :
+  -- plus de > qui les fait défiler). Tous sont avec la même personne : chacun se reconnaît à son premier objet.
+  panel.switch = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
+  panel.switch:SetWidth(200)
+  panel.switch:SetPoint("TOPRIGHT", -34, -6)
+  panel.switch:SetupMenu(function(_, root)
+    for i, c in ipairs(contracts) do
+      local l = c.o[1] or c.m[1]
+      root:CreateRadio(("%s%s · v%s"):format(l and ns.itemLabel(l.id) or "?", #c.o + #c.m > 1 and " …" or "", c.v),
+        function(k) return index == k end, function(k) index = k; ns.refreshTradePanel() end, i)
+    end
+  end)
 end
 
 local function lineText(c, me, s, r)
@@ -122,7 +131,7 @@ function ns.refreshTradePanel()
   for id in pairs(s.give.items) do last.counts[id] = GetItemCount(id) end
   for id in pairs(s.get.items) do last.counts[id] = GetItemCount(id) end
   panel.switch:SetShown(#contracts > 1)
-  panel.title:SetText(#contracts > 1 and ("Contrat %d/%d"):format(index, #contracts) or "Contrat")
+  if #contracts > 1 then panel.switch:GenerateMenu() end -- la liste a pu changer depuis la dernière ouverture
   panel.lines:SetText(lineText(c, me, s, r))
   local notes = {}
   for _, p in ipairs(r.problems) do notes[#notes + 1] = NO .. " |cffe64d4d" .. p .. (p == "il manque de son côté" and (" : " .. money(r.short)) or "") .. "|r" end

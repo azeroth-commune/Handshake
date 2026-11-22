@@ -31,6 +31,24 @@ local function bouton(texte) return enfant(function(c) return c.GetText and c:Ge
 local function affiche(nom) return enfant(function(c) return c:GetObjectType() == "EditBox" and c:GetText() == nom end) ~= nil end
 -- Le projet affiché dans la fenêtre de Composants.
 local function affichePas() return ComposantsDB.projets[ComposantsDB.courant] end
+-- Les menus déroulants (contrats, projets) : chaque entrée choisie tour à tour jusqu'à ce que ok() soit vrai, ou celle
+-- dont le texte est « entree ».
+local function deroulant(f, ok)
+    for _, c in ipairs({ f:GetChildren() }) do
+        if c.GenerateMenu and c.GetMenuDescription and c:IsVisible() and ok(c) then return c end
+        local r = deroulant(c, ok)
+        if r then return r end
+    end
+end
+local function parcourir(dd, jusque)
+    dd:GenerateMenu()
+    local entrees = {}
+    for _, e in dd:GetMenuDescription():EnumerateElementDescriptions() do entrees[#entrees + 1] = e end
+    for _, e in ipairs(entrees) do
+        dd:Pick(e, MenuInputContext.MouseButton, "LeftButton")
+        if jusque(MenuUtil.GetElementText(e)) then return true end
+    end
+end
 
 test("avec Composants : /handshake ouvre la fenêtre des projets, sa barre des commandes", function()
     SlashCmdList.COMPOSANTS("demo ceinture")
@@ -211,7 +229,8 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
         assertTrue(#quantites() > 0, "une case par objet du projet")
         for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
         HandshakeDB.commandes[p.id].reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
-        bouton("<"):Click(); bouton(">"):Click() -- redessiné
+        parcourir(deroulant(ComposantsFrame, function(c) return c:GetText() == "Projets" end),
+            function() return affichePas() == p end) -- le même projet choisi : redessiné
         assertEquals(p, affichePas())
         assertTrue(#quantites() > 0, "toujours affichée")
         for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
@@ -263,10 +282,8 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
     HandshakeDB.contracts[cle] = c
     local ok, err = pcall(function()
         SlashCmdList.HANDSHAKECONTRAT()
-        for _ = 1, 30 do
-            if boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre") then break end
-            boutonDe(HandshakeContratsFrame, ">"):Click()
-        end
+        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
+            function() return boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre") ~= nil end)
         boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre"):Click()
         HandshakeContratsFrame:Hide()
         assertTrue(ComposantsFrame:IsShown(), "la Réponse s'ouvre dans la fenêtre de Composants")

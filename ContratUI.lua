@@ -13,6 +13,9 @@ local firstShown = {} -- empreinte -> moment où cette version a été affichée
 local STATUS = { brouillon = "|cff999999BROUILLON (pas envoyé)|r", envoye = "|cffe6994dEN ATTENTE DE SA RÉPONSE|r",
   a_signer = "|cffa98fffÀ SIGNER PAR TOI|r", signe = "|cff59cc73SIGNÉ|r", clos = "|cff59cc73CLOS|r", echu = "|cffe64d4dÉCHU|r",
   refuse = "|cffe64d4dREFUSÉ|r", retire = "|cff999999RETIRÉ|r" }
+-- Dans le menu des contrats : l'état en un mot.
+local COURT = { brouillon = "brouillon", envoye = "en attente", a_signer = "à signer", signe = "signé", clos = "clos",
+  echu = "échu", refuse = "refusé", retire = "retiré" }
 local ORDER = { a_signer = 1, brouillon = 2, envoye = 3, signe = 4, echu = 5, clos = 6, refuse = 7, retire = 8 }
 
 local money = function(c) return ns.moneyShort(c) end
@@ -182,7 +185,8 @@ local function refresh()
   list = sorted()
   pos = math.min(math.max(1, pos), math.max(1, #list))
   local c, me = list[pos], ns.me()
-  frame.count:SetText(#list > 0 and ("%d/%d"):format(pos, #list) or "")
+  frame.choix:SetShown(#list > 0)
+  frame.choix:GenerateMenu() -- la liste et le contrat affiché ont pu changer
   local unsaved = false
   for _, x in ipairs(list) do if x.unsaved then unsaved = true end end
   frame.save:SetShown(unsaved)
@@ -261,12 +265,17 @@ local function build()
     b:SetScript("OnClick", function() local c = list[pos]; if c then onClick(c) end; refresh() end)
     return b
   end
-  local prev = button("<", 24, function() pos = pos - 1 end)
-  prev:SetPoint("TOPLEFT", 120, -10)
-  local nxt = button(">", 24, function() pos = pos + 1 end)
-  nxt:SetPoint("LEFT", prev, "RIGHT", 4, 0)
-  frame.count = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  frame.count:SetPoint("LEFT", nxt, "RIGHT", 6, 0)
+  -- Le contrat affiché : un menu déroulant de tous les contrats, avec qui et dans quel état (skill ui-addon : pas de < >).
+  frame.choix = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
+  frame.choix:SetWidth(260)
+  frame.choix:SetPoint("TOPLEFT", 120, -8)
+  frame.choix:SetupMenu(function(_, root)
+    for i, c in ipairs(list) do
+      local s = ns.ctStatus(c)
+      root:CreateRadio(("%s · v%s · %s"):format(c.peer and c.peer.name or "?", c.v, COURT[s] or s),
+        function(k) return pos == k end, function(k) pos = k; refresh() end, i)
+    end
+  end)
 
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 14, -40)
