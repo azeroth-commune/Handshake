@@ -1,4 +1,4 @@
--- Handshake, MODE DEBUG — NON PUBLIÉ (exclu du zip par tools/package_handshake.py). /handshake debug
+-- Handshake, MODE DEBUG — NON PUBLIÉ (exclu du zip par tools/package.py). /handshake debug
 -- Pour tester seul les deux côtés d'une demande ou d'un contrat :
 --   * bac à sable : rien ne part sur le réseau, tout ce que Handshake enverrait (messages d'addon, chuchotements)
 --     s'écrit dans le journal, copiable (Ctrl+A, Ctrl+C) ;
@@ -61,6 +61,9 @@ ns.debugSend = function(kind, target, text)
   local from = ns.myName()
   local delivered = (dbg.auto or not dbg.on) and deliver(kind, from, to, text)
   table.insert(dbg.log, ("[%s] %s -> %s%s : %s"):format(kind, from, tostring(target), delivered and " (livré)" or "", text))
+  if not delivered and to ~= testerName() then -- un vrai joueur n'aura rien : le dire, pas seulement le journal
+    print(("|cffe64d4dHandshake debug :|r bac à sable actif, rien n'est parti vers %s (/handshake debug pour le couper)."):format(tostring(target)))
+  end
   while #dbg.log > 60 do table.remove(dbg.log, 1) end
   C_Timer.After(0, refreshAll)
   return true
@@ -73,7 +76,10 @@ local function setSandbox(on)
 end
 local boot = CreateFrame("Frame")
 boot:RegisterEvent("PLAYER_LOGIN")
-boot:SetScript("OnEvent", function() dbg.on = HandshakeDB.debug and HandshakeDB.debug.on or false end)
+boot:SetScript("OnEvent", function()
+  dbg.on = HandshakeDB.debug and HandshakeDB.debug.on or false
+  if dbg.on then print("|cffe64d4dHandshake debug :|r bac à sable actif : rien ne part vers les autres joueurs (/handshake debug pour le couper).") end
+end)
 
 -- « 3858x20 7963x1 5.5po 30pa 12pc » -> { items = {[id]=qté}, money = cuivre }
 local function parseSide(s)
