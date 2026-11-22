@@ -1052,6 +1052,15 @@ do
 end
 print("Handshake : API publique OK")
 
+-- Avec Composants : /handshake <objet> ou /handshake demo … lui sont transmis (l'arbre est chez lui).
+do
+  local avant, recu = SlashCmdList.COMPOSANTS, nil
+  SlashCmdList.COMPOSANTS = function(a) recu = a end
+  SlashCmdList.HANDSHAKE("demo ceinture")
+  SlashCmdList.COMPOSANTS = avant
+  assert(recu == "demo ceinture", "avec Composants, /handshake <texte> : transmis à /composants")
+end
+
 -- Sans Composants (Handshake seul) : la commande à la main sert, rien n'échoue. /handshake ouvre la commande à la main,
 -- une liste reçue s'importe en commande à la main, les commandes d'un projet ne sont jamais demandées.
 do
@@ -1062,10 +1071,16 @@ do
   SlashCmdList.HANDSHAKE("")
   assert(ouverte == true, "/handshake : la commande à la main")
   ouverte = nil
+  SlashCmdList.HANDSHAKE("demo ceinture")
+  assert(ouverte == true, "sans Composants, /handshake <texte> : la commande à la main")
+  ouverte = nil
   ns.importText("Commande : 2x" .. link(7963, "Claymore en mithril") .. " · j'apporte 4x" .. link(4234, "Cuir lourd") .. " · offre 3 po", "Bob")
   local m = ns.commandeMain()
   assert(ouverte and #m.lines == 1 and m.lines[1].id == 7963 and m.lines[1].qty == 2 and m.apporte[1].id == 4234
     and m.player == "Bob" and m.tip == 30000, "importée en commande à la main")
+  -- Une commande à la main en cours (pas envoyée) n'est jamais écrasée par un import : refusé, elle reste.
+  ns.importText("Commande : 1x" .. link(3858, "Minerai de mithril"), "Lya")
+  assert(ns.commandeMain() == m and #m.lines == 1 and m.lines[1].id == 7963 and m.player == "Bob", "import refusé : la commande en cours reste")
   ns.openCommandeMain, Composants = avant, C0
   HandshakeDB.main = nil
 end

@@ -415,6 +415,11 @@ function ns.importText(text, player)
   if #lines == 0 then return print("|cffe64d4dCommandes :|r aucun objet reconnu dans ce texte.") end
   local who = player and player ~= "" and player or nil
   if not Composants then
+    local cur = ns.commandeMain()
+    if (#cur.lines > 0 or #cur.apporte > 0) and not ns.commandeEnvoyee(cur) then
+      print("|cffe64d4dCommandes :|r une commande à la main est en cours : envoie-la ou fais « Nouvelle », puis importe de nouveau.")
+      return ns.openCommandeMain()
+    end
     local m = ns.mainNouvelle()
     m.lines, m.apporte, m.player, m.tip = lines, brought, who, tip
     return ns.openCommandeMain()
@@ -558,6 +563,8 @@ SlashCmdList.HANDSHAKE = function(args)
   args = args or ""
   if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end
   if args:match("^%s*essai") then return ns.sendOrder(ns.commandeMain(), true) end
+  -- /handshake <objet> [qté] [tout], /handshake demo … : l'arbre est à Composants, la commande lui revient.
+  if args:match("%S") and Composants and SlashCmdList.COMPOSANTS then return SlashCmdList.COMPOSANTS(args) end
   ns.ouvrir()
 end
 

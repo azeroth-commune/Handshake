@@ -29,7 +29,7 @@ end)
 
 
 -- LibCommune#19, #35 : mes persos sont rangés sous leur GUID ; la lib rend mon GUID et mon nom, plus d'adresse.
--- (Les inventaires par GUID sont lus par Composants depuis Handshake#39 : testés avec lui.)
+-- (Les inventaires par GUID sont lus par Composants depuis Handshake#39 : testés dans Composants/tests/projet.lua.)
 test("mon perso par son GUID, mon nom par la lib", function()
     local moi = AzerothCommune.Personnage()
     assertEquals(UnitGUID("player"), moi.guid)

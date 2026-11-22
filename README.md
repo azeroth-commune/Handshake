@@ -28,8 +28,8 @@ H.Commande(p, i)        -- l'une d'elles
 H.Commander(p, bloc)    -- « Commander » un bloc (Composants.Arbre(p).blocDe[métier]) : rend le rang de sa commande
 H.Artisan(p, nom, i)    -- l'artisan de la commande i (« Prénom Nom »)
 H.Offre(p, cuivre, i)   -- son offre (dans une Réponse, mon prix)
-H.Preparer(p, i)        -- « Préparer la demande » (ou « Contre-proposer » dans une Réponse) : le brouillon s'ouvre dans Contrats
-H.Agir(p, i)            -- « Nouvelle version » (brouillon ouvert dans Contrats, rend nil) ou « Commander de nouveau » (rend le rang)
+H.Preparer(p, i)        -- « Préparer la demande » (ou « Contre-proposer » dans une Réponse) : le contrat préparé s'ouvre dans Contrats
+H.Agir(p, i)            -- « Nouvelle version » (contrat préparé ouvert dans Contrats, rend nil) ou « Commander de nouveau » (rend le rang)
 H.EnClair(p, i)         -- la demande en texte lisible, chuchotée à l'artisan
 H.Importer()            -- importer une liste reçue
 H.Apports(p)            -- { [itemID] = true } : les cases que j'apporte dans les commandes du projet, ou nil

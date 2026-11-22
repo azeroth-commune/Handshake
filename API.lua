@@ -14,7 +14,7 @@ Handshake = {
   Commander = function(p, bloc) return ns.projetCommander(p, bloc) end, -- bloc = Composants.Arbre(p).blocDe[métier] ; rend son rang
   Artisan = function(p, nom, i) ns.projetArtisan(p, nom, i) end,
   Offre = function(p, cuivre, i) return ns.projetOffre(p, cuivre, i) end,
-  -- « Préparer la demande » : le brouillon de contrat de la commande i (ou, dans une Réponse, la contre-proposition), ouvert
+  -- « Préparer la demande » : le contrat préparé de la commande i (ou, dans une Réponse, la contre-proposition), ouvert
   -- dans Contrats ; déjà envoyée, son contrat. Rend le contrat, ou nil (la raison est dite dans le chat).
   Preparer = function(p, i)
     local c = ns.projetCommande(p, i)
@@ -25,7 +25,7 @@ Handshake = {
     return ct
   end,
   -- À côté d'une commande partie : « Commander de nouveau » (refusée, retirée, échue : rend le rang de la nouvelle) ou
-  -- « Nouvelle version » (sa part du projet a changé : le brouillon s'ouvre dans Contrats ; rend nil).
+  -- « Nouvelle version » (sa part du projet a changé : le contrat préparé s'ouvre dans Contrats ; rend nil).
   Agir = function(p, i)
     if ns.projetCommande(p, i).recommander then return ns.projetRecommander(p, i) end
     local n, err = ns.projetNouvelleVersion(p, i)
