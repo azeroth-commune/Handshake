@@ -1,7 +1,7 @@
 -- Handshake, le panneau d'échange : pendant un échange avec quelqu'un avec qui tu as un contrat signé,
 -- un panneau accroché à la fenêtre d'échange dit si ce qui est posé des deux côtés est conforme à TA copie du contrat.
 -- Cases 1 à 6 seulement, objets reconnus par leur ID, or au cuivre près, dans les deux sens (SECURITE.md, n° 28-38).
--- « Remplir ma part » pose tes objets (piles coupées au compte exact) et l'or dû ; c'est toi qui cliques « Accepter ».
+-- « Remplir ma part » pose tes objets (au compte exact : une pile coupée passe par un emplacement libre) et l'or dû ; c'est toi qui cliques « Accepter ».
 -- Non conforme : « Accepter » est grisé ; « Accepter quand même » demande une confirmation qui chiffre la perte.
 -- Un échange terminé n'est inscrit que si ton or et tes sacs ont bougé comme prévu ; sinon « à vérifier ».
 local _, ns = ...
@@ -160,46 +160,104 @@ local function forceClick(self)
 end
 
 -- Remplir ma part : mes objets restants (jamais liés ni verrouillés, cases 1-6 libres), puis l'or dû.
+-- Une case d'échange désigne un emplacement de sac, pas une quantité : une pile coupée sur le curseur puis posée part
+-- ENTIÈRE. Le compte exact se fait avec des piles entières ; s'il faut couper, la part coupée est d'abord déposée dans un
+-- emplacement libre du sac, puis posée au second passage (0,8 s plus tard). Jamais plus que dû : au pire, il en manque
+-- et le chat le dit.
+local setTradeMoney = (C_TradeInfo and C_TradeInfo.SetTradeMoney) or SetTradeMoney -- Forever : seulement C_TradeInfo
 local function setMoney(c)
   local s = read()
   local r = ns.ctEvaluate(c, ns.me(), s, GetServerTime())
   local owe = math.max(0, math.floor((c.net or 0) + r.valueIn - (r.valueOut - s.give.money)))
   if owe > API.GetMoney() then return print("|cffe64d4dContrats :|r pas assez d'or pour " .. money(owe) .. ".") end
-  if SetTradeMoney and owe ~= s.give.money then SetTradeMoney(owe) end
+  if owe == s.give.money then return end
+  if not setTradeMoney then return print("|cffe64d4dContrats :|r pose l'or à la main : " .. money(owe) .. ".") end
+  setTradeMoney(owe)
 end
 
-local function fill()
-  local c, me = current(), ns.me()
-  if not c then return end
-  local outList = me == c.artisan and c.o or c.m
-  local s = read()
-  local used = {}
-  for i = 1, 6 do if API.GetTradePlayerItemInfo(i) then used[i] = true end end
-  local function freeSlot()
-    for i = 1, 6 do if not used[i] then used[i] = true return i end end
+-- Les piles à poser pour en donner left : des piles entières, les plus grosses d'abord, sans dépasser ; s'il en manque
+-- encore, la plus petite pile restante assez grosse pour être coupée (nil s'il n'y en a pas). Renvoie aussi ce qui manque.
+function ns.pilesAPoser(stacks, left)
+  table.sort(stacks, function(x, y) return x.count > y.count end)
+  local whole, cut = {}, nil
+  for _, st in ipairs(stacks) do
+    if st.count <= left then whole[#whole + 1], st.taken, left = st, true, left - st.count end
   end
-  for _, l in ipairs(outList) do
-    local left = l.qty - ((c.gave or {})[l.id] or 0) - (s.give.items[l.id] or 0)
-    for bag = 0, NUM_BAG_SLOTS or 4 do
+  if left > 0 then
+    for _, st in ipairs(stacks) do if not st.taken and st.count > left then cut = st end end
+  end
+  return whole, cut, left
+end
+
+local function freeBagSlot(taken) -- un emplacement libre d'un sac ordinaire (pas un carquois, un sac de métier…)
+  for bag = 0, NUM_BAG_SLOTS or 4 do
+    local free, kind = C_Container.GetContainerNumFreeSlots(bag)
+    if free and free > 0 and kind == 0 then
       for slot = 1, C_Container.GetContainerNumSlots(bag) do
-        if left <= 0 then break end
-        local info = C_Container.GetContainerItemInfo(bag, slot)
-        if info and info.itemID == l.id and not info.isBound and not info.isLocked then
-          local ts = freeSlot()
-          if not ts then
-            print("Contrats : les 6 cases sont prises, le reste au prochain échange.")
-            return C_Timer.After(0.6, function() setMoney(c) end)
-          end
-          local n = math.min(left, info.stackCount)
-          if n < info.stackCount then C_Container.SplitContainerItem(bag, slot, n) else C_Container.PickupContainerItem(bag, slot) end
-          ClickTradeButton(ts)
-          if CursorHasItem and CursorHasItem() then ClearCursor() end
-          left = left - n
+        if not C_Container.GetContainerItemInfo(bag, slot) and not taken[bag * 100 + slot] then
+          taken[bag * 100 + slot] = true
+          return bag, slot
         end
       end
     end
   end
+end
+
+-- st = { placed = {[id]=qté posée}, used = {[case]=true} }, gardé d'un passage à l'autre : l'échange affiché peut
+-- avoir un temps de retard sur ce qu'on vient de poser.
+local function fill(c, st, canCut)
+  local outList = ns.me() == c.artisan and c.o or c.m
+  local taken, cutting = {}, false
+  local function freeSlot()
+    for i = 1, 6 do if not st.used[i] then st.used[i] = true return i end end
+  end
+  for _, l in ipairs(outList) do
+    local left = l.qty - ((c.gave or {})[l.id] or 0) - (st.placed[l.id] or 0)
+    if left > 0 then
+      local stacks = {}
+      for bag = 0, NUM_BAG_SLOTS or 4 do
+        for slot = 1, C_Container.GetContainerNumSlots(bag) do
+          local info = C_Container.GetContainerItemInfo(bag, slot)
+          if info and info.itemID == l.id and not info.isBound and not info.isLocked then
+            stacks[#stacks + 1] = { bag = bag, slot = slot, count = info.stackCount }
+          end
+        end
+      end
+      local whole, cut, rest = ns.pilesAPoser(stacks, left)
+      for _, p in ipairs(whole) do
+        local ts = freeSlot()
+        if not ts then
+          print("Contrats : les 6 cases sont prises, le reste au prochain échange.")
+          return C_Timer.After(0.6, function() setMoney(c) end)
+        end
+        C_Container.PickupContainerItem(p.bag, p.slot)
+        ClickTradeButton(ts)
+        if CursorHasItem and CursorHasItem() then ClearCursor() end
+        st.placed[l.id] = (st.placed[l.id] or 0) + p.count
+      end
+      local bag, slot = nil, nil
+      if cut and canCut then bag, slot = freeBagSlot(taken) end
+      if bag then
+        C_Container.SplitContainerItem(cut.bag, cut.slot, rest)
+        C_Container.PickupContainerItem(bag, slot)
+        cutting = true
+      elseif rest > 0 then
+        print(("Contrats : pose encore %d %s à la main%s."):format(rest, ns.itemLabel(l.id),
+          not cut and " (pas assez dans tes sacs)" or canCut and " (aucun emplacement libre pour couper la pile)" or ""))
+      end
+    end
+  end
+  if cutting then return C_Timer.After(0.8, function() fill(c, st, false) end) end
   C_Timer.After(0.6, function() setMoney(c) end)
+end
+
+local function onFill()
+  local c = current()
+  if not c then return end
+  local st = { placed = {}, used = {} }
+  for id, q in pairs(read().give.items) do st.placed[id] = q end
+  for i = 1, 6 do if API.GetTradePlayerItemInfo(i) then st.used[i] = true end end
+  fill(c, st, true)
 end
 
 -- Fin d'échange : inscrit seulement si l'or et les sacs ont bougé comme prévu (n° 37), sinon « à vérifier ».
@@ -230,7 +288,7 @@ f:SetScript("OnEvent", function(_, event, a1, a2)
   if event == "TRADE_SHOW" then
     contracts, index, override, last = ns.ctActiveWith(ns.unitName(API.UnitName("NPC")), API.UnitGUID("NPC")), 1, nil, nil
     if #contracts == 0 then return end
-    if not panel then build(); panel.fill:SetScript("OnClick", fill); panel.force:SetScript("OnClick", forceClick) end
+    if not panel then build(); panel.fill:SetScript("OnClick", onFill); panel.force:SetScript("OnClick", forceClick) end
     panel:ClearAllPoints()
     panel:SetPoint("TOPLEFT", TradeFrame or UIParent, "TOPRIGHT", 4, 0)
     panel:Show()
@@ -256,7 +314,7 @@ function ns.tradeDebug(snap)
   fake = snap
   contracts, index, override, last = ns.ctActiveWith(snap.partner, snap.guid), 1, nil, nil
   if #contracts == 0 then print("Handshake debug : aucun contrat signé avec " .. tostring(snap.partner) .. ".") return end
-  if not panel then build(); panel.fill:SetScript("OnClick", fill); panel.force:SetScript("OnClick", forceClick) end
+  if not panel then build(); panel.fill:SetScript("OnClick", onFill); panel.force:SetScript("OnClick", forceClick) end
   panel:ClearAllPoints()
   panel:SetPoint("CENTER", UIParent, "CENTER", 300, 0)
   panel:Show()

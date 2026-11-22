@@ -1052,6 +1052,27 @@ do
 end
 print("Handshake : API publique OK")
 
+-- Remplir ma part : jamais plus que dû ; une pile trop grosse est coupée (une case d'échange prend la pile entière).
+do
+  local function piles(counts, left)
+    local st = {}
+    for i, n in ipairs(counts) do st[i] = { count = n } end
+    local whole, cut, rest = ns.pilesAPoser(st, left)
+    local w = {}
+    for _, p in ipairs(whole) do w[#w + 1] = p.count end
+    return table.concat(w, ","), cut and cut.count, rest
+  end
+  local w, cut, rest = piles({ 3 }, 2)
+  assert(w == "" and cut == 3 and rest == 2, "une pile de 3 pour 2 : coupée, pas posée entière")
+  w, cut, rest = piles({ 1, 2, 5 }, 3)
+  assert(w == "2,1" and not cut and rest == 0, "piles entières au compte exact : " .. w)
+  w, cut, rest = piles({ 3, 2 }, 4)
+  assert(w == "3" and cut == 2 and rest == 1, "3 posée, la plus petite pile assez grosse est coupée")
+  w, cut, rest = piles({ 1 }, 3)
+  assert(w == "1" and not cut and rest == 2, "pas assez dans les sacs : ce qui manque")
+end
+print("Handshake : remplir ma part OK")
+
 -- Avec Composants : /handshake <objet> ou /handshake demo … lui sont transmis (l'arbre est chez lui).
 do
   local avant, recu = SlashCmdList.COMPOSANTS, nil
