@@ -380,7 +380,7 @@ function ns.prixAchatLigne(id, qty)
 end
 
 local function demandeTerms(order, keep)
-  local res = not order.apporte and ns.projetDemande(order, order.apports) or nil
+  local res = not order.apporte and ns.arbreDemande(order, order.apports) or nil
   local market = ns.market()
   local items, vendors = market and market.items, lib:PrixMarchands()
   local m, unit = {}, {}

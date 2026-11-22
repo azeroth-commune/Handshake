@@ -1,7 +1,9 @@
--- Vérification hors jeu (non chargée par le TOC) : luajit Handshake/check.lua
--- Juste assez de l'API WoW pour le calcul et le texte. Le socle Azeroth Commune est chargé avant, comme dans le jeu : ses
--- SavedVariables (AzerothCommuneDB, AzerothCommuneItems, AzerothCommuneMarket) servent de données, lues par ses vrais
--- accesseurs. Rien de relevé n'est écrit dans HandshakeDB (ADR 0001 de l'atelier).
+-- Vérification hors jeu (non chargée par la TOC) : luajit Handshake/check.lua, depuis le dossier des add-ons.
+-- Juste assez de l'API WoW pour les commandes, les contrats et le texte. Le socle Azeroth Commune est chargé avant, comme
+-- dans le jeu : ses SavedVariables (AzerothCommuneDB, AzerothCommuneItems, AzerothCommuneMarket) servent de données, lues
+-- par ses vrais accesseurs. Composants (dossier voisin) est chargé aussi, comme en jeu quand les deux sont là : les
+-- projets, leur arbre et leurs blocs viennent de son API publique ; « sans Composants » est vérifié plus bas en le
+-- retirant. Rien de relevé n'est écrit dans HandshakeDB (ADR 0002 de l'atelier).
 local noop = function() end
 local stubMT = { __index = function() return noop end }
 CreateFrame = function() return setmetatable({}, stubMT) end
@@ -10,6 +12,7 @@ C_Timer = { After = noop, NewTicker = noop }
 C_Item = { GetItemInfo = noop, GetItemIconByID = noop }
 date, time = os.date, os.time
 GetTime = function() return 0 end
+geterrorhandler = function() return function(e) error(e, 0) end end
 UnitFactionGroup = function() return "Alliance" end
 -- Un perso est rangé sous son GUID ; son numéro de serveur est le royaume du socle (LibCommune#35).
 UnitGUID = function(u) if u == "player" then return "Player-6942-0000000E" end end
@@ -28,14 +31,18 @@ local acns = {}
 for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+)%.lua") do
   if f ~= "VendorData" and f ~= "RecettesClassic" and f ~= "CatalogueObjets" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
 end
-local ns = {}
-for _, f in ipairs({ "Donnees", "Calcul", "Projet", "Commande", "CommandeMain", "Fenetre", "Besoins", "Contrat", "ContratUI", "Echange", "Debug" }) do
-  assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns)
-end
-assert(ns.findItem and ns.itemLabel and ns.newWindow, "base chargée")
--- Un projet et sa commande « tout le projet » (son artisan, son offre) : le projet ne connaît pas ses commandes.
+-- Handshake d'abord, puis Composants (il déclare Handshake en OptionalDeps), puis l'entrée en jeu (PLAYER_LOGIN) : Handshake
+-- se branche sur Composants.
+local ns, cns = {}, {}
+local HSTOC = io.open("Handshake/Handshake.toc"):read("*a")
+for f in HSTOC:gmatch("([%w_]+)%.lua") do assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns) end
+for f in io.open("Composants/Composants.toc"):read("*a"):gmatch("([%w_]+)%.lua") do assert(loadfile("Composants/" .. f .. ".lua"))("Composants", cns) end
+ns.brancherComposants()
+local C = Composants
+assert(ns.findItem and ns.itemLabel and ns.newWindow and C and Handshake, "base chargée, les deux globaux posés")
+-- Un projet de Composants et sa commande « tout le projet » (son artisan, son offre) : le projet ne connaît pas ses commandes.
 local function projetPour(player, tip, lines)
-  local p = ns.nouveauProjet({ lines = lines })
+  local p = C.NouveauProjet({ lines = lines })
   ns.projetArtisan(p, player)
   ns.projetOffre(p, tip)
   return p
@@ -44,53 +51,9 @@ local commune = AzerothCommune
 assert(ns.newWindow == commune.Fenetre and ns.money == commune.Argent and ns.moneyShort == commune.ArgentCourt
   and ns.moneySigned == commune.ArgentSigne, "fenêtres et montants : ceux du socle, plus de copie")
 assert(not io.open("Handshake/Donnees.lua"):read("*a"):find("CreateFrame(\"Frame\", name", 1, true), "plus de copie de la fenêtre")
-
--- Acheter ou fabriquer : 20 barres de fer, barre à l'HV plus chère que son minerai fondu.
-
-local market = {
-  [3575] = { min = 300, qty = 50, tiers = { { price = 300, qty = 10 }, { price = 310, qty = 40 } } }, -- barre
-  [2772] = { min = 270, qty = 15, tiers = { { price = 270, qty = 15 } } },                            -- minerai : 15 seulement
-}
-assert(commune:PrixAchat(3575, 20, market) == 10 * 300 + 10 * 310, "achat palier par palier")
-local ore, how, partial = commune:PrixAchat(2772, 20, market)
-assert(ore == 20 * 270 and how == "HV" and partial, "pas assez en vente : le reste au dernier prix, signalé")
-AzerothCommuneDB.vendors = { [1] = { items = { { id = 2880, price = 90, stack = 1 } } } }
-assert(select(2, commune:PrixAchat(2880, 2, market)) == "marchand")
-local by = { [3575] = { { key = 3307, known = true, r = { name = "Fonte du fer", made_min = 1, reagents = { { id = 2772, qty = 1 } } } } } }
-local p = ns.plan(3575, 20, { market = market, by = by }, 0, {})
-assert(p.how == "fabriquer" and p.cost == 5400 and p.buy == 6100 and p.parts[1].qty == 20, "fondre est moins cher")
-local list = ns.shopping(p, {})
-assert(list[2772].qty == 20 and not list[3575], "liste de courses : le minerai, pas la barre")
-market[2772].tiers[1].price = 400 -- minerai devenu cher : on achète la barre
-assert(ns.plan(3575, 20, { market = market, by = by }, 0, {}).how == "HV")
--- Recette que personne n'a apprise : pas prise par le calcul, mais le « + » existe et la force.
-local byU = { [3575] = { { key = 3307, known = false, r = by[3575][1].r } } }
-local pu = ns.plan(3575, 20, { market = market, by = byU }, 0, {})
-assert(pu.how == "HV" and pu.craftable, "recette pas apprise : achetée, mais « + » possible")
-pu = ns.plan(3575, 20, { market = market, by = byU, force = { [3575] = "fabriquer" } }, 0, {})
-assert(pu.how == "fabriquer" and pu.known == false, "« + » : décomposé avec la recette pas apprise")
--- Déjà en stock : « + » possible, et forcé il fabrique au lieu de prendre le stock.
-local ps = ns.plan(3575, 1, { market = market, by = by, stock = { [3575] = { 1, 0, 0 } } }, 0, {})
-assert(ps.how == "stock" and ps.craftable, "en stock : « + » possible")
-ps = ns.plan(3575, 1, { market = market, by = by, stock = { [3575] = { 1, 0, 0 } }, force = { [3575] = "fabriquer" } }, 0, {})
-assert(ps.how == "fabriquer" and ps.have[1] == 0 and ps.parts[1].id == 2772, "forcé : fabriqué, stock non pris")
-print("Handshake : acheter ou fabriquer OK")
-
--- Stock partagé entre deux lignes (seam interne ns.plan).
-market[2772].tiers[1].price = 270
-local stock = { [2772] = { 15, 5, 0 }, [3575] = { 4, 0, 0 } } -- 20 minerais (15 sacs + 5 banque), 4 barres en sac
-local ctx = { market = market, by = by, stock = stock }
-local a = ns.plan(3575, 10, ctx, 0, {})  -- 1re ligne : 4 barres en stock, 6 à fondre avec 6 minerais du sac
-assert(a.have[1] == 4 and a.need == 6 and a.how == "fabriquer" and a.cost == 0, "barres du sac puis minerai du sac : gratuit")
-local b = ns.plan(3575, 20, ctx, 0, {})  -- 2e ligne : plus de barres ; 14 minerais restants (9 sac + 5 banque), 6 à acheter
-assert(b.have[1] == 0 and b.parts[1].have[1] == 9 and b.parts[1].have[2] == 5 and b.parts[1].need == 6, "stock partagé")
-assert(b.cost == 6 * 270)
-
--- Les cases d'un projet (Projet.lua) : une par objet, le même stock pour toutes ses lignes. Les données sont celles que
--- Handshake lit (par le socle) : HV, recettes, persos ; mes sacs et ma banque.
-UnitName = function() return "Moi" end
+-- Les données des arbres : HV, recettes, persos ; mes sacs et ma banque (lus par Composants, par le socle).
+UnitName = function() return "Moi", "Dupont" end
 local MOI = UnitGUID("player")
-local TOUT = { unlearned = true } -- options de calcul : toutes les recettes, aucun stock
 local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = fiches des autres persos dans la base du socle
   local function sac(t)
     local items = {}
@@ -104,53 +67,6 @@ local function donnees(d) -- d.sacs / d.banque = { [id] = nombre }, d.persos = f
   commune.Conteneurs = function(garder) return garder("Backpack") and sac(d.sacs) or {} end -- mes sacs, lus à l'instant
 end
 local realContainers = commune.Conteneurs
-donnees({ hv = market, recettes = { [3307] = { name = "Fonte du fer", output = 3575, reagents = { { id = 2772, qty = 1 } } } },
-  sacs = { [2772] = 15, [3575] = 4 }, banque = { [2772] = 5 } })
-local fer = ns.nouveauProjet({ lines = { { id = 3575, qty = 10 }, { id = 3575, qty = 20 } } })
-local arbre = ns.projetArbre(fer, { bags = true, bank = true, unlearned = true })
-local t1, ore = arbre.caseDe.T1, arbre.caseDe.I2772
-assert(t1.have[1] == 4 and t1.made == 6 and arbre.caseDe.T2.made == 20, "barres : 4 du sac, le reste à fondre")
-assert(ore.qty == 26 and ore.need == 6 and ore.have[1] == 15 and ore.have[2] == 5 and #ore.parents == 2, "minerai : une case pour les deux lignes")
-ns.projetApport(fer, 2772, true)
-arbre = ns.projetArbre(fer, { bags = true, bank = true, unlearned = true }, ns.projetApports(fer))
-assert(arbre.caseDe.I2772.apport == 26 and arbre.caseDe.I2772.need == 0, "minerai apporté : la case entière")
-print("Handshake : cases d'un projet, stock partagé OK")
-
--- Recettes équivalentes (#46) : vrai-argent par le minage (10098) ou par la transmutation (11480), sans prix. Le choix ne
--- dépend pas de l'ordre de la base des recettes : personne ne les connaît → le plus petit identifiant ; un perso connaît la
--- transmutation → elle.
-local function vraiArgent(ordre, persos)
-  local r = { [10098] = { name = "Fonte du vrai-argent", output = 6037, profession = "Minage", reagents = { { id = 7911, qty = 1 } } },
-    [11480] = { name = "Transmutation de mithril en vrai-argent", output = 6037, profession = "Alchimie", reagents = { { id = 3860, qty = 1 } } } }
-  local recettes = {}
-  for _, k in ipairs(ordre) do recettes[k] = r[k] end
-  donnees({ hv = {}, recettes = recettes, persos = persos })
-  return ns.projetArbre(ns.nouveauProjet({ lines = { { id = 6037, qty = 2 } } }), TOUT).caseDe.T1.recipeKey
-end
-for _, ordre in ipairs({ { 10098, 11480 }, { 11480, 10098 } }) do
-  assert(vraiArgent(ordre) == 10098, "personne ne connaît : le plus petit identifiant")
-  assert(vraiArgent(ordre, { ["Player-6942-00000A1C"] = { nom = "Al Dupont", recipes = { Alchimie = { rank = 225, known = { [11480] = "easy" } } } } }) == 11480,
-    "la recette connue d'un perso d'abord")
-end
--- Boucles de transmutation : Terre ↔ Vie, Eau ↔ Non-mort, et le tour Air → Feu → Terre → Eau → Air. Chaque recette
--- fabrique son essence à partir d'une essence qu'elle sert elle-même à fabriquer : toutes écartées, les essences
--- s'achètent. Une recette hors boucle reste prise (Terre à partir d'un cristal, qu'aucune essence ne fabrique).
-local ESS = { terre = 7076, vie = 12803, eau = 7080, nonmort = 12808, air = 7082, feu = 7078 }
-local function transmu(de, en) return { name = "Transmutation", output = ESS[en], profession = "Alchimie", reagents = { { id = ESS[de], qty = 1 } } } end
-donnees({ hv = {}, recettes = { [17559] = transmu("air", "feu"), [17560] = transmu("feu", "terre"), [17561] = transmu("terre", "eau"),
-  [17562] = transmu("eau", "air"), [17563] = transmu("nonmort", "eau"), [17564] = transmu("eau", "nonmort"),
-  [17565] = transmu("vie", "terre"), [17566] = transmu("terre", "vie") } })
-local essences = ns.projetArbre(ns.nouveauProjet({ lines = { { id = ESS.terre, qty = 10 }, { id = ESS.eau, qty = 10 } } }), TOUT)
-for _, n in ipairs(essences.cases) do assert(n.made == 0, "boucle de transmutation : " .. n.id .. " fabriquée") end
-assert(essences.caseDe.T1.need == 10 and essences.caseDe.T2.need == 10, "les essences s'achètent")
-AzerothCommuneDB.recipes[20000] = { name = "Cristal en terre", output = ESS.terre, profession = "Alchimie", reagents = { { id = 7909, qty = 1 } } }
-essences = ns.projetArbre(ns.nouveauProjet({ lines = { { id = ESS.terre, qty = 10 } } }), TOUT)
-assert(essences.caseDe.T1.recipeKey == 20000 and essences.caseDe.I7909.need == 10, "hors boucle : décomposée")
-local forcee = ns.nouveauProjet({ lines = { { id = ESS.vie, qty = 10 } } })
-ns.projetChoix(forcee, ESS.vie, "fabriquer")
-assert(ns.projetArbre(forcee, TOUT).caseDe.T1.recipeKey == 17566, "choix de case « décomposer » : la boucle reprise")
-print("Handshake : recettes équivalentes, choix stable, sans boucle OK")
-
 -- Marteau (10 bronzes) et cuirasse (20 bronzes), bronze = cuivre + étain, ×2 par fonte. Forge : Bel 164 connaît le
 -- marteau, pas la cuirasse ; minage : Alt 90.
 local mk = { [2770] = { tiers = { { price = 10, qty = 999 } } }, [2771] = { tiers = { { price = 10, qty = 999 } } },
@@ -164,55 +80,25 @@ donnees({ hv = mk, recettes = {
   persos = { ["Player-6942-00000BE1"] = { nom = "Bel Dupont", recipes = { Forge = { rank = 164, known = { [1] = "easy" } } } },
     ["Player-6942-00000A17"] = { nom = "Alt Dupont", recipes = { Minage = { rank = 90, known = {} } } } } })
 local function both(choix) -- un projet « marteau + cuirasse », avec ses choix de case
-  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
-  for id, c in pairs(choix or {}) do ns.projetChoix(p, id, c) end
-  return ns.projetArbre(p, TOUT)
+  local p = C.NouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  for id, c in pairs(choix or {}) do C.Choix(p, id, c) end
+  return C.Arbre(p, true)
 end
-local tree = both()
-local bronze, pearl, copper = tree.caseDe.I2841, tree.caseDe.I5500, tree.caseDe.I2770
-assert(bronze.qty == 30 and bronze.made == 30 and bronze.crafts == 15 and #bronze.parents == 2, "une case bronze pour les deux")
-assert(copper.qty == 15 and copper.need == 15 and #copper.parents == 1 and pearl.qty == 3, "cuivre sous le bronze seulement")
--- « – » sur le bronze : acheté tout fait. « + » quand l'achat est moins cher : décomposé quand même.
-local bought = both({ [2841] = "acheter" })
-assert(bought.caseDe.I2841.need == 30 and bought.caseDe.I2841.made == 0 and not bought.caseDe.I2770, "bronze acheté")
-assert(bought.caseDe.I2841.craftable and bought.caseDe.I2841.choix == "acheter", "le « + » reste proposé, le choix se voit")
-mk[2841].tiers[1].price = 1
-assert(both().caseDe.I2841.made == 0, "bronze à 1 pc : acheté d'office")
-assert(both({ [2841] = "fabriquer" }).caseDe.I2841.made == 30, "décomposé à la main")
--- Blocs : marteau et cuirasse = Forge (Bel en connaît 1 sur 2), bronze = Minage (Alt, 0 sur 1).
-local res = both({ [2841] = "fabriquer" })
-local hammer, plate = res.caseDe.T1, res.caseDe.T2
-bronze = res.caseDe.I2841
--- Les artisans par leur nom complet « Prénom Nom » : c'est lui qui devient le joueur d'une commande, et chuchoter au
--- prénom seul échoue sur le serveur (LibCommune#35).
-assert(hammer.who == "Bel Dupont" and hammer.whoKnows and plate.who == "Bel Dupont" and not plate.whoKnows, "forge : Bel (marteau connu, cuirasse à apprendre)")
-assert(bronze.who == "Alt Dupont" and not bronze.whoKnows, "bronze : Alt a le minage")
-local forge, mine = res.blocDe.Forge, res.blocDe.Minage
-assert(#res.blocs == 2 and res.blocs[1] == forge and #forge.cases == 2 and #forge.recipes == 2 and forge.level == 100, "un bloc par métier")
-assert(forge.best == "Bel Dupont" and mine.best == "Alt Dupont", "qui peut faire chaque bloc, par son nom complet")
--- Un bloc = une commande, par étapes : le minage (étape 1) livre 30 bronzes ; la forge (étape 2) livre le marteau et la
--- cuirasse, et reçoit le bronze en apport.
-assert(mine.step == 1 and #mine.deliver == 1 and mine.qty[2841] == 30 and not next(mine.inputs), "étape 1 : le minage")
-assert(forge.step == 2 and forge.qty[5541] == 1 and forge.qty[2870] == 1 and forge.inputs[2841], "étape 2 : la forge, bronze fourni")
--- Le bronze du minage pour le marteau et la cuirasse = UNE livraison Minage -> Forge, par Alt.
-local o = res.livraisons[1]
-assert(#res.livraisons == 1 and o.maker == "Minage" and o.client == "Forge" and o.player == "Alt Dupont", "une livraison Minage -> Forge")
-assert(#o.lines == 1 and o.lines[1] == 2841 and o.qty[2841] == 30 and #o.edges == 2, "30 barres de bronze, deux liens regroupés")
 -- Commandes (#6) : « Commander » un bloc ajoute une commande au projet affiché, pas un nouveau projet. Elle livre ce
 -- que le bloc produit ; ses apports = ce qui entre dans le bloc (le bronze) + mes apports dans sa part (la perle).
 do
   local p = projetPour("Moi", nil, { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } })
-  ns.projetChoix(p, 2841, "fabriquer")
+  C.Choix(p, 2841, "fabriquer")
   ns.projetApport(p, 5500, true)
-  local nb = select(2, ns.numeroProjet())
-  local function arbre() return ns.projetArbre(p, TOUT) end
+  local nb = #C.Projets()
+  local function arbre() return C.Arbre(p, true) end
   local function vue(i) return ns.projetCommande(p, i) end
   local function qte(v, id) for _, l in ipairs(v.lines) do if l.id == id then return l.qty end end end
   local function nbApports(v) local k = 0 for _ in pairs(v.apports or {}) do k = k + 1 end return k end
   local tout = vue(1)
   assert(tout.part == "tout le projet" and tout.player == "Moi" and #tout.lines == 2 and tout.apports[5500], "le projet entier : sa 1re commande")
   local i = ns.projetCommander(p, arbre().blocDe.Forge)
-  assert(i == 2 and ns.projetCourant() == p and select(2, ns.numeroProjet()) == nb, "la commande s'ajoute au projet affiché")
+  assert(i == 2 and cns.projetCourant() == p and #C.Projets() == nb, "la commande s'ajoute au projet affiché, pas un nouveau projet")
   local cf = vue(i)
   assert(cf.part == "Forge" and cf.player == "Bel Dupont" and not cf.vide, "le bloc de la forge, à Bel")
   assert(#cf.lines == 2 and qte(cf, 5541) == 1 and qte(cf, 2870) == 1, "il livre le marteau et la cuirasse")
@@ -225,134 +111,35 @@ do
   assert(vue(2).player == "Cid" and vue(2).tip == 700 and vue(1).player == "Moi" and not vue(1).tip, "artisan et offre par commande")
   -- Vue vivante : le bronze acheté dans le projet, sans rien recopier. Le bloc du minage disparaît, sa commande reste,
   -- vide ; la forge n'a plus le bronze en apport (son artisan l'achète).
-  ns.projetChoix(p, 2841, "acheter")
+  C.Choix(p, 2841, "acheter")
   local vide = vue(3)
   assert(vide.part == "Minage" and vide.vide and #vide.lines == 0 and #ns.projetCommandes(p) == 3, "commande du minage : vide, toujours là")
   assert(nbApports(vue(2)) == 1 and vue(2).apports[5500], "la forge suit le choix de case du projet")
 end
-bronzeR.profession = "Couture"
-res = both({ [2841] = "fabriquer" })
-assert(res.caseDe.I2841.who == false and res.blocs[2].key == "Couture", "personne ne fait la couture : son bloc vient après")
-bronzeR.profession = "Minage"
-print("Handshake : blocs d'un projet OK")
-
--- Identité stable (Handshake#37) : un projet garde la sienne quand on supprime ou réordonne les autres ; son rang, lui,
--- ne dit que sa place dans la liste.
-do
-  local pa, pb, pc = ns.nouveauProjet(), ns.nouveauProjet(), ns.nouveauProjet()
-  local idB = pb.id
-  assert(pa.id and idB and pc.id and pa.id ~= idB and idB ~= pc.id and pa.id ~= pc.id, "une identité par projet")
-  assert(ns.ouvrirProjet(pa.id) == pa and ns.projetCourant() == pa, "un projet s'ouvre par son identité")
-  ns.supprimerProjet()
-  assert(pb.id == idB and ns.ouvrirProjet(idB) == pb and not ns.ouvrirProjet(pa.id), "un autre supprimé : la même identité")
-  assert(ns.nouveauProjet().id ~= pa.id, "une identité n'est jamais redonnée")
-end
-print("Handshake : identité stable d'un projet OK")
-
--- Projet tenu (CONTEXT.md de Composants) : un autre module prend les lignes d'un projet en donnant une raison ; ajouter,
--- retirer une ligne, changer une quantité sont refusés avec cette raison telle quelle ; les choix de case restent libres.
-do
-  local RAISON = "tenu par le test"
-  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 } } })
-  ns.projetTenir(p, RAISON, { { id = 2870, qty = 2 } })
-  assert(#p.lines == 1 and p.lines[1].id == 2870 and p.lines[1].qty == 2, "celui qui le tient en donne les lignes")
-  local function refuse(quoi, ok, raison) assert(ok == false and raison == RAISON, quoi .. " : refusé avec sa raison, " .. tostring(raison)) end
-  refuse("lignes", ns.projetPeut(p, "lignes"))
-  refuse("ajouter une ligne", ns.projetAjouter(p, 5541, 1))
-  refuse("changer une quantité", ns.projetQuantite(p, 1, 5))
-  refuse("retirer une ligne", ns.projetRetirer(p, 1))
-  assert(#p.lines == 1 and p.lines[1].qty == 2, "ses lignes n'ont pas bougé")
-  assert(ns.projetPeut(p, "choix") and ns.projetChoix(p, 2841, "acheter") and p.choix[2841] == "acheter", "choix de case : libres")
-end
-print("Handshake : projet tenu OK")
+print("Handshake : commandes d'un bloc OK")
 
 -- Commandes et apports hors du projet (Handshake#37) : rangés à part, rattachés à l'identité du projet ; le projet ne garde
 -- que ses lignes et ses choix de case. Supprimer un autre projet ne change pas ce rattachement.
 do
-  local pa = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 } } })
-  local pb = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
-  ns.projetChoix(pb, 2841, "fabriquer")
+  local pa = C.NouveauProjet({ lines = { { id = 5541, qty = 1 } } })
+  local pb = C.NouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  C.Choix(pb, 2841, "fabriquer")
   ns.projetApport(pb, 5500, true)
-  local i = ns.projetCommander(pb, ns.projetArbre(pb, TOUT).blocDe.Forge)
+  local i = ns.projetCommander(pb, C.Arbre(pb, true).blocDe.Forge)
   ns.projetArtisan(pb, "Cid", i)
   local GARDE = { id = true, name = true, created = true, lines = true, choix = true }
   for k in pairs(pb) do assert(GARDE[k], "le projet ne garde pas « " .. k .. " »") end
   local idB = pb.id
-  ns.ouvrirProjet(pa.id)
-  ns.supprimerProjet()
+  C.Supprimer(pa.id)
   local vues = ns.projetCommandes(pb)
   assert(pb.id == idB and #vues == 2 and vues[2].part == "Forge" and vues[2].player == "Cid" and vues[2].apports[5500]
     and vues[1].apports[5500], "un autre supprimé : ses commandes et ses apports, toujours à lui")
 end
 print("Handshake : commandes et apports hors du projet OK")
-
--- Dessin (Fenetre.lua) : étages, relais, bandes, titres des blocs.
-mk[2841].tiers[1].price = 100
-local g = ns.dessinArbre(both())
-bronze, pearl, copper = g.byKey.I2841, g.byKey.I5500, g.byKey.I2770
-assert(g.cols == 3 and bronze.col == 1 and pearl.col == 1 and copper.col == 2, "étages : bronze et perle en 1, minerai en 2")
-for _, n in ipairs(g.nodes) do -- pas de chevauchement dans un étage
-  for _, m in ipairs(g.nodes) do
-    assert(n == m or n.col ~= m.col or math.abs(n.y - m.y) >= 50, "cases superposées")
-  end
-end
-assert(ns.dessinArbre(both({ [2841] = "acheter" })).cols == 2, "bronze acheté : plus d'étage 2")
--- Lien qui saute un étage (ta capture : barre de fer commandée + haubert qui en consomme) : il passe par un relais à
--- l'étage 1, et aucune case de cet étage ne lui marche dessus.
-do
-  local p = ns.nouveauProjet({ lines = { { id = 2841, qty = 2 }, { id = 5541, qty = 1 } } }) -- bronze commandé + marteau
-  ns.projetChoix(p, 2841, "fabriquer")
-  local gr = ns.dessinArbre(ns.projetArbre(p, TOUT))
-  local e
-  for _, x in ipairs(gr.edges) do if x.from.key == "T1" and x.to.key == "I2770" then e = x end end
-  assert(e and #e.path == 3 and e.path[2].kind == "relay" and e.path[2].col == 1, "relais à l'étage 1")
-  local r = e.path[2]
-  for _, n in ipairs(gr.nodes) do
-    assert(n.col ~= 1 or r.y + 14 <= n.y or n.y + 42 <= r.y, "une case de l'étage 1 recouvre le lien")
-  end
-end
-do
-  local gr = ns.dessinArbre(both({ [2841] = "fabriquer" }))
-  local forge = gr.groupOf.Forge
-  assert(forge.label == "Étape 2 · Forge · niv. 100 requis · Bel Dupont 164 (1/2)", forge.label)
-  -- Rectangles : chaque métier dans sa bande, aucune case d'un autre dans son rectangle.
-  for _, grp in ipairs(gr.groups) do
-    local top, bottom, left, right = math.huge, -math.huge, math.huge, -math.huge
-    for _, n in ipairs(grp.cards) do
-      top, bottom = math.min(top, n.y), math.max(bottom, n.y + 42)
-      left, right = math.min(left, n.col), math.max(right, n.col)
-    end
-    for _, n in ipairs(gr.nodes) do
-      local inside = n.col >= left and n.col <= right and n.y + 42 > top and n.y < bottom
-      assert(not inside or n.band == grp.key, "une case d'un autre dans le rectangle de " .. grp.key)
-    end
-  end
-  assert(gr.byKey.I2770.band == "Minage", "minerai sous le bronze : dans la bande du minage")
-  bronzeR.profession = "Couture"
-  gr = ns.dessinArbre(both({ [2841] = "fabriquer" }))
-  assert(gr.groupOf.Couture.label == "Étape 1 · Couture · personne de ta liste", gr.groupOf.Couture.label)
-  for _, n in ipairs(gr.nodes) do -- rien ne se chevauche, bande sans artisan comprise
-    for _, m in ipairs(gr.nodes) do
-      assert(n == m or n.col ~= m.col or n.y + 42 <= m.y or m.y + 42 <= n.y, "cases superposées")
-    end
-  end
-  bronzeR.profession = "Minage"
-end
 commune.Conteneurs, AzerothCommuneDB.chars = realContainers, {}
-print("Handshake : dessin de l'arbre (étages, relais, bandes) OK")
 
--- Suggestions : la recherche d'objets du socle (AzerothCommune#49), plus d'index d'objets dans Handshake ; mêmes objets,
--- même ordre (fabricables d'abord, puis début de nom, puis noms courts).
+-- Suggestions de la commande à la main : la recherche d'objets du socle (AzerothCommune#49), pas d'index à Handshake.
 assert(ns.chercherObjets == commune.ChercherObjets and ns.itemIndex == nil and ns.suggestItems == nil, "la recherche du socle")
-local fen = io.open("Handshake/Fenetre.lua"):read("*a")
-assert(not fen:find("itemIndex", 1, true) and not fen:find("low:find", 1, true), "plus de recherche à soi dans la fenêtre")
-AzerothCommuneItems.items = { [1] = { name = "Barre de bronze" }, [2] = { name = "Bronze" }, [3] = { name = "Lame en bronze" }, [4] = { name = "Fer" } }
-AzerothCommuneDB.recipes = { [9] = { name = "Lame en bronze", output = 3 }, [8] = { name = "Cuirasse changeante", output = 210794 } }
-local sug = ns.chercherObjets("bron", 8)
-assert(#sug == 3 and sug[1].id == 3 and sug[2].id == 2 and sug[3].id == 1 and sug[1].fabricable, "ordre des suggestions")
-assert(ns.chercherObjets("chang", 8)[1].id == 210794, "recette dont l'objet n'a pas de nom")
-assert(#ns.chercherObjets("b", 8) == 0, "au moins 2 lettres")
-print("Handshake : suggestions OK")
 
 
 -- Texte échangé : liens réels (~80 caractères), découpés sous 255, relus à l'identique.
@@ -384,35 +171,22 @@ assert(#l3 == 2 and l3[1].id == 3858 and l3[1].qty == 36 and l3[2].qty == 1, "no
 assert(ns.poText(55600) == "5.56 po" and ns.poText(50000) == "5 po")
 print("Handshake : texte échangé OK")
 
--- Besoins : composants pas fabriqués avec ce qu'on a ; recette pas apprise -> l'objet « Plans : … ».
-local res = { cases = {
-  { id = 7963, kind = "target", qty = 1, made = 1, need = 0, have = { 0, 0, 0 }, unknown = true, recipe = { name = "Claymore en mithril" } },
-  { id = 3858, kind = "item", qty = 36, made = 0, need = 30, cost = 3000, have = { 6, 0, 0 }, how = "HV" },
-  { id = 7920, kind = "item", qty = 1, made = 0, need = 0, cost = 0, have = { 1, 0, 0 } },
-}, total = 3000 }
-local rows, recipes = ns.orderNeeds(res)
-assert(#rows == 2 and rows[1].id == 3858 and rows[1].required == 36 and rows[2].need == 0, "manquants d'abord, le complet ensuite")
-assert(#recipes == 1 and recipes[1].item == 7989, "recette trouvée par son nom")
-print("Handshake : besoins OK")
 
 aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
 HandshakeDB = { chars = { [MOI] = { bags = {}, bank = {} } }, items = { [1] = { name = "x" } }, market = { ["6942-Alliance"] = {} },
-  recipes = {}, contracts = { k = { status = "signe" } }, projets = { { name = "P", lines = {} } }, courant = 1,
-  options = { bags = true }, surnames = { Bob = "Kerys" }, debug = { on = true } }
+  recipes = {}, contracts = { k = { status = "signe" } }, surnames = { Bob = "Kerys" }, debug = { on = true } }
 local loader
 CreateFrame = function() return setmetatable({ SetScript = function(_, _, fn) loader = fn end }, stubMT) end
 assert(loadfile("Handshake/Donnees.lua"))("Handshake", ns)
 loader(nil, "ADDON_LOADED", "Handshake")
 aucunReleve("au chargement")
-assert(HandshakeDB.contracts.k and HandshakeDB.projets[1].name == "P" and HandshakeDB.options.bags and HandshakeDB.surnames.Bob
-  and HandshakeDB.debug.on, "données propres gardées")
--- Première ouverture : réglages par défaut, aucun projet repris d'ailleurs (les vieux suivis de GameData ne sont plus lus).
+assert(HandshakeDB.contracts.k and HandshakeDB.surnames.Bob and HandshakeDB.debug.on, "données propres gardées")
+-- Première ouverture : des contrats, rien d'autre (plus de réglages de l'arbre : ils sont à Composants).
 HandshakeDB = nil
 assert(loadfile("Handshake/Commande.lua"))("Handshake", ns)
 loader(nil, "ADDON_LOADED", "Handshake")
-assert(select(2, ns.numeroProjet()) == 1 and #ns.projetCourant().lines == 0 and HandshakeDB.options.bags and HandshakeDB.options.bank,
-  "réglages par défaut, un projet vide")
+assert(type(HandshakeDB.contracts) == "table" and HandshakeDB.options == nil and HandshakeDB.projets == nil, "première ouverture")
 -- Contrats d'avant la signature par GUID (signataires « Prénom-Royaume », Handshake#29) : plus lus, purgés au chargement
 -- (perte de données acceptée) ; ceux signés par GUID restent, et aussi ceux du Testeur (mode debug).
 HandshakeDB = { contracts = { ancien = { client = "Bob-CAMWOWEU4Realm8PvP", artisan = "Bel-CAMWOWEU4Realm8PvP", status = "signe" },
@@ -421,25 +195,45 @@ HandshakeDB = { contracts = { ancien = { client = "Bob-CAMWOWEU4Realm8PvP", arti
 loader(nil, "ADDON_LOADED", "Handshake")
 assert(HandshakeDB.contracts.neuf and not HandshakeDB.contracts.ancien, "ancien contrat purgé, contrat par GUID gardé")
 assert(HandshakeDB.debug.contracts.bon and not HandshakeDB.debug.contracts.vieux, "pareil pour ceux du Testeur")
--- Projets d'avant l'identité stable (Handshake#37) : pas de migration, perte acceptée (les SavedVariables sont
--- négligeables) ; les projets sans identité disparaissent, avec les vieilles commandes et la table globale des choix.
+-- Les projets sont partis dans Composants (Handshake#39) : pas de migration, perte acceptée. Les projets d'avant, leurs
+-- commandes (rattachées à des identités que Composants redonnera), les réglages de l'arbre et les vieilles tables
+-- s'effacent ; les contrats restent intacts.
 HandshakeDB = { orders = { { name = "Ma commande", lines = { { id = 5541, qty = 1 } } } }, current = 1, force = { [2841] = "acheter" },
-  projets = { { name = "Projet #5", player = "Bel", tip = 900, lines = { { id = 5541, qty = 1 } }, commandes = {} } }, courant = 1 }
+  options = { bags = true }, projets = { { id = 1, name = "Projet #5", lines = { { id = 5541, qty = 1 } } } }, projetSeq = 1, courant = 1,
+  commandes = { [1] = { liste = { { id = 1, player = "Bel", contrat = "neuf" } }, seq = 1 } },
+  contracts = { neuf = { client = "Player-6942-00000B0B", artisan = "Player-6942-0000BEEF", status = "signe" } } }
 loader(nil, "ADDON_LOADED", "Handshake")
-assert(type(HandshakeDB.projets) == "table" and #HandshakeDB.projets == 0, "projets sans identité : effacés")
-assert(HandshakeDB.force == nil and HandshakeDB.orders == nil and HandshakeDB.current == nil, "l'ancienne table des choix et les commandes disparaissent")
-ns.openCraftWindow = noop -- pas d'interface hors jeu
+for _, k in ipairs({ "projets", "projetSeq", "courant", "commandes", "options", "orders", "current", "force" }) do
+  assert(HandshakeDB[k] == nil, "effacé au chargement : " .. k)
+end
+assert(HandshakeDB.contracts.neuf, "le contrat reste")
+-- À l'entrée en jeu, Composants chargé : les commandes d'un projet qui n'existe plus sont oubliées, celles d'un projet
+-- vivant restent ; sans Composants, rien n'est oublié (ses projets ne sont peut-être que désactivés).
+do
+  local vivant = C.NouveauProjet()
+  HandshakeDB.commandes = { [vivant.id] = { liste = { { id = 1 } }, seq = 1 }, [99999] = { liste = { { id = 1 } }, seq = 1 } }
+  local C0 = Composants
+  Composants, ns.branche = nil, nil
+  ns.brancherComposants()
+  assert(HandshakeDB.commandes[99999] and not ns.branche, "sans Composants : rien d'oublié")
+  Composants = C0
+  ns.brancherComposants()
+  assert(HandshakeDB.commandes[vivant.id] and not HandshakeDB.commandes[99999] and HandshakeDB.contracts.neuf, "projet disparu : ses commandes oubliées")
+end
+cns.openCraftWindow = noop -- pas d'interface hors jeu
 ns.importText(msgs[1] .. " " .. msgs[2]:gsub("^.-: ", ""), "Bob")
-local pos, nb = ns.numeroProjet()
-assert(nb == 1 and pos == 1 and ns.projetCourant().id and ns.projetCommande(ns.projetCourant()).player == "Bob", "commande importée affichée")
+local importe = C.Projets()[#C.Projets()]
+assert(cns.projetCourant() == importe and #importe.lines == 3 and ns.projetCommande(importe).player == "Bob", "commande importée en projet, affichée")
 print("Handshake : reprise, purge et import OK")
 
--- /commande essai : la commande affichée revient comme un chuchotement de soi-même, sans réseau.
+-- /handshake essai : la commande à la main revient comme un chuchotement de soi-même, sans réseau.
 UnitName = function() return "Belegard" end
 popups = {}
 local realPrint = print
 print = noop
-ns.costCommand("essai")
+HandshakeDB.main = { lines = { { id = 7963, qty = 1 } }, apporte = {} }
+SlashCmdList.HANDSHAKE("essai")
+HandshakeDB.main = nil
 print = realPrint
 assert(#popups == 1 and popups[1].who == "Belegard" and popups[1].kind == "commande", "essai : import proposé")
 print("Handshake : essai OK")
@@ -470,9 +264,11 @@ local BELN, BOBN, MALN, CARLN = "Belegard Marteaudefer", "Bob Dupont", "Mallory 
 local NOM, GUIDDE = { [GBEL] = BELN, [GBOB] = BOBN }, { [BELN] = GBEL, [BOBN] = GBOB }
 local clock = 1795000000
 GetServerTime = function() return clock end
+-- Chacun ses contrats (HandshakeDB) et ses projets (ComposantsDB).
 local bases = { [BEL] = { contracts = {} }, [BOB] = { contracts = {} } }
+local projets = { [BEL] = {}, [BOB] = {} }
 local current, notes, wire = BEL, {}, {}
-local function as(who) current = who; HandshakeDB = bases[who] end
+local function as(who) current = who; HandshakeDB, ComposantsDB = bases[who], projets[who] end
 UnitName = function() return NOM[current]:match("^(%S+) (%S+)$") end
 UnitGUID = function(u) if u == "player" then return current end end
 -- Une proposition sur le fil : P|3|expéditeur|origine|id|version|parent|client|artisan|m|o|échéance
@@ -646,10 +442,9 @@ AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [3858
   [4234] = { tiers = { { price = 500, qty = 999 } } }, [7963] = { tiers = { { price = 99999, qty = 9 } } } } } }
 AzerothCommuneDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents = { { id = 3858, qty = 30 }, { id = 4234, qty = 4 } } } }
 AzerothCommuneItems.items[4234] = { name = "Cuir lourd", link = link(4234, "Cuir lourd") }
-HandshakeDB.projets = {}
 local demande = projetPour(BELN, 30000, { { id = 7963, qty = 1 } })
 ns.projetApport(demande, 4234, true)
-local dres = ns.projetDemande(demande, ns.projetApports(demande))
+local dres = ns.arbreDemande(demande, ns.projetApports(demande))
 local brought = ns.demandeApports(dres)
 assert(#brought == 1 and brought[1].id == 4234 and brought[1].qty == 4, "apport : le cuir, case entière")
 assert(dres.roots[1].how == "fabriquer" and dres.roots[1].cost == 30 * 200, "part de l'artisan : le minerai seulement")
@@ -669,9 +464,8 @@ do
   ns.whisper = function(msg, cible) partis[#partis + 1] = cible end
   print = function(t) dit[#dit + 1] = t end
   ns.sendOrder(ns.projetCommande(prenomSeul))
-  ns.sendNeeds(ns.projetCommande(prenomSeul), ns.projetDemande(prenomSeul))
   print = realPrint
-  assert(#partis == 0 and #dit == 2 and dit[1]:find("nom complet", 1, true) and dit[1]:find("Belegard", 1, true),
+  assert(#partis == 0 and #dit == 1 and dit[1]:find("nom complet", 1, true) and dit[1]:find("Belegard", 1, true),
     "prénom seul : rien chuchoté, " .. tostring(dit[1]))
   ns.sendOrder(ns.projetCommande(projetPour("Belegard Marteaudefer-CAMWOWEU4Realm8PvP", nil, { { id = 7963, qty = 1 } })))
   ns.whisper = realWhisper
@@ -694,9 +488,8 @@ assert(#popups == 1, "commande reçue")
 local wanted, kindR, offer, apportsR = ns.parseList(popups[1].data.text)
 assert(#wanted == 1 and wanted[1].id == 7963 and #apportsR == 1 and apportsR[1].id == 4234 and apportsR[1].qty == 4 and offer == 30000,
   "ce qu'il veut, ce qu'il apporte, son offre")
-ns.openCraftWindow = noop
 ns.importText(popups[1].data.text, "Bob")
-assert(ns.projetApports(ns.projetCourant()) and ns.projetApports(ns.projetCourant())[4234] and ns.projetCommande(ns.projetCourant()).tip == 30000, "demande importée avec ses apports")
+assert(ns.projetApports(cns.projetCourant()) and ns.projetApports(cns.projetCourant())[4234] and ns.projetCommande(cns.projetCourant()).tip == 30000, "demande importée avec ses apports")
 print("Handshake : demande (apports, offre, vente simple, en clair) OK")
 
 -- Mode debug (Debug.lua, non publié) : le Testeur a un nom complet et un GUID (numéro de serveur 0 : il n'existe pas) ;
@@ -830,18 +623,18 @@ do
   local function figee(quoi, ok, raison)
     assert(ok == false and type(raison) == "string" and raison:find("sa demande", 1, true), quoi .. " : refusé, avec sa raison")
   end
-  figee("lignes", ns.projetPeut(r, "lignes"))
-  figee("ajouter une ligne", ns.projetAjouter(r, 3858, 2))
-  figee("changer une quantité", ns.projetQuantite(r, 1, 5))
-  figee("retirer une ligne", ns.projetRetirer(r, 1))
+  figee("lignes", C.Peut(r, "lignes"))
+  figee("ajouter une ligne", C.Ajouter(r, 3858, 2))
+  figee("changer une quantité", C.Quantite(r, 1, 5))
+  figee("retirer une ligne", C.Retirer(r, 1))
   assert(#r.lines == 1 and r.lines[1].qty == 1, "ce qu'il veut n'a pas bougé")
-  assert(ns.projetPeut(r, "choix"), "choix de case : permis (un projet tenu ne tient que ses lignes)")
+  assert(C.Peut(r, "choix"), "choix de case : permis (un projet tenu ne tient que ses lignes)")
   assert(ns.projetApport(r, 3858, true) and ns.projetApports(r)[3858], "apports : contre-proposition")
-  assert(ns.projetChoix(r, 3858, "acheter") and r.choix[3858] == "acheter", "choix de case : estimation de l'artisan")
+  assert(C.Choix(r, 3858, "acheter") and r.choix[3858] == "acheter", "choix de case : estimation de l'artisan")
   assert(ns.projetOffre(r, 40000) and ns.projetCommande(r).tip == 40000, "offre : mon prix")
   -- Commander un bloc d'une réponse : une commande de cette réponse (sous-traitance), ordinaire (j'en suis le client).
-  ns.projetChoix(r, 3858, nil)
-  local i = ns.projetCommander(r, ns.projetArbre(r, TOUT).blocs[1])
+  C.Choix(r, 3858, nil)
+  local i = ns.projetCommander(r, C.Arbre(r, true).blocs[1])
   local sous = ns.projetCommande(r, i)
   assert(i == 2 and #ns.projetCommandes(r) == 2 and sous.bloc and not sous.reponse and sous.etat == "pas envoyée",
     "le bloc commandé : une commande de la réponse")
@@ -851,11 +644,13 @@ do
     "sa commande de bloc se règle comme une autre")
   -- La même version rouverte : mes changements restent ; une nouvelle version de la demande : la réponse est reprise.
   assert(ns.projetReponse(recue("h1", 1)) == r and ns.projetApports(r)[3858] and ns.projetCommande(r).tip == 40000, "même version : rien ne bouge")
+  C.Choix(r, 2841, "acheter")
   assert(ns.projetReponse(recue("h2", 3)) == r and r.lines[1].qty == 3 and not ns.projetApports(r)[3858] and ns.projetApports(r)[4234]
-    and ns.projetCommande(r).tip == 3 * 9000 - 4 * 500, "nouvelle version : sa demande reprise, mes changements effacés")
+    and ns.projetCommande(r).tip == 3 * 9000 - 4 * 500, "nouvelle version : sa demande reprise, mes apports et mon prix effacés")
+  assert(r.tenu == ns.FIGE and r.choix[2841] == "acheter" and C.Projet(r.id) == r, "un projet tenu de Composants, mes choix de case gardés")
   -- Un projet à moi : tout se modifie.
-  local mien = ns.nouveauProjet({ lines = { { id = 7963, qty = 1 } } })
-  assert(ns.projetPeut(mien, "lignes") and ns.projetQuantite(mien, 1, 2) and ns.projetAjouter(mien, 3858, 1) and ns.projetRetirer(mien, 2),
+  local mien = C.NouveauProjet({ lines = { { id = 7963, qty = 1 } } })
+  assert(C.Peut(mien, "lignes") and C.Quantite(mien, 1, 2) and C.Ajouter(mien, 3858, 1) and C.Retirer(mien, 2),
     "mon projet : lignes et quantités se changent")
 end
 as(BOB)
@@ -887,14 +682,14 @@ do
   end
   local avantA, avantB = termes(pa), termes(pb)
   assert(avantB == "5500:1:500 / 2870:1:5333,5541:1:3167", avantB)
-  ns.projetChoix(pa, 2841, "acheter")
+  C.Choix(pa, 2841, "acheter")
   assert(termes(pa) ~= avantA, "témoin : le choix change les prix par objet du projet A")
-  assert(ns.projetArbre(pa, TOUT).caseDe.I2841.made == 0, "projet A : le bronze acheté")
+  assert(C.Arbre(pa, true).caseDe.I2841.made == 0, "projet A : le bronze acheté")
   assert(termes(pb) == avantB, "projet B : caution et prix par objet inchangés")
-  assert(ns.projetArbre(pb, TOUT).caseDe.I2841.made == 30, "projet B : le bronze toujours fondu")
+  assert(C.Arbre(pb, true).caseDe.I2841.made == 30, "projet B : le bronze toujours fondu")
   -- Commande du bloc de la forge (#6) : le bronze du minage en caution à côté de ma perle ; la part de l'artisan ne
   -- coûte plus rien, l'offre se partage par moitié.
-  local i = ns.projetCommander(pb, ns.projetArbre(pb, TOUT).blocDe.Forge)
+  local i = ns.projetCommander(pb, C.Arbre(pb, true).blocDe.Forge)
   ns.projetArtisan(pb, BELN, i)
   ns.projetOffre(pb, 8000, i)
   assert(termes(pb, i) == "2841:30:100,5500:1:500 / 2870:1:6000,5541:1:5500", termes(pb, i))
@@ -906,19 +701,19 @@ print("Handshake : choix de case propres à chaque projet OK")
 -- ne réduisent jamais la part de l'artisan (CONCEPTION.md). Avec un marteau dans mes sacs et le stock coché, ce que livre
 -- le minage = le bronze que la forge reçoit en apport.
 as(BOB)
-local sacsAvant, optionsAvant = commune.Conteneurs, HandshakeDB.options
+local sacsAvant, optionsAvant = commune.Conteneurs, ComposantsDB.options
 commune.Conteneurs = function() return { b = { items = { { id = 5541, count = 1 } } } } end
-HandshakeDB.options = { bags = true, unlearned = true }
+ComposantsDB.options = { bags = true, unlearned = true }
 local ok, err = pcall(function()
-  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 2 }, { id = 2870, qty = 1 } } })
-  ns.projetChoix(p, 2841, "fabriquer")
-  local blocs = ns.projetArbre(p).blocDe -- l'arbre de la fenêtre, stock déduit
+  local p = C.NouveauProjet({ lines = { { id = 5541, qty = 2 }, { id = 2870, qty = 1 } } })
+  C.Choix(p, 2841, "fabriquer")
+  local blocs = C.Arbre(p).blocDe -- l'arbre de la fenêtre, stock déduit
   local forge, mine = ns.projetCommande(p, ns.projetCommander(p, blocs.Forge)), ns.projetCommande(p, ns.projetCommander(p, blocs.Minage))
-  local livre, recu = mine.lines[1], ns.demandeApports(ns.projetDemande(forge, forge.apports))
+  local livre, recu = mine.lines[1], ns.demandeApports(ns.arbreDemande(forge, forge.apports))
   assert(livre.id == 2841 and recu[1].id == 2841 and livre.qty == recu[1].qty and livre.qty == 40,
     ("le minage livre %d bronzes, la forge en reçoit %d"):format(livre.qty, recu[1].qty))
 end)
-commune.Conteneurs, HandshakeDB.options = sacsAvant, optionsAvant
+commune.Conteneurs, ComposantsDB.options = sacsAvant, optionsAvant
 assert(ok, err)
 print("Handshake : commandes sur l'arbre de la demande OK")
 
@@ -927,9 +722,9 @@ print("Handshake : commandes sur l'arbre de la demande OK")
 -- dans le contrat.
 as(BOB)
 do
-  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
-  ns.projetChoix(p, 2841, "fabriquer")
-  local i = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
+  local p = C.NouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  C.Choix(p, 2841, "fabriquer")
+  local i = ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge)
   ns.projetArtisan(p, BELN, i)
   ns.projetOffre(p, 8000, i)
   local function cmd() return ns.projetCommande(p, i) end
@@ -953,9 +748,9 @@ do
   assert(ns.ctKey(ct) ~= key1 and bases[BEL].contracts[ns.ctKey(ct)].hash == ct.hash, "même seconde qu'une autre demande : une autre clé, arrivée chez Belegard")
   local envoyee = termes(cmd())
   assert(envoyee == "2870x1,5541x1 / 2841 / 9000 / " .. BELN, envoyee)
-  ns.projetChoix(p, 2841, "acheter")
+  C.Choix(p, 2841, "acheter")
   ns.projetApport(p, 5500, true)
-  ns.projetAjouter(p, 5541, 3)
+  C.Ajouter(p, 5541, 3)
   ns.projetOffre(p, 1, i)
   ns.projetArtisan(p, "Cid", i)
   assert(termes(cmd()) == envoyee, "le projet change : la demande ne bouge pas")
@@ -986,17 +781,15 @@ do
   assert(#apporte == 1 and apporte[1].id == 2841 and apporte[1].qty == 30 and offre == 10000, "ses apports (du contrat), son offre")
   -- Le bloc de la forge commandé de nouveau : sa commande est figée, une nouvelle commande vivante (son identité à elle) ;
   -- commandé encore une fois : la même, tant qu'elle n'est pas partie.
-  local j = ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge)
+  local j = ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge)
   assert(j ~= i and not ns.projetCommande(p, j).fige and ns.projetCommande(p, j).etat == "pas envoyée", "une nouvelle commande de la forge")
   assert(ns.projetCommande(p, j).id ~= cmd().id, "chaque commande a son identité")
-  assert(ns.projetCommander(p, ns.projetArbre(p, TOUT).blocDe.Forge) == j, "la commande vivante est reprise")
+  assert(ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge) == j, "la commande vivante est reprise")
   assert(termes(cmd()) ~= termes(ns.projetCommande(p, j)), "la nouvelle suit le projet, l'envoyée non")
-  -- Supprimer le projet (#37) : sa commande signée reste dans Contrats, jamais effacée ; celle qui n'est pas partie
-  -- disparaît avec lui.
+  -- Supprimer le projet dans Composants (#37, #39) : sa commande signée reste dans Contrats, jamais effacée ; celle qui
+  -- n'est pas partie disparaît avec lui (le signal « ce projet a changé »).
   local signee = ns.ctKey(ct)
-  ns.ouvrirProjet(p.id)
-  ns.oublierCommandes(ns.supprimerProjet())
-  assert(not ns.ouvrirProjet(p.id), "le projet est supprimé")
+  assert(C.Supprimer(p.id) == p and not C.Projet(p.id), "le projet est supprimé")
   assert(HandshakeDB.contracts[signee] and ns.ctStatus(HandshakeDB.contracts[signee]) == "signe", "la commande signée reste dans Contrats")
   assert(HandshakeDB.commandes[p.id] == nil, "ses commandes pas encore parties disparaissent")
 end
@@ -1010,9 +803,9 @@ as(BOB)
 C_CurrencyInfo = { GetCoinTextureString = function(c) return c .. "pc" end }
 AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2841] = { tiers = { { price = 100, qty = 999 } } } } } }
 do
-  local p = ns.nouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
-  ns.projetChoix(p, 2841, "fabriquer")
-  local blocs = ns.projetArbre(p, TOUT).blocDe
+  local p = C.NouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  C.Choix(p, 2841, "fabriquer")
+  local blocs = C.Arbre(p, true).blocDe
   local f, m = ns.projetCommander(p, blocs.Forge), ns.projetCommander(p, blocs.Minage)
   local function cmd(i) return ns.projetCommande(p, i) end
   local function envoyer(i)
@@ -1086,7 +879,7 @@ do
   as(BOB)
   assert(cmd(f).etat == "contre-proposée" and not cmd(f).ecart, "il change son prix : pas d'écart")
   -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
-  ns.projetQuantite(p, 2, 2)
+  C.Quantite(p, 2, 2)
   assert(cmd(m).ecart == "ne correspond plus au contrat" and cmd(f).ecart == cmd(m).ecart, "quantité : les deux, même libellé")
   -- Belegard refuse le minage : figé, pas de nouvelle version, mais il se commande de nouveau (une commande vivante,
   -- reprise tant qu'elle n'est pas partie).
@@ -1108,12 +901,12 @@ do
   local t2 = ns.projetRecommander(p, 1)
   assert(t2 and t2 ~= 1 and cmd(t2).part == "tout le projet" and not cmd(t2).fige and #cmd(t2).lines == 2, "tout le projet, de nouveau")
   -- Ce qui part reste dans les bornes que vérifie celui qui reçoit (n° 15) : 1001 cuirasses ne partent pas.
-  ns.projetQuantite(p, 2, 1001)
+  C.Quantite(p, 2, 1001)
   local _, trop = ns.projetNouvelleVersion(p, f)
   assert(trop and trop:find("bornes"), "hors bornes : rien n'est envoyé")
   assert(bases[BEL].contracts[ns.ctKey(cf)].v == "3", "Belegard a toujours la v3 (son prix)")
   -- Un brouillon de nouvelle version dépassé (il contre-propose entre-temps) : périmé, il ne part pas, il est effacé.
-  ns.projetQuantite(p, 2, 2)
+  C.Quantite(p, 2, 2)
   local b = assert(ns.projetNouvelleVersion(p, f))
   assert(b.v == "4" and b.prev.v == "3", "brouillon de la v4")
   as(BEL)
@@ -1149,43 +942,20 @@ as(BEL)
 assert(ns.me() == GBEL and ns.myName() == BELN, "moi : mon GUID ; mon nom : prénom et nom de famille")
 print("Handshake : noms à la Forever OK")
 
--- Les recettes connues de tous les persos de la base, par le socle.
-local ALT, SANS = "Player-6942-00000A17", "Player-6942-00005A25"
-AzerothCommuneDB.chars = { [ALT] = { nom = "Alt Dupont", recipes = { Forge = { rank = 50, max = 75, known = { [9] = "easy" } } },
-  professions = { { name = "Couture", rank = 120 } }, bags = { b = { items = { { id = 2840, count = 4 } } } } }, [SANS] = {} }
-assert(ns.knownRecipes()[ALT].Forge.known[9] and not ns.knownRecipes()[SANS], "recettes connues de la base, par GUID")
-local alt
-for _, e in ipairs(ns.crafters()) do if e.key == ALT then alt = e end end
-assert(alt and alt.name == "Alt Dupont" and alt.ranks.Forge == 50 and alt.known[9], "artisan lu dans la base, prénom tiré de sa fiche")
-assert(alt.ranks.Couture == 120, "métiers des persos (fiche de la base), par le socle")
--- Mes autres persos (option « mes autres persos ») : leurs sacs, par le socle.
-AzerothCommuneDB.recipes = { [1] = { name = "Fonte du bronze", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
-AzerothCommuneMarket = { ["6942-Alliance"] = { scanned = "hier", items = { [2840] = { tiers = { { price = 50, qty = 99 } } } } } }
-local bronze = ns.nouveauProjet({ lines = { { id = 2841, qty = 6 } } })
-local arbreAlts = ns.projetArbre(bronze, { alts = true, unlearned = true })
-assert(arbreAlts.caseDe.I2840.have[3] == 4 and arbreAlts.caseDe.I2840.need == 2, "sacs d'un autre perso déduits")
-assert(ns.texteHV() == "HV du hier", "la date du scan du socle")
-AzerothCommuneDB.chars = {}
-aucunReleve("recettes connues")
-print("Handshake : recettes connues des persos de la base OK")
-
--- Relevés d'un Handshake d'avant purgés, catalogue des objets pas encore relevé (noms demandés au serveur), sacs et
--- banque du perso connecté, l'HV d'un fournisseur ; jamais rien de relevé dans HandshakeDB.
--- Relevés sauvegardés par un Handshake d'avant : purgés (ADR 0001), données propres gardées.
+-- Relevés d'un Handshake d'avant purgés, catalogue des objets pas encore relevé (noms demandés au serveur) ; jamais rien de
+-- relevé dans HandshakeDB. Relevés sauvegardés par un Handshake d'avant : purgés (ADR 0002), données propres gardées.
 HandshakeDB.recipes = { [1] = { name = "vieux relevé" } }
 HandshakeDB.chars = { ["Vieux-Perso"] = { recipes = { Forge = { known = { [1] = 1 } } }, bags = { [2770] = 3 } } }
 HandshakeDB.items, HandshakeDB.market = { [2770] = { name = "Minerai" } }, { ["6942-Alliance"] = { items = {} } }
 ns.purgerAnciensReleves()
 aucunReleve("purge")
-assert(HandshakeDB.contracts and HandshakeDB.projets, "données propres gardées")
+assert(HandshakeDB.contracts, "données propres gardées")
 AzerothCommuneDB.recipes, AzerothCommuneItems.items, AzerothCommuneMarket = {}, {}, {}
-assert(not ns.recipes()[5] and not next(ns.knownRecipes()), "rien de relevé")
+assert(not ns.recipes()[5], "rien de relevé")
 -- Minage relevé par le socle (fenêtre de métier) ; le catalogue des objets, lui, pas encore.
-local GMOI = UnitGUID("player")
 AzerothCommuneDB.recipes = {
   [5] = { name = "Fonte du cuivre", profession = "Minage", output = 2840, reagents = { { id = 2770, qty = 1 } } },
   [6] = { name = "Fonte du bronze", profession = "Minage", output = 2841, reagents = { { id = 2840, qty = 1 } } } }
-AzerothCommuneDB.chars = { [GMOI] = { recipes = { Minage = { rank = 75, max = 150, known = { [5] = "medium" } } } } }
 -- Les noms des produits et composants des recettes relevées sont demandés au serveur ; arrivés, gardés en mémoire.
 local demandes = {}
 C_Item.RequestLoadItemDataByID = function(id) demandes[id] = true end
@@ -1196,30 +966,7 @@ C_Item.GetItemInfo = function(id) if id == 2840 then return "Barre de cuivre", "
 ns.rememberItem(2840)
 C_Item.GetItemInfo = noop
 assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "noms en mémoire")
-assert(ns.knownRecipes()[GMOI].Minage.known[5] and not ns.knownRecipes()[GMOI].Minage.known[6], "recettes connues du perso")
-local moi = ns.crafters()[1]
-assert(moi.key == GMOI and moi.ranks.Minage == 75 and moi.known[5], "artisan : mon perso, même sans sacs relevés")
--- Sacs (lus à l'instant, par le socle) et banque (dernier passage, dans la base) du perso connecté, déduits du calcul.
-Enum = Enum or {}
-Enum.BagIndex = { Backpack = 0, Bank = -1 }
-local slots = { [0] = { { itemID = 2770, stackCount = 2, hyperlink = "|Hitem:2770|h" } }, [-1] = {} }
-C_Container = { GetContainerNumSlots = function(b) return #slots[b] end, GetContainerItemInfo = function(b, i) return slots[b][i] end }
-AzerothCommuneDB.chars[GMOI].bank = { Bank = { items = { { id = 2770, count = 3 } } } }
-local cuivre = ns.nouveauProjet({ lines = { { id = 2840, qty = 10 } } })
-local arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true, alts = true })
-local minerai = arbreSeul.caseDe.I2770
-assert(minerai.have[1] == 2 and minerai.have[2] == 3 and minerai.have[3] == 0 and minerai.need == 5, "sacs et banque du perso, pas d'autres persos")
--- HV : ni scan du socle ni fournisseur, rien à acheter ; la fenêtre dit comment l'avoir.
-assert(minerai.unpriced and ns.market() == nil, "pas de prix de l'HV")
-assert(ns.texteHV() == "HV jamais scanné : ouvre l'hôtel des ventes", "HV : " .. ns.texteHV())
--- Avec Auctionator (fournisseur) : ses prix du jour, sans paliers.
-time = os.time
-Auctionator = { API = { v1 = { GetAuctionPriceByItemID = function(_, id) return id == 2770 and 30 or nil end,
-  GetAuctionAgeByItemID = function() return 0 end } } }
-arbreSeul = ns.projetArbre(cuivre, { bags = true, bank = true })
-assert(arbreSeul.caseDe.I2770.cost == 5 * 30 and ns.texteHV() == "prix de l'HV : Auctionator", "prix d'Auctionator")
-Auctionator = nil
-aucunReleve("catalogue pas encore relevé, fournisseur")
+aucunReleve("noms demandés")
 -- Base des recettes du socle (Handshake#36, AzerothCommune#48) : Handshake y souscrit et la lit par Lire. La réserve
 -- Classic est celle du socle (privée : acns.recettesClassic), ajoutée pour les objets sans recette vue, jamais par-dessus
 -- une recette vue du même objet.
@@ -1230,13 +977,6 @@ acns.recettesClassic = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Clas
 local merged = ns.recipes()
 assert(merged[5] and not merged[9001], "barre de cuivre déjà vue : la recette Classic ne la double pas")
 assert(merged[9002] and merged[9002].output == 4255 and merged[9002].reagents[1].qty == 9, "armure verte en cuir : recette Classic")
--- Compétence requise affichée dans les blocs : celle de la réserve, aussi pour une recette vue pas apprise (5).
-local verte = ns.projetArbre(ns.nouveauProjet({ lines = { { id = 4255, qty = 1 }, { id = 2840, qty = 1 } } }),
-  { unlearned = true, force = { [4255] = "fabriquer", [2840] = "fabriquer" } })
-local niveaux = {}
-for _, g in ipairs(verte.blocs) do for _, r in ipairs(g.recipes) do niveaux[r.key] = r.level end end
-assert(niveaux[9002] == 175 and niveaux[5] == 25, "compétence requise de la réserve : " .. tostring(niveaux[9002]) .. ", " .. tostring(niveaux[5]))
-acns.recettesClassic = nil
 -- Handshake ne livre plus de réserve et ne remet plus rien au socle (Handshake#36).
 local hstoc = io.open("Handshake/Handshake.toc"):read("*a")
 assert(not hstoc:find("RecettesClassic", 1, true), "plus de réserve dans la TOC de Handshake")
@@ -1244,10 +984,24 @@ for f in hstoc:gmatch("([%w_]+)%.lua") do
   local code = io.open("Handshake/" .. f .. ".lua"):read("*a"):gsub("%-%-[^\n]*", "")
   for _, m in ipairs({ "HandshakeClassicRecipes", "RemettreRecettes" }) do assert(not code:find(m, 1, true), f .. ".lua : " .. m) end
 end
-local demo = ns.demoOrder("hasard")
-assert(demo.name == "Essai : au hasard" and #demo.lines == 1 and demo.lines[1].id == 2841, "essai : le bronze (son cuivre se fabrique)")
-assert(#ns.demoOrder().lines == 3 and ns.demoOrder("ceinture").lines[1].id == 10721, "essais choisis : le set, les ceintures")
-print("Handshake : purge, noms demandés, sacs et banque, fournisseur de l'HV OK")
+-- Handshake n'a plus d'arbre à lui (Handshake#39) : ni projets, ni calcul, ni Besoins ; il ne lit que l'API de Composants.
+for _, f in ipairs({ "Calcul", "Projet", "Fenetre", "Besoins" }) do
+  assert(not hstoc:find(f .. ".lua", 1, true) and not io.open("Handshake/" .. f .. ".lua"), "plus de " .. f .. ".lua")
+end
+for f in hstoc:gmatch("([%w_]+)%.lua") do
+  local code = io.open("Handshake/" .. f .. ".lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  for _, m in ipairs({ "ComposantsDB", "ComposantsFrame", "craftPlan", "projetArbre", "dessinArbre", "HandleModifiedItemClick" }) do
+    assert(not code:find(m, 1, true), f .. ".lua : " .. m)
+  end
+end
+for _, k in ipairs({ "nouveauProjet", "projetArbre", "projetDemande", "craftPlan", "crafters", "orderNeeds", "openCraftWindow", "demoOrder", "sendNeeds" }) do
+  assert(ns[k] == nil, "ns." .. k .. " : parti dans Composants")
+end
+for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences" }) do
+  assert(not io.open("Handshake/Donnees.lua"):read("*a"):find('"' .. t .. '"', 1, true), "Handshake ne souscrit plus à " .. t)
+end
+print("Handshake : purge, noms demandés, réserve des recettes OK")
+
 
 -- Identité affichée : « Prénom Nom — GUID », plus de royaume (Handshake#29) ; le nom vient du serveur, codes échappés.
 UnitExists, UnitIsPlayer = function() return true end, function() return true end
@@ -1280,3 +1034,39 @@ print("Handshake : royaume et faction par la lib OK")
 -- nommé 'Belegard' », 21/11/2026, LibCommune#35).
 assert(ns.whisperTarget("Belegard Marteaudefer") == "Belegard Marteaudefer")
 print("Handshake : destinataire des chuchotements OK")
+
+-- L'API publique de Handshake (README.md) : le global Handshake, celui dont Composants se sert ; rien d'autre.
+do
+  local API = { "Commandes", "Commande", "Commander", "Artisan", "Offre", "Preparer", "Agir", "EnClair", "Importer", "Apports",
+    "Apporter", "EstReponse" }
+  local n = 0
+  for _ in pairs(Handshake) do n = n + 1 end
+  local readme = assert(io.open("Handshake/README.md"), "README.md"):read("*a")
+  for _, f in ipairs(API) do
+    assert(type(Handshake[f]) == "function", "Handshake." .. f)
+    assert(readme:find("H." .. f .. "(", 1, true), "README : Handshake." .. f)
+  end
+  assert(n == #API, "l'API publique, rien de plus")
+  assert(not HSTOC:find("OptionalDeps", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
+    "le socle requis ; plus de reliquat BeAGoodPal (Composants déclare Handshake, pas l'inverse : pas de cycle)")
+end
+print("Handshake : API publique OK")
+
+-- Sans Composants (Handshake seul) : la commande à la main sert, rien n'échoue. /handshake ouvre la commande à la main,
+-- une liste reçue s'importe en commande à la main, les commandes d'un projet ne sont jamais demandées.
+do
+  local C0, ouverte = Composants, nil
+  Composants = nil
+  local avant = ns.openCommandeMain
+  ns.openCommandeMain = function(c) ouverte = c or true end
+  SlashCmdList.HANDSHAKE("")
+  assert(ouverte == true, "/handshake : la commande à la main")
+  ouverte = nil
+  ns.importText("Commande : 2x" .. link(7963, "Claymore en mithril") .. " · j'apporte 4x" .. link(4234, "Cuir lourd") .. " · offre 3 po", "Bob")
+  local m = ns.commandeMain()
+  assert(ouverte and #m.lines == 1 and m.lines[1].id == 7963 and m.lines[1].qty == 2 and m.apporte[1].id == 4234
+    and m.player == "Bob" and m.tip == 30000, "importée en commande à la main")
+  ns.openCommandeMain, Composants = avant, C0
+  HandshakeDB.main = nil
+end
+print("Handshake : sans Composants OK")

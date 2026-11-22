@@ -1,34 +1,45 @@
--- Tests d'intégration dans wow-ui-sim (tools/sim.sh test Handshake) : Handshake chargé avec le socle Azeroth Commune dans
--- l'interface Forever simulée (le WTF de session ne contient pas nos SavedVariables : la purge des projets d'avant
--- l'identité stable est testée dans check.lua).
-test("Handshake se charge : des projets, plus de table globale des choix", function()
+-- Tests d'intégration dans wow-ui-sim (tools/sim.sh test Handshake) : Handshake et Composants chargés avec le socle Azeroth
+-- Commune dans l'interface Forever simulée. Les commandes vivent dans la fenêtre des projets de Composants, qui les dessine
+-- par l'API publique de Handshake. Sans Composants dans les racines, seul le premier test tourne (Handshake seul).
+test("Handshake se charge : plus de projets à lui, plus de table globale des choix", function()
     assertType("table", HandshakeDB)
-    assertType("table", HandshakeDB.projets)
+    assertNil(HandshakeDB.projets)
+    assertNil(HandshakeDB.options)
     assertNil(HandshakeDB.force)
     assertNil(HandshakeDB.orders)
     assertType("function", SlashCmdList.HANDSHAKE)
+    assertType("table", Handshake)
+    assertNil(ComposantsFrame, "plus de fenêtre de l'arbre dans Handshake")
 end)
 
+if not Composants then
+    test("Handshake seul : /handshake ouvre la commande à la main", function()
+        SlashCmdList.HANDSHAKE("")
+        assertTrue(HandshakeMainFrame:IsShown())
+        HandshakeMainFrame:Hide()
+    end)
+    return
+end
+
 local function enfant(ok)
-    for _, c in ipairs({ HandshakeFrame:GetChildren() }) do
+    for _, c in ipairs({ ComposantsFrame:GetChildren() }) do
         if ok(c) then return c end
     end
 end
 local function bouton(texte) return enfant(function(c) return c.GetText and c:GetText() == texte and c:GetObjectType() == "Button" end) end
 -- Le nom du projet affiché en haut de la fenêtre.
 local function affiche(nom) return enfant(function(c) return c:GetObjectType() == "EditBox" and c:GetText() == nom end) ~= nil end
+-- Le projet affiché dans la fenêtre de Composants.
+local function affichePas() return ComposantsDB.projets[ComposantsDB.courant] end
 
-test("un projet créé s'ouvre dans la fenêtre, < et > passent d'un projet à l'autre", function()
-    SlashCmdList.HANDSHAKE("demo ceinture") -- crée un projet et ouvre la fenêtre (calcul et dessin de l'arbre)
-    assertTrue(HandshakeFrame:IsShown())
+test("avec Composants : /handshake ouvre la fenêtre des projets, sa barre des commandes", function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    ComposantsFrame:Hide()
+    SlashCmdList.HANDSHAKE("")
+    assertTrue(ComposantsFrame:IsShown())
     assertTrue(affiche("Essai : ceintures multi-métiers"))
-    SlashCmdList.HANDSHAKE("demo set")
-    assertTrue(affiche("Essai : set en thorium enchanté"))
-    bouton("<"):Click()
-    assertTrue(affiche("Essai : ceintures multi-métiers"))
-    bouton(">"):Click()
-    assertTrue(affiche("Essai : set en thorium enchanté"))
-    HandshakeFrame:Hide()
+    assertNotNil(bouton("Préparer la demande"), "la barre des commandes, dessinée par Composants")
+    ComposantsFrame:Hide()
 end)
 
 -- Commandes (#6) : « Commander » sur un bloc ajoute une commande à la liste du projet, sans nouvelle page. Les blocs
@@ -43,29 +54,29 @@ local function tous(f, ok, out)
     end
     return out
 end
-local function boutons(ok) return tous(HandshakeFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and ok(c:GetText() or "") end) end
+local function boutons(ok) return tous(ComposantsFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and ok(c:GetText() or "") end) end
 -- La liste des commandes : un bouton par commande, « part · artisan[ · offre] ».
 local function commandes() return boutons(function(t) return t:find(" · ", 1, true) ~= nil end) end
 
 -- Personne n'a de recette ici : « recettes pas apprises » cochée, toutes comptent et les blocs se dessinent. L'option est
 -- rendue telle quelle, même si une vérification échoue.
 local function sansRecettes(f)
-    local avant = HandshakeDB.options.unlearned
-    HandshakeDB.options.unlearned = true
+    local avant = ComposantsDB.options.unlearned
+    ComposantsDB.options.unlearned = true
     local ok, err = pcall(f)
-    HandshakeDB.options.unlearned = avant
-    HandshakeFrame:Hide()
+    ComposantsDB.options.unlearned = avant
+    ComposantsFrame:Hide()
     if not ok then error(err, 0) end
 end
 
 test("Commander un bloc ajoute une commande au projet, sur la même page", function() sansRecettes(function()
-    SlashCmdList.HANDSHAKE("demo ceinture")
-    local nb = #HandshakeDB.projets
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local nb = #ComposantsDB.projets
     assertEquals(1, #commandes()) -- tout le projet
     local commander = boutons(function(t) return t == "Commander" end)
     assertTrue(#commander > 0, "des blocs dessinés (AzerothCommune/RecettesClassic.lua présent ?)")
     commander[1]:Click()
-    assertEquals(nb, #HandshakeDB.projets)
+    assertEquals(nb, #ComposantsDB.projets)
     assertTrue(affiche("Essai : ceintures multi-métiers"))
     local liste = commandes()
     assertEquals(2, #liste)
@@ -76,9 +87,9 @@ end) end)
 -- Recettes équivalentes (#46), avec la vraie réserve (extraite du client, transmutations d'essences en boucle) : dans la
 -- démo « set », les essences de terre et d'eau s'achètent, aucune essence n'est fabriquée par une transmutation.
 test("Démo « set » : pas de boucle de transmutation, les essences s'achètent", function() sansRecettes(function()
-    SlashCmdList.HANDSHAKE("demo set")
+    SlashCmdList.COMPOSANTS("demo set")
     local caseDe = {}
-    for _, c in ipairs(tous(HandshakeFrame, function(c) return c.node ~= nil end)) do caseDe[c.node.id] = c.node end
+    for _, c in ipairs(tous(ComposantsFrame, function(c) return c.node ~= nil end)) do caseDe[c.node.id] = c.node end
     assertNotNil(caseDe[7076], "une case Essence de terre (AzerothCommune/RecettesClassic.lua présent ?)")
     assertNotNil(caseDe[7080], "une case Essence d'eau")
     for _, id in ipairs({ 7076, 7078, 7080, 7082, 12803, 12808 }) do
@@ -98,10 +109,10 @@ local function toutLeProjet(p) return HandshakeDB.commandes[p.id].liste[1] end
 
 -- Envoyer une commande (#7) : son état, lu dans son contrat, s'affiche à côté d'elle dans la liste des commandes.
 test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat", function() sansRecettes(function()
-    SlashCmdList.HANDSHAKE("demo ceinture")
+    SlashCmdList.COMPOSANTS("demo ceinture")
     boutons(function(t) return t == "Commander" end)[1]:Click()
     for _, b in ipairs(commandes()) do assertTrue(b:GetText():find("pas envoyée", 1, true) ~= nil, b:GetText()) end
-    local p = HandshakeDB.projets[#HandshakeDB.projets]
+    local p = ComposantsDB.projets[#ComposantsDB.projets]
     artisanConnu()
     toutLeProjet(p).player = ARTISAN -- la commande « tout le projet », à un autre joueur
     commandes()[1]:Click()
@@ -124,8 +135,8 @@ end) end)
 -- prépare la v2 en brouillon et l'ouvre dans les contrats (#19) ; elle part de là, sur « Envoyer la proposition ».
 -- Retirée, elle se commande de nouveau.
 test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant l'envoi", function() sansRecettes(function()
-    SlashCmdList.HANDSHAKE("demo ceinture")
-    local p = HandshakeDB.projets[#HandshakeDB.projets]
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = ComposantsDB.projets[#ComposantsDB.projets]
     artisanConnu()
     toutLeProjet(p).player = ARTISAN
     commandes()[1]:Click()
@@ -191,37 +202,37 @@ end) end)
 -- seul compte qu'elle en soit une.) Le projet redevient le mien même si une vérification échoue.
 -- Les champs de quantité des cases de la colonne 0 (une case porte son nœud).
 local function quantites()
-    return tous(HandshakeFrame, function(c) return c:GetObjectType() == "EditBox" and c:IsVisible() and c:GetParent().node ~= nil end)
+    return tous(ComposantsFrame, function(c) return c:GetObjectType() == "EditBox" and c:IsVisible() and c:GetParent().node ~= nil end)
 end
 test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le projet", function()
-    SlashCmdList.HANDSHAKE("demo ceinture")
-    local p = HandshakeDB.projets[#HandshakeDB.projets]
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = ComposantsDB.projets[#ComposantsDB.projets]
     local ok, err = pcall(function()
         assertTrue(#quantites() > 0, "une case par objet du projet")
         for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
         HandshakeDB.commandes[p.id].reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
         bouton("<"):Click(); bouton(">"):Click() -- redessiné
-        assertEquals(p, HandshakeDB.projets[HandshakeDB.courant])
+        assertEquals(p, affichePas())
         assertTrue(#quantites() > 0, "toujours affichée")
         for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
         assertTrue(bouton("Contre-proposer") ~= nil, "une réponse se contre-propose")
     end)
     HandshakeDB.commandes[p.id].reponse, p.tenu = nil, nil
-    HandshakeFrame:Hide()
+    ComposantsFrame:Hide()
     if not ok then error(err, 0) end
 end)
 
 -- AzerothCommune#49 : la barre de recherche de la fenêtre propose ce que rend la recherche d'objets du socle, dans son
 -- ordre (Handshake n'a plus d'index d'objets à lui).
 test("la barre de recherche propose les objets de la recherche du socle", function()
-    SlashCmdList.HANDSHAKE("demo ceinture")
+    SlashCmdList.COMPOSANTS("demo ceinture")
     local box = enfant(function(c) return c:GetObjectType() == "EditBox" and math.floor(c:GetWidth() + 0.5) == 280 end)
     assertNotNil(box, "barre de recherche")
     box:SetText("bronze")
     box:GetScript("OnTextChanged")(box, true)
     local attendus = AzerothCommune.ChercherObjets("bronze", 8)
     assertEquals(8, #attendus)
-    local montres = tous(HandshakeFrame, function(c)
+    local montres = tous(ComposantsFrame, function(c)
         return c:GetObjectType() == "Button" and c:IsShown() and c.text ~= nil and math.floor(c:GetWidth() + 0.5) == 316
     end)
     assertEquals(#attendus, #montres)
@@ -229,5 +240,58 @@ test("la barre de recherche propose les objets de la recherche du socle", functi
         assertEquals(e.name .. (e.fabricable and "  |cffe6a640fabricable|r" or ""), montres[i].text:GetText())
     end
     box:SetText("")
-    HandshakeFrame:Hide()
+    ComposantsFrame:Hide()
 end)
+
+-- Réponse (#39) : une demande reçue, « Répondre dans l'arbre » dans Contrats, s'ouvre comme un projet tenu de Composants
+-- (ce qu'il veut, avec la raison de Handshake) ; on y commande un bloc à un autre artisan (sous-traitance).
+local function boutonDe(f, texte)
+    local function chercher(x)
+        for _, c in ipairs({ x:GetChildren() }) do
+            if c:GetObjectType() == "Button" and c:IsShown() and c.GetText and c:GetText() == texte then return c end
+            local r = chercher(c)
+            if r then return r end
+        end
+    end
+    return chercher(f)
+end
+test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on en commande un bloc", function() sansRecettes(function()
+    local moi, cle = UnitGUID("player"), "Player-1-0000B0B0#4343"
+    local c = { origin = "Player-1-0000B0B0", id = "4343", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = moi,
+        m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
+        hash = "00000000cafebabe", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
+    HandshakeDB.contracts[cle] = c
+    local ok, err = pcall(function()
+        SlashCmdList.HANDSHAKECONTRAT()
+        for _ = 1, 30 do
+            if boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre") then break end
+            boutonDe(HandshakeContratsFrame, ">"):Click()
+        end
+        boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre"):Click()
+        HandshakeContratsFrame:Hide()
+        assertTrue(ComposantsFrame:IsShown(), "la Réponse s'ouvre dans la fenêtre de Composants")
+        local p = affichePas()
+        assertEquals("Réponse à Bob", p.name)
+        assertEquals(1, #p.lines)
+        assertEquals(10721, p.lines[1].id)
+        assertType("string", p.tenu)
+        local refus, raison = Composants.Ajouter(p, 2841, 1)
+        assertTrue(refus == false and raison == p.tenu, "ses lignes sont tenues, avec la raison de Handshake")
+        assertTrue(Handshake.EstReponse(p))
+        assertNotNil(bouton("Contre-proposer"))
+        local commander = boutons(function(t) return t == "Commander" end)
+        assertTrue(#commander > 0, "« Commander » sur les blocs de la Réponse")
+        commander[1]:Click()
+        local cmds = Handshake.Commandes(p)
+        assertEquals(2, #cmds)
+        assertNotNil(cmds[1].reponse, "la 1re reste la Réponse")
+        assertNil(cmds[2].reponse, "le bloc commandé : une commande ordinaire (sous-traitance)")
+        assertEquals("pas envoyée", cmds[2].etat)
+        -- Supprimer la Réponse dans Composants : ses commandes pas encore parties s'effacent, le contrat reste.
+        Composants.Supprimer(p.id)
+        assertNil(HandshakeDB.commandes[p.id])
+        assertNotNil(HandshakeDB.contracts[cle], "aucun contrat perdu")
+    end)
+    HandshakeDB.contracts[cle] = nil
+    if not ok then error(err, 0) end
+end) end)

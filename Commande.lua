@@ -1,8 +1,7 @@
 -- Handshake : une commande passe d'un joueur à l'autre.
--- Commande = une part d'un projet (ns.projetCommande, plus bas ; le projet : Projet.lua) : ses lignes « objet × quantité »,
--- le joueur d'en face, une offre, des apports.
--- Ce qu'il faut pour la faire (la liste des besoins) a la même forme : on peut la renvoyer au client, ou la passer
--- à un autre joueur comme une commande.
+-- Commande = une part d'un projet de Composants (ns.projetCommande, plus bas ; le projet, son arbre et ses blocs : l'API
+-- publique de Composants, global Composants, quand il est chargé) ou une commande à la main (CommandeMain.lua) : ses lignes
+-- « objet × quantité », le joueur d'en face, une offre, des apports.
 -- Échange : du texte avec des liens d'objets, lisible et écrivable à la main (Maj+clic), par chuchotement :
 --   Commande : 1x[Claymore en mithril] 1x[Camail en mithril] · j'apporte 36x[Minerai de mithril] · offre 5 po
 --   Besoins (1/2) : 36x[Minerai de mithril] 12x[Pierre solide] …
@@ -14,7 +13,7 @@ local MAX_MSG = 255
 
 ---------------------------------------------------------------------------------------------------
 -- Les commandes d'un projet (CONTEXT.md), rangées à part dans HandshakeDB.commandes[p.id], rattachées à l'identité du
--- projet (Projet.lua, qui ne sait rien d'elles) : { liste = { { id (unique dans le projet), bloc (le métier ; nil = tout
+-- projet de Composants (qui ne sait rien d'elles) : { liste = { { id (unique dans le projet), bloc (le métier ; nil = tout
 -- le projet : la 1re, et celles recommandées), player (l'artisan), tip (l'offre, en cuivre), contrat (clé de son contrat,
 -- une fois préparée) } }, seq (la dernière identité de commande donnée), apports = { [id] = true } (mes apports, pour
 -- toutes ses commandes), reponse (clé du contrat dont il est la réponse), reponseHash }.
@@ -29,13 +28,17 @@ local function rangement(p)
 end
 local function commandes(p) return rangement(p).liste end
 
--- Supprimer un projet (ns.supprimerProjet renvoie celui qui part) efface ses commandes pas encore parties ; jamais un
--- contrat : une commande envoyée reste dans Contrats, sans écart calculé (plus de projet à comparer).
+-- Supprimer un projet (Composants le signale) efface ses commandes pas encore parties ; jamais un contrat : une commande
+-- envoyée reste dans Contrats, sans écart calculé (plus de projet à comparer).
 function ns.oublierCommandes(p)
   if p and HandshakeDB.commandes then HandshakeDB.commandes[p.id] = nil end
 end
 
--- Mes apports sur ce projet (nil = aucun) : l'arbre les reçoit (ns.projetArbre(p, opts, ns.projetApports(p))).
+-- L'arbre de la demande (CONCEPTION.md) d'un projet ou d'une part de projet { lines, choix } : toutes les recettes, aucun
+-- stock déduit (les stocks du demandeur ne réduisent pas la part de l'artisan), les apports retirés. Par Composants.
+function ns.arbreDemande(p, apports) return Composants.Arbre(p, true, apports) end
+
+-- Mes apports sur ce projet (nil = aucun) : l'arbre les reçoit (Composants.Arbre(p, …, ns.projetApports(p))).
 function ns.projetApports(p) return rangement(p).apports end
 
 -- « Je le fournis » : un terme des commandes du projet, par case entière ; la case, et tout ce qu'il y a sous elle, sort
@@ -51,19 +54,19 @@ end
 -- Ce projet est-il une réponse (la demande d'un autre) ?
 function ns.estReponse(p) return rangement(p).reponse ~= nil end
 
--- « Je réponds » : la demande reçue devient une réponse, un projet lié au contrat (sa clé dans le rangement) et tenu
--- (ns.projetTenir) : ce qu'il veut ne change pas ici ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel
+-- « Je réponds » (Composants chargé) : la demande reçue devient une réponse, un projet de Composants lié au contrat (sa clé
+-- dans le rangement) et tenu (Composants.Tenir) : ce qu'il veut ne change pas ici ; ses apports (Ctrl+clic pour contre-proposer) et le prix actuel
 -- sont recopiés à chaque nouvelle version. Ses choix de case, son prix et les blocs qu'il commande restent à l'artisan.
 local FIGE = "c'est sa demande : ce qu'il veut ne change pas ici"
 ns.FIGE = FIGE -- la même raison dans la réponse en liste (CommandeMain.lua)
 function ns.projetReponse(c)
-  local key, p, r = ns.ctKey(c), nil, nil
+  local C, key, p, r = Composants, ns.ctKey(c), nil, nil
   for id, x in pairs(HandshakeDB.commandes or {}) do
-    local q = x.reponse == key and ns.ouvrirProjet(id)
+    local q = x.reponse == key and C.Projet(id)
     if q then p, r = q, x end
   end
   if not p then
-    p = ns.nouveauProjet()
+    p = C.NouveauProjet()
     r = rangement(p)
     r.reponse = key
   end
@@ -71,10 +74,10 @@ function ns.projetReponse(c)
   local tout = r.liste[1]
   local client = c.peer and c.peer.name or "?" -- le client, sous le nom donné par le serveur
   r.reponseHash, tout.player = c.hash, client
-  ns.projetRenommer(p, "Réponse à " .. client:match("^%S+"))
+  C.Renommer(p, "Réponse à " .. client:match("^%S+"))
   local lines = {}
   for _, l in ipairs(c.o) do lines[#lines + 1] = { id = l.id, qty = l.qty } end
-  ns.projetTenir(p, FIGE, lines)
+  C.Tenir(p, FIGE, lines) -- ses choix de case restent
   r.apports = nil
   for _, l in ipairs(c.m) do r.apports = r.apports or {}; r.apports[l.id] = true end
   tout.tip = math.max(0, ns.ctTotal(c.o) - ns.ctTotal(c.m))
@@ -121,7 +124,7 @@ end
 
 -- La part du projet que vise la commande c, telle que le projet la fait maintenant : ses lignes et ses apports, rangés dans
 -- v. Une commande de bloc livre ce que le bloc produit ; ses apports = ce qui entre dans le bloc (les livraisons des autres
--- blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de la demande (dem = ns.projetDemande, aucun stock
+-- blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de la demande (dem = ns.arbreDemande, aucun stock
 -- déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que soit le stock affiché dans la fenêtre. Si le bloc a
 -- disparu (tout acheté…), elle reste, vide.
 local function part(p, c, dem, v)
@@ -154,7 +157,7 @@ local function ecart(order, ct)
   end
   local o, m = {}, {}
   for _, l in ipairs(order.lines) do o[l.id] = (o[l.id] or 0) + l.qty end
-  for _, a in ipairs(ns.demandeApports(ns.projetDemande(order, order.apports))) do m[a.id] = a.qty end
+  for _, a in ipairs(ns.demandeApports(ns.arbreDemande(order, order.apports))) do m[a.id] = a.qty end
   return differe(ct.o, o) or differe(ct.m, m)
 end
 -- Un brouillon ne suit pas le projet non plus : il diffère aussi par l'artisan ou l'offre (à l'arrondi près, ½ pc par
@@ -207,7 +210,7 @@ end
 -- ponytail: recalculé à chaque appel (quelques ms) ; un cache le jour où la fenêtre rame
 local function demandeDe(p)
   local dem
-  return function() dem = dem or ns.projetDemande(p, ns.projetApports(p)) return dem end
+  return function() dem = dem or ns.arbreDemande(p, ns.projetApports(p)) return dem end
 end
 
 function ns.projetCommande(p, i)
@@ -258,45 +261,6 @@ function ns.projetCommandes(p)
 end
 
 ---------------------------------------------------------------------------------------------------
--- /handshake demo [set|ceinture|hasard] : une commande d'essai parlante. Choisis dans les données (arbres profonds qui
--- traversent plusieurs métiers, tools/crafts_critiques.py) :
---   set      : l'ensemble en thorium enchanté (heaume, cuirasse, jambières) — forge 300 + alchimie, enchantement, minage ;
---   ceinture : ceinture de prévention gnome (ingénierie 215, 5 métiers) + ceinture barbare (cuir 200, 4 métiers) ;
---   hasard   : 2 objets par métier tirés au hasard (pour charger la fenêtre).
-local DEMOS = {
-  set = { name = "Essai : set en thorium enchanté", ids = { 12620, 12618, 12619 } },
-  ceinture = { name = "Essai : ceintures multi-métiers", ids = { 10721, 4264 } },
-}
-function ns.demoOrder(kind, perProf)
-  local d = DEMOS[kind or "set"]
-  if d then
-    local lines = {}
-    for _, id in ipairs(d.ids) do lines[#lines + 1] = { id = id, qty = 1 } end
-    return ns.nouveauProjet({ name = d.name, lines = lines })
-  end
-  local recipes, makes, byProf = ns.recipes(), {}, {}
-  for _, r in pairs(recipes) do if r.output then makes[r.output] = true end end
-  for _, r in pairs(recipes) do
-    if r.output and r.profession and r.reagents then
-      for _, g in ipairs(r.reagents) do
-        if makes[g.id] then
-          byProf[r.profession] = byProf[r.profession] or {}
-          table.insert(byProf[r.profession], r.output)
-          break
-        end
-      end
-    end
-  end
-  local lines, seen = {}, {}
-  for _, list in pairs(byProf) do
-    for _ = 1, math.min(perProf or 2, #list) do
-      local id = table.remove(list, math.random(#list))
-      if not seen[id] then seen[id], lines[#lines + 1] = true, { id = id, qty = 1 } end
-    end
-  end
-  return ns.nouveauProjet({ name = "Essai : au hasard", lines = lines })
-end
-
 -- Les apports d'une demande, avec leur quantité (case entière) : { { id, qty }, … } triés par ID.
 function ns.demandeApports(res)
   local out = {}
@@ -310,46 +274,12 @@ end
 -- Ce que la commande apporte, objets × quantités triés par ID : la liste d'une commande à la main (order.apporte, un
 -- même objet cumulé), sinon les cases apportées de l'arbre de la commande de projet (res, calculé au besoin).
 function ns.commandeApports(order, res)
-  if not order.apporte then return ns.demandeApports(res or ns.projetDemande(order, order.apports)) end
+  if not order.apporte then return ns.demandeApports(res or ns.arbreDemande(order, order.apports)) end
   local qty, out = {}, {}
   for _, a in ipairs(order.apporte) do qty[a.id] = (qty[a.id] or 0) + a.qty end
   for id, q in pairs(qty) do out[#out + 1] = { id = id, qty = q } end
   table.sort(out, function(a, b) return a.id < b.id end)
   return out
-end
-
--- L'objet qui apprend une recette : « Plans : Claymore en mithril », « Formule : … », « Patron : … ».
--- ponytail: par le nom, faute de lien recette -> objet dans les données ; nil si jamais vu
-local recipeItems = {}
-function ns.recipeItem(name)
-  if recipeItems[name] ~= nil then return recipeItems[name] or nil end
-  local found = false
-  for id, it in pairs(ns.items()) do
-    local n = it.name
-    if n and #n > #name and n:sub(-#name) == name and n:sub(1, #n - #name):find(":%s*$") then found = id break end
-  end
-  recipeItems[name] = found
-  return found or nil
-end
-
--- La liste des besoins : ce qui ne se fabrique pas dans l'arbre (acheté, fourni, ou déjà en stock), avec
--- combien il en faut et combien on en a ; puis les recettes pas apprises.
-function ns.orderNeeds(res)
-  local rows, recipes = {}, {}
-  for _, n in ipairs(res.cases) do
-    local required = n.qty - n.made
-    if required > 0 and (n.made == 0 or n.need > 0) and (n.apport or 0) == 0 then
-      rows[#rows + 1] = { id = n.id, required = required, have = n.have, need = n.need, cost = n.cost, unpriced = n.unpriced, how = n.how }
-    end
-    if n.made > 0 and n.unknown and n.recipe then
-      recipes[#recipes + 1] = { name = n.recipe.name, item = ns.recipeItem(n.recipe.name), product = n.id }
-    end
-  end
-  table.sort(rows, function(a, b)
-    if (a.need > 0) ~= (b.need > 0) then return a.need > 0 end
-    return a.id < b.id
-  end)
-  return rows, recipes
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -473,34 +403,27 @@ function ns.sendOrder(order, loop)
   send("Commande", lines, order.tip and order.tip > 0 and ("· offre " .. po(order.tip)) or nil, order.player, loop)
 end
 
-function ns.sendNeeds(order, res, loop)
-  local rows, recipes = ns.orderNeeds(res)
-  local lines = {}
-  for _, r in ipairs(rows) do if r.need > 0 then lines[#lines + 1] = { id = r.id, qty = r.need } end end
-  for _, r in ipairs(recipes) do
-    lines[#lines + 1] = r.item and { id = r.item, qty = 1 } or { text = "[Recette : " .. r.name .. "]", qty = 1 }
-  end
-  local extra = {}
-  if order.tip and order.tip > 0 then extra[#extra + 1] = "offre " .. po(order.tip) end
-  if res.total > 0 then extra[#extra + 1] = "ou je les achète : ~" .. po(res.total) end
-  send("Besoins", lines, #extra > 0 and ("· " .. table.concat(extra, " · ")) or nil, order.player, loop)
-end
-
 ---------------------------------------------------------------------------------------------------
 -- Réception : le dernier message avec des objets (pour l'import à la main), et les listes en plusieurs
 -- morceaux recollées. Une commande ou des besoins reçus en chuchotement proposent l'import.
 ns.lastReceived = nil
 local parts = {}
 
+-- Importée : un projet de Composants et sa commande « tout le projet », ou, sans Composants, une nouvelle commande à la main.
 function ns.importText(text, player)
   local lines, kind, tip, brought = ns.parseList(text)
   if #lines == 0 then return print("|cffe64d4dCommandes :|r aucun objet reconnu dans ce texte.") end
   local who = player and player ~= "" and player or nil
-  local p = ns.nouveauProjet({ name = (kind == "besoins" and "Besoins" or "Commande") .. (who and (" de " .. who) or ""), lines = lines })
+  if not Composants then
+    local m = ns.mainNouvelle()
+    m.lines, m.apporte, m.player, m.tip = lines, brought, who, tip
+    return ns.openCommandeMain()
+  end
+  local p = Composants.NouveauProjet({ name = (kind == "besoins" and "Besoins" or "Commande") .. (who and (" de " .. who) or ""), lines = lines })
   ns.projetArtisan(p, who)
   ns.projetOffre(p, tip)
   for _, l in ipairs(brought) do ns.projetApport(p, l.id, true) end
-  ns.openCraftWindow()
+  Composants.Ouvrir(p.id)
 end
 
 StaticPopupDialogs.HANDSHAKE_COMMANDE_RECUE = {
@@ -583,15 +506,16 @@ end
 ---------------------------------------------------------------------------------------------------
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
+f:RegisterEvent("PLAYER_LOGIN")
 for _, e in ipairs({ "CHAT_MSG_WHISPER", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_GUILD" }) do
   f:RegisterEvent(e)
 end
 f:SetScript("OnEvent", function(_, event, a1, a2, ...)
+  if event == "PLAYER_LOGIN" then return ns.brancherComposants() end
   if event ~= "ADDON_LOADED" then return ns.onChat(event, a1, a2, ...) end
   if a1 ~= "Handshake" then return end
   HandshakeDB = HandshakeDB or {}
   local db = HandshakeDB
-  db.options = db.options or { bags = true, bank = true, alts = false, unlearned = false }
   db.contracts = db.contracts or {}
   -- Contrats d'avant la signature par GUID (Handshake#29 : signataires « Prénom-Royaume ») : plus lus, purgés.
   for _, base in ipairs({ db.contracts, db.debug and db.debug.contracts or {} }) do
@@ -600,3 +524,43 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
   for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
   ns.purgerProjets(db)
 end)
+
+-- Les projets sont partis dans Composants (Handshake#39), sans migration (perte acceptée) : ceux d'avant, leurs commandes
+-- (rattachées à des identités que Composants redonnera) et les réglages de l'arbre s'effacent ; les contrats restent.
+function ns.purgerProjets(db)
+  if db.projets then db.projets, db.projetSeq, db.courant, db.commandes = nil, nil, nil, nil end
+  db.options, db.orders, db.current, db.force = nil, nil, nil, nil
+end
+
+-- Composants chargé (après Handshake : il le déclare en OptionalDeps) : à l'entrée en jeu, ses projets sont lus. Les
+-- commandes pas encore parties d'un projet qui n'existe plus sont oubliées (un contrat, lui, reste toujours), puis chaque
+-- suppression de projet efface les siennes.
+function ns.brancherComposants()
+  local C = Composants
+  if not C or ns.branche then return end
+  ns.branche = true
+  for id in pairs(HandshakeDB.commandes or {}) do
+    if not C.Projet(id) then HandshakeDB.commandes[id] = nil end
+  end
+  C.QuandChange(function(p, quoi) if quoi == "supprime" then ns.oublierCommandes(p) end end)
+end
+
+---------------------------------------------------------------------------------------------------
+-- /handshake (ou /commande) : avec Composants, la fenêtre des projets, où vivent les commandes ; sans lui, la commande à
+-- la main. /handshake liste : la commande à la main. /handshake essai : la commande à la main revient comme un
+-- chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée). /handshake debug : Debug.lua.
+function ns.ouvrir()
+  if Composants then return Composants.Ouvrir() end
+  ns.openCommandeMain()
+end
+SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
+SlashCmdList.HANDSHAKE = function(args)
+  args = args or ""
+  if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end
+  if args:match("^%s*essai") then return ns.sendOrder(ns.commandeMain(), true) end
+  ns.ouvrir()
+end
+
+-- Bouton de minicarte et entrée des options communs d'Azeroth Commune : clic ou ligne du menu = /handshake.
+AzerothCommune.Regrouper({ nom = "Handshake", dossier = "Handshake", icone = "Interface\\Icons\\Trade_BlackSmithing",
+  ouvrir = function() ns.ouvrir() end, store = function() return HandshakeDB end })

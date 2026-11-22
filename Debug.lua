@@ -29,7 +29,7 @@ end
 local function other() return dbg.as and realName() or testerName() end
 local function refreshAll()
   if ns.refreshContracts then ns.refreshContracts() end
-  if ns.refreshCraftWindow then ns.refreshCraftWindow() end
+  if Composants then Composants.Rafraichir() end
   if frame and frame:IsShown() then frame.refresh() end
 end
 
@@ -192,7 +192,7 @@ local function build()
   reset:SetPoint("BOTTOMLEFT", 14, 12)
   local contracts = button("Contrats", 90, function() ns.openContracts() end)
   contracts:SetPoint("BOTTOMRIGHT", -14, 12)
-  local orders = button("Commandes", 100, function() ns.openCraftWindow() end)
+  local orders = button("Commandes", 100, function() ns.ouvrir() end)
   orders:SetPoint("RIGHT", contracts, "LEFT", -6, 0)
 
   frame.refresh = function()
