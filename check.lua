@@ -429,6 +429,13 @@ do
   SlashCmdList.HANDSHAKE("essai demande LF alchemist")
   assert(#dits == n + 2 and dits[#dits]:find("métier", 1, true), "essai : la raison du refus : " .. dits[#dits])
   assert(#chuchotes == 1, "essai : rien sur le réseau")
+  -- « Répondre » sur une ligne d'essai : le vrai message, chuchoté à moi-même (le faux auteur « Essai » n'existe pas).
+  local essaiLigne
+  for _, d in ipairs(ns.demandesLues()) do if d.qui == "Essai" and d.id == 5541 then essaiLigne = d end end
+  ns.repondreDemande(essaiLigne)
+  local moi = UnitName("player")
+  assert(#chuchotes == 2 and chuchotes[2].cible == moi and chuchotes[2].msg:find("Hitem:5541") and essaiLigne.repondu,
+    "Répondre sur un essai : à moi-même, " .. tostring(chuchotes[2] and chuchotes[2].cible))
   t = t + ns.DEMANDE_DUREE + 1
   assert(#ns.demandesLues() == 0, "elles vieillissent comme les autres")
   GetTime, print, ns.whisper, AzerothCommuneDB.chars, time = G0, P0, W0, chars0, T0

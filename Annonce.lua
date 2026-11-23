@@ -255,6 +255,7 @@ local function demandeLue(msg, sender, ou, t, lineID, toujours)
   if d and d.t > t then return end -- une ligne plus vieille que celle déjà listée (relue dans l'historique)
   d = d or { cle = cle, qui = sender, id = id, sort = sort, metier = metier, lien = id and ns.lienObjet(id) or sort and lienRecette(sort) }
   d.texte, d.ou, d.t = ns.nettoyer(msg, MAX_TEXTE), ou, t
+  if toujours then d.essai = true end -- une ligne de /handshake essai demande : « Répondre » me chuchote à moi
   lues[cle] = d
   if neuve or toujours then
     dire(("%s demande %s %s (/handshake demandes)."):format(ns.nettoyer(sender, 48), d.lien or ("quelqu'un en " .. metier:lower()), ou))
@@ -278,7 +279,10 @@ end
 -- « Répondre » (un clic) : un chuchotement à l'auteur de la demande d, avec le lien refait ici, ou le métier.
 function ns.repondreDemande(d)
   local quoi = d.lien and ("te fabriquer " .. d.lien) or ("t'aider en " .. d.metier:lower())
-  ns.whisper(("Bonjour ! Je peux %s. Intéressé(e) ?"):format(quoi), d.qui)
+  -- un essai : le faux auteur « Essai » n'existe pas ; le vrai message part vers moi, par le vrai chemin
+  local cible = d.essai and UnitName("player") or d.qui
+  if d.essai then print("|cff999999[essai]|r « Répondre » : le message t'est chuchoté à toi, à la place d'Essai.") end
+  ns.whisper(("Bonjour ! Je peux %s. Intéressé(e) ?"):format(quoi), cible)
   d.repondu = true
 end
 

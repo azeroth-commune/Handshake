@@ -266,5 +266,5 @@ contrat (P2, P4). Ce qui en est montré :
   a. C'est toujours du texte d'inconnus : même nettoyage, même borne (une entrée par joueur et par métier), aucune bulle
   d'objet, et « Répondre » envoie le même genre de chuchotement fixe, sur un clic seulement ;
 - **`/handshake essai demande <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
-  part sur le réseau (sauf un clic sur « Répondre », comme pour toute demande lue). Les essais d'avant restent listés
+  part sur le réseau (sauf un clic sur « Répondre », qui sur une ligne d'essai chuchote le vrai message à moi-même, jamais au faux auteur « Essai »). Les essais d'avant restent listés
   (une entrée par objet ou métier) ; chaque essai écrit sa ligne de signal ou la raison du refus.
