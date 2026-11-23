@@ -280,7 +280,7 @@ end
 function ns.repondreDemande(d)
   local quoi = d.lien and ("te fabriquer " .. d.lien) or ("t'aider en " .. d.metier:lower())
   -- un essai : le faux auteur « Essai » n'existe pas ; le vrai message part vers moi, par le vrai chemin
-  local cible = d.essai and UnitName("player") or d.qui
+  local cible = d.essai and ns.myName() or d.qui -- « Prénom Nom » : le serveur refuse le prénom seul
   if d.essai then print("|cff999999[essai]|r « Répondre » : le message t'est chuchoté à toi, à la place d'Essai.") end
   ns.whisper(("Bonjour ! Je peux %s. Intéressé(e) ?"):format(quoi), cible)
   d.repondu = true

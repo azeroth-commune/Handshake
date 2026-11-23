@@ -433,7 +433,8 @@ do
   local essaiLigne
   for _, d in ipairs(ns.demandesLues()) do if d.qui == "Essai" and d.id == 5541 then essaiLigne = d end end
   ns.repondreDemande(essaiLigne)
-  local moi = UnitName("player")
+  local moi = ns.myName()
+  assert(moi:find(" ", 1, true), "mon nom complet, pas le prénom seul : " .. tostring(moi))
   assert(#chuchotes == 2 and chuchotes[2].cible == moi and chuchotes[2].msg:find("Hitem:5541") and essaiLigne.repondu,
     "Répondre sur un essai : à moi-même, " .. tostring(chuchotes[2] and chuchotes[2].cible))
   t = t + ns.DEMANDE_DUREE + 1
