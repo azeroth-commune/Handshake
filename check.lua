@@ -448,6 +448,11 @@ do
   assert(#ns.demandesLues() == 0, "elles vieillissent comme les autres")
   GetTime, print, ns.whisper, AzerothCommuneDB.chars, time = G0, P0, W0, chars0, T0
 end
+-- Le format de couleur des clients récents, |cnIQ2: (couleur par qualité, vu en jeu le 23/11 : « LF blacksmith for cnIQ2:[Eperons en mithril] ») : retiré.
+do
+  local propre = ns.nettoyer("LF blacksmith for |cnIQ2:|Hitem:5541::::|h[Eperons en mithril]|h|r")
+  assert(not propre:find("cnIQ2", 1, true) and propre:find("^LF blacksmith for |c") and propre:find("Hitem:5541", 1, true), "|cn…: retiré : " .. propre)
+end
 print("Handshake : demandes par métier OK")
 
 -- L'historique du chat (les lignes déjà dans ChatFrame1..NUM_CHAT_WINDOWS, avant /reload ou avant la fin du login) : les

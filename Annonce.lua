@@ -176,7 +176,7 @@ function ns.nettoyer(s, max)
     liens[#liens + 1] = propre
     return "\1" .. #liens .. "\2"
   end)
-  s = s:gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|K.-|k", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|", "")
+  s = s:gsub("|T.-|t", ""):gsub("|A.-|a", ""):gsub("|K.-|k", ""):gsub("|cn[^:|]*:", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("|", "")
   if max and #s > max then
     s = s:sub(1, max):gsub("[\192-\255][\128-\191]*$", ""):gsub("\1%d*$", "") .. "…"
   end
