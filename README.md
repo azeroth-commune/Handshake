@@ -31,6 +31,8 @@ H.Offre(p, cuivre, i)   -- son offre (dans une Réponse, mon prix)
 H.Preparer(p, i)        -- « Préparer la demande » (ou « Contre-proposer » dans une Réponse) : le contrat préparé s'ouvre dans Contrats
 H.Agir(p, i)            -- « Nouvelle version » (contrat préparé ouvert dans Contrats, rend nil) ou « Commander de nouveau » (rend le rang)
 H.EnClair(p, i)         -- la demande en texte lisible, chuchotée à l'artisan
+H.Annoncer(p, i)        -- « Annoncer dans le Commerce » : l'Annonce « WTB [lien] xN, … » de la commande i, un clic = un message
+                        --   (limite par période, hors d'une ville refusée, écho vérifié) ; refusée, la raison est dite. Rend true, ou nil
 H.Importer()            -- importer une liste reçue
 H.Apports(p)            -- { [itemID] = true } : les cases que j'apporte dans les commandes du projet, ou nil
 H.Apporter(p, id, oui)  -- « j'apporte » (oui) ou « je le reprends » (nil)

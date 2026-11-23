@@ -271,6 +271,9 @@ function ns.projetRecommander(p, i)
   return ns.projetCommander(p, { key = c.bloc, best = c.player })
 end
 
+-- « Annoncer » la commande i (Annonce.lua) ; rend true, ou nil et la raison.
+function ns.projetAnnoncer(p, i) return ns.annoncer(ns.projetCommande(p, i), nil, commandes(p)[i or 1]) end
+
 function ns.projetCommandes(p)
   local out, dem = {}, demandeDe(p)
   for i, c in ipairs(commandes(p)) do out[i] = vue(p, c, dem) end
@@ -305,15 +308,35 @@ local function chatLink(id)
   local it = ns.items()[id]
   return (it and it.link) or select(2, C_Item.GetItemInfo(id)) or ("[" .. ((it and it.name) or ("objet " .. id)) .. "]")
 end
+ns.lienObjet = chatLink
 
 local function po(copper) return (("%.2f"):format(copper / 10000)):gsub("%.?0+$", "") .. " po" end
 ns.poText = po
 
 -- lines : { { id, qty } ou { text, qty } } ; extra : texte ajouté à la fin (offre…). Renvoie les messages.
-function ns.listMessages(kind, lines, extra)
+-- annonce (Annonce.lua) : un seul message « WTB [lien] xN, [lien] xM », la forme que lisent les lecteurs du Commerce (Trade
+-- Board…) ; trop long, il est coupé entre deux liens, « … » au bout.
+function ns.listMessages(kind, lines, extra, annonce)
   local tokens = {}
-  for _, l in ipairs(lines) do tokens[#tokens + 1] = l.raw or ("%dx%s"):format(l.qty, l.text or chatLink(l.id)) end
+  for _, l in ipairs(lines) do
+    local lien = not l.raw and (l.text or chatLink(l.id))
+    tokens[#tokens + 1] = l.raw or (annonce and ("%s x%d"):format(lien, l.qty) or ("%dx%s"):format(l.qty, lien))
+  end
   if extra and extra ~= "" then tokens[#tokens + 1] = extra end
+  if annonce then
+    local function joindre(room)
+      local msg, n = kind, 0
+      for i, t in ipairs(tokens) do
+        local sep = i == 1 and " " or ", "
+        if #msg + #sep + #t > room then break end
+        msg, n = msg .. sep .. t, i
+      end
+      return msg, n
+    end
+    local msg, n = joindre(MAX_MSG)
+    if n < #tokens then msg = joindre(MAX_MSG - #" …") .. " …" end
+    return { msg }
+  end
   local bodies, cur = {}, nil
   local room = MAX_MSG - #kind - #" (99/99) : "
   for _, t in ipairs(tokens) do
@@ -570,7 +593,8 @@ end
 ---------------------------------------------------------------------------------------------------
 -- /handshake (ou /commande) : avec Composants, la fenêtre des projets, où vivent les commandes ; sans lui, la commande à
 -- la main. /handshake liste : la commande à la main. /handshake essai : la commande à la main revient comme un
--- chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée). /handshake debug : Debug.lua.
+-- chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée) ; /handshake essai annonce : son annonce, affichée
+-- seulement. /handshake debug : Debug.lua.
 function ns.ouvrir()
   if Composants then return Composants.Ouvrir() end
   ns.openCommandeMain()
@@ -579,6 +603,11 @@ SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
   args = args or ""
   if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end
+  if args:match("^%s*essai%s+annonce") then -- l'annonce de la commande à la main, affichée, rien sur le réseau
+    local ok, err = ns.annoncer(ns.commandeMain(), true)
+    if not ok then print("|cffe64d4dHandshake :|r " .. err .. ".") end
+    return
+  end
   if args:match("^%s*essai") then return ns.sendOrder(ns.commandeMain(), true) end
   -- /handshake <objet> [qté] [tout], /handshake demo … : l'arbre est à Composants, la commande lui revient.
   if args:match("%S") and Composants and SlashCmdList.COMPOSANTS then return SlashCmdList.COMPOSANTS(args) end

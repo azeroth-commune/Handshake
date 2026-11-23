@@ -229,3 +229,10 @@ serveur a donné le GUID. `GetPlayerInfoByGUID` n'est plus lu : la forme de ses 
 Un perso renommé reste le même (GUID identique) : une fois son GUID confirmé, l'échange est conforme et le changement de
 nom signalé. Le protocole passe à « 3 » ; les messages « 2 » (adresses « Prénom-Royaume ») sont refusés, et les contrats
 enregistrés sous l'ancien format sont purgés au chargement (perte de données acceptée).
+
+## Ajout : Annonces dans le chat public (Handshake#51)
+
+Une **Annonce** (« WTB [lien] xN, … » dans le canal Commerce) n'engage à rien : ni prix, ni artisan, ni objet promis. Seul
+le contrat engage, et rien de ce qu'une annonce dit ne passe dans un contrat. Publier reste un clic du joueur à chaque fois
+(jamais d'envoi automatique, ni de répétition) ; une limite par période empêche de répéter la même annonce, et le mode
+essai comme le mode debug ne publient rien sur le réseau.

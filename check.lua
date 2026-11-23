@@ -171,6 +171,65 @@ assert(#l3 == 2 and l3[1].id == 3858 and l3[1].qty == 36 and l3[2].qty == 1, "no
 assert(ns.poText(55600) == "5.56 po" and ns.poText(50000) == "5 po")
 print("Handshake : texte échangé OK")
 
+-- Annonce (#51) : « WTB [lien] xN, [lien] xM » en un seul message de 255 octets au plus, par le formateur de la demande
+-- en clair ; trop d'objets : coupée entre deux liens, « … » au bout, chaque lien entier.
+do
+  local claym, camail = AzerothCommuneItems.items[7963].link, AzerothCommuneItems.items[7920].link
+  local a = ns.annonceTexte({ lines = { { id = 7963, qty = 1 }, { id = 7920, qty = 3 } } })
+  assert(a == "WTB " .. claym .. " x1, " .. camail .. " x3", a)
+  assert(a == ns.listMessages("WTB", { { id = 7963, qty = 1 }, { id = 7920, qty = 3 } }, nil, true)[1], "le même formateur que la demande en clair")
+  local beaucoup = {}
+  for _, id in ipairs({ 7963, 7920, 7927, 3858, 7963, 7920 }) do beaucoup[#beaucoup + 1] = { id = id, qty = 2 } end
+  local b = ns.annonceTexte({ lines = beaucoup })
+  assert(#b <= 255 and b:find(" …$") and b:find("^WTB |c"), #b .. " octets : " .. b)
+  local relu = ns.parseList(b)
+  local n = select(2, b:gsub("|Hitem:", ""))
+  assert(n >= 2 and n < #beaucoup and select(2, b:gsub("|h|r x2", "")) == n, "liens entiers, chacun avec sa quantité")
+  assert(relu[1].id == 7963 and relu[1].qty == 2, "relue par le lecteur de listes")
+end
+print("Handshake : composition de l'annonce OK")
+
+-- « Annoncer » (#51) : un clic = un message dans le canal Commerce trouvé par son nom ; hors d'une ville, refusé et dit ;
+-- un second clic trop tôt refusé, avec l'heure où réessayer ; l'écho vérifié (le message revient de moi dans le canal),
+-- sinon signalé et la limite levée ; vide ou partie, rien ; essai et debug : rien sur le réseau.
+do
+  local envoyes, minuteurs, dits, canaux, t = {}, {}, {}, {}, 1000
+  local G0, T0, P0, D0 = GetTime, C_Timer, print, ns.debugSend
+  GetTime = function() return t end
+  C_Timer = { After = function(_, fn) minuteurs[#minuteurs + 1] = fn end, NewTicker = noop }
+  SendChatMessage = function(msg, kind, _, cible) envoyes[#envoyes + 1] = { msg = msg, kind = kind, cible = cible } end
+  GetChannelList = function() return unpack(canaux) end
+  print = function(s) dits[#dits + 1] = s end
+  local function minuter() local m = minuteurs; minuteurs = {}; for _, f in ipairs(m) do f() end end
+  local function dit(motif) for _, s in ipairs(dits) do if s:find(motif) then return true end end end
+  local o = { lines = { { id = 7963, qty = 1 } } }
+  local ok, raison = ns.annoncer(o)
+  assert(not ok and raison:find("Commerce") and #envoyes == 0, "hors d'une ville : refusé, et dit")
+  canaux = { 1, "Général - Hurlevent", false, 2, "Commerce - Ville", false }
+  assert(ns.annonceRefus(o) == nil and ns.annoncer(o), "en ville : part")
+  assert(#envoyes == 1 and envoyes[1].kind == "CHANNEL" and envoyes[1].cible == 2 and envoyes[1].msg == ns.annonceTexte(o), "dans le canal Commerce")
+  t = t + 60
+  local r2, quand = ns.annonceRefus(o)
+  assert(r2 and quand == 1000 + ns.ANNONCE_DELAI, "trop tôt : refusé, avec le moment où réessayer")
+  ok, raison = ns.annoncer(o)
+  assert(not ok and raison:find("à %d") and #envoyes == 1, "second clic trop tôt : rien ne part")
+  ns.lireCanal("CHAT_MSG_CHANNEL", envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville", "Moi Dupont", "", 0, 2, "Commerce - Ville", 0, 1, MOI)
+  minuter()
+  assert(not dit("pas revenue"), "écho reçu : rien à dire")
+  t = t + ns.ANNONCE_DELAI
+  assert(ns.annoncer(o) and #envoyes == 2, "après le délai : de nouveau")
+  minuter()
+  assert(dit("pas revenue") and ns.annonceRefus(o) == nil, "pas d'écho : signalé, et on peut réessayer")
+  assert(not ns.annoncer({ lines = {} }) and not ns.annoncer({ lines = o.lines, fige = true }) and #envoyes == 2, "vide ou partie : rien")
+  ns.debugSend = function(kind) return kind == "commerce" end
+  assert(ns.annoncer({ lines = { { id = 7920, qty = 1 } } }) and #envoyes == 2, "mode debug : détourné")
+  ns.debugSend = D0
+  dits = {}
+  assert(ns.annoncer({ lines = { { id = 7927, qty = 1 } } }, true) and #envoyes == 2 and dit("%[essai%].-WTB"), "essai : affiché, rien sur le réseau")
+  GetTime, C_Timer, print, SendChatMessage, GetChannelList = G0, T0, P0, nil, nil
+end
+print("Handshake : annoncer dans le Commerce OK")
+
 
 aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
@@ -1062,7 +1121,7 @@ print("Handshake : destinataire des chuchotements OK")
 -- L'API publique de Handshake (README.md) : le global Handshake, celui dont Composants se sert ; rien d'autre.
 do
   local API = { "Commandes", "Commande", "Commander", "Artisan", "Offre", "Preparer", "Agir", "EnClair", "Importer", "Apports",
-    "Apporter", "EstReponse" }
+    "Apporter", "EstReponse", "Annoncer" }
   local n = 0
   for _ in pairs(Handshake) do n = n + 1 end
   local readme = assert(io.open("Handshake/README.md"), "README.md"):read("*a")
