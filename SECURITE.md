@@ -253,3 +253,9 @@ contrat (P2, P4). Ce qui en est montré :
 - **est bornée** : seules les lignes de demande (« WTB », « Buy », « Search ») avec le lien d'un objet ou d'une recette
   qu'un de mes persos sait fabriquer ; une entrée par joueur et par objet, 30 au plus, oubliées après 15 min, en mémoire
   seulement (rien n'est sauvegardé). Mes propres lignes ne sont pas lues.
+- **demandes par métier, sans lien** (« LF BS », « cherche forgeron ») : une ligne de demande (aussi « LF » seul,
+  « cherche », « recherche » en tête ; LFW, LFG, LFM restent écartés) qui nomme en mot entier un métier qu'un de mes persos
+  a. C'est toujours du texte d'inconnus : même nettoyage, même borne (une entrée par joueur et par métier), aucune bulle
+  d'objet, et « Répondre » envoie le même genre de chuchotement fixe, sur un clic seulement ;
+- **`/handshake essai demande <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
+  part sur le réseau (sauf un clic sur « Répondre », comme pour toute demande lue).

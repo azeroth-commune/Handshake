@@ -40,14 +40,18 @@ ANNONCER DANS LE COMMERCE, LIRE LES DEMANDES
   « Annoncer » (commande à la main, ou menu « Plus » de Composants) publie « WTB [objet] xN, … » dans le canal
   Commerce, un clic = un message (en ville seulement, pas deux fois la même avant 5 min). Avec Trade Board installé,
   c'est son dialogue qui s'ouvre. Une annonce n'engage à rien : seul le contrat engage.
-  Côté artisan : une demande du Commerce ou un cri (WTB, Buy, Search) pour un objet que tes persos savent fabriquer
-  s'affiche dans « Demandes lues » (/handshake demandes) ; « Répondre » chuchote à son auteur.
+  Côté artisan : une demande du Commerce ou un cri (WTB, Buy, Search, LF, cherche) pour un objet que tes persos savent
+  fabriquer, ou qui nomme un métier qu'ils ont (« LF BS », « cherche couturier »), s'affiche dans « Demandes lues »
+  (/handshake demandes) ; « Répondre » chuchote à son auteur.
+  Pour essayer : /handshake essai demande WTB [objet] (Maj+clic sur un objet pour son lien) : la ligne est lue comme
+  si elle venait du Commerce ; refusée, Handshake dit pourquoi. Rien ne part sur le réseau.
 
 COMMANDES
   /contrat            les contrats (lire, signer, refuser, contre-proposer)
   /handshake          avec Composants : la fenêtre des projets et leurs commandes ; sans : la commande à la main
   /handshake liste    la commande à la main
   /handshake demandes les demandes lues dans le Commerce
+  /handshake essai demande <texte>   lit <texte> comme une demande du Commerce (pour essayer, rien n'est envoyé)
 
 EN CAS DE PROBLÈME
 Une capture d'écran de la fenêtre + le texte de l'erreur s'il y en a une, envoyés à la personne qui t'a donné

@@ -346,6 +346,76 @@ do
 end
 print("Handshake : demandes lues OK")
 
+-- Demandes par métier, sans lien : une ligne de demande (« LF » seul en tête, « cherche », « recherche », ou les règles
+-- d'avant) qui nomme, en mot entier, un métier qu'un de mes persos a, entre dans la liste comme « demande de <Métier> » ;
+-- LFW (une offre), LFG, LFM, LF1M (des groupes) : non. Un lien d'objet que je sais faire l'emporte. /handshake essai
+-- demande : la même lecture, d'un faux auteur « Essai », et la raison d'un refus dans le chat.
+do
+  local t, dits, chuchotes = 20000, {}, {}
+  local G0, P0, W0, chars0 = GetTime, print, ns.whisper, AzerothCommuneDB.chars
+  GetTime = function() return t end
+  print = function(s) dits[#dits + 1] = s end
+  ns.whisper = function(msg, cible) chuchotes[#chuchotes + 1] = { msg = msg, cible = cible } end
+  AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
+  local marteau = AzerothCommuneItems.items[5541].link
+  local function canal(msg, qui)
+    return ns.lireCanal("CHAT_MSG_CHANNEL", msg, qui, "", "2. Commerce - Ville", qui, "", 0, 2, "Commerce - Ville", 0, 1, "Player-6942-0000" .. #qui .. "F00")
+  end
+  local function de(qui) local r = {} for _, d in ipairs(ns.demandesLues()) do if d.qui == qui then r[#r + 1] = d end end return r end
+  canal("LF BS pls", "Bob Dupont")
+  local bob = de("Bob Dupont")
+  assert(#bob == 1 and bob[1].metier == "Forge" and not bob[1].id and bob[1].texte == "LF BS pls", "« LF BS » : une demande de Forge")
+  assert(#dits == 1 and dits[1]:find("Bob Dupont", 1, true) and dits[1]:find("forge", 1, true), "signal discret aussi : " .. tostring(dits[1]))
+  canal("LF tailor", "Cid Lebrun")
+  canal("LFW blacksmith", "Cid Lebrun")
+  canal("LFM BRD need bs", "Cid Lebrun")
+  canal("LF1M bs", "Cid Lebrun")
+  canal("LFG forge", "Cid Lebrun")
+  canal("WTS bs services", "Cid Lebrun")
+  canal("LF quelqu'un a Forgefer", "Cid Lebrun")
+  canal("cherche ma blacksmithe", "Cid Lebrun")
+  assert(#de("Cid Lebrun") == 0, "métier qu'aucun perso n'a, offre, groupe, mot dans un autre mot : rien")
+  canal("WTB forgeron pour une ceinture", "Dan Cri")
+  canal("cherche un forgeron", "Eve Rune")
+  canal("Recherche Blacksmith !", "Fil Long")
+  assert(#de("Dan Cri") == 1 and #de("Eve Rune") == 1 and de("Fil Long")[1].metier == "Forge", "WTB, cherche, recherche")
+  -- Même joueur, même métier : une entrée ; un lien d'objet que je sais faire l'emporte sur le métier de la même ligne.
+  canal("LF blacksmith", "Bob Dupont")
+  canal("cherche forgeron", "Bob Dupont")
+  assert(#de("Bob Dupont") == 1 and #dits == 4, "même joueur, même métier : une entrée, pas de second signal")
+  canal("LF bs " .. marteau, "Gus Marteau")
+  local gus = de("Gus Marteau")
+  assert(#gus == 1 and gus[1].id == 5541 and not gus[1].metier, "le lien de l'objet l'emporte sur le métier")
+  -- Un métier qu'un autre perso a (même sans recette notée) compte ; mots avec accents tels qu'écrits.
+  AzerothCommuneDB.chars["Player-6942-00000A17"] = { recipes = { Couture = { rank = 1, known = {} } } }
+  canal("cherche couturière", "Ida Fil")
+  assert(#de("Ida Fil") == 1 and de("Ida Fil")[1].metier == "Couture", "couturière : Couture")
+  -- Piégée : nettoyée comme les autres.
+  canal("LF BS |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h |cffff0000rouge|r \7fin", "Mal Truand")
+  local piege = de("Mal Truand")[1]
+  assert(piege and not piege.texte:find("[|%z\1-\31]") and piege.texte:find("[clique ici]", 1, true), "nettoyée : " .. tostring(piege and piege.texte))
+  -- « Répondre » : le chuchotement fixe, avec le métier.
+  ns.repondreDemande(de("Bob Dupont")[1])
+  assert(#chuchotes == 1 and chuchotes[1].cible == "Bob Dupont" and chuchotes[1].msg:find("forge", 1, true), "Répondre : " .. tostring(chuchotes[1] and chuchotes[1].msg))
+  -- La raison d'un refus vient du lecteur.
+  assert(canal("WTS bs", "Cid Lebrun"):find("offre", 1, true) and canal("LFM bs", "Cid Lebrun"):find("pas une demande", 1, true)
+    and canal("LF alchemist", "Cid Lebrun"):find("métier", 1, true) and canal("LF bs", "Cid Lebrun") == nil, "raisons du lecteur")
+  -- /handshake essai demande : la même lecture, d'« Essai » ; refusée, la raison en une ligne ; rien sur le réseau.
+  local n = #dits
+  SlashCmdList.HANDSHAKE("essai demande WTB " .. marteau .. " pst")
+  local essai = de("Essai")
+  assert(#essai == 1 and essai[1].id == 5541 and #dits == n + 1 and dits[#dits]:find("Essai", 1, true), "essai : listée, signalée")
+  SlashCmdList.HANDSHAKE("essai demande WTS " .. marteau)
+  assert(#dits == n + 2 and dits[#dits]:find("offre", 1, true), "essai : la raison du refus : " .. dits[#dits])
+  SlashCmdList.HANDSHAKE("essai demande LF alchemist")
+  assert(#dits == n + 3 and dits[#dits]:find("métier", 1, true), "essai : la raison du refus : " .. dits[#dits])
+  assert(#chuchotes == 1, "essai : rien sur le réseau")
+  t = t + ns.DEMANDE_DUREE + 1
+  assert(#ns.demandesLues() == 0, "elles vieillissent comme les autres")
+  GetTime, print, ns.whisper, AzerothCommuneDB.chars = G0, P0, W0, chars0
+end
+print("Handshake : demandes par métier OK")
+
 
 aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.

@@ -141,13 +141,14 @@ function ns.annoncer(order, loop, rec)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Lire : les Demandes lues, côté artisan. Une ligne du Commerce ou un cri qui demande (« WTB », « Buy », « Search » en
--- tête, ou « WTB » n'importe où, comme Trade Board) le lien d'un objet ou d'une recette qu'un de mes persos sait
--- fabriquer. Le texte vient d'inconnus (SECURITE.md) : nettoyé et coupé avant tout affichage, et rien ne se fait sans clic.
+-- Lire : les Demandes lues, côté artisan. Une ligne du Commerce ou un cri qui demande (« WTB », « Buy », « Search »,
+-- « LF » seul, « cherche », « recherche » en tête, ou « WTB » n'importe où, comme Trade Board) le lien d'un objet ou d'une
+-- recette qu'un de mes persos sait fabriquer, sinon, sans tel lien, un métier qu'un de mes persos a (« LF BS »). Le texte
+-- vient d'inconnus (SECURITE.md) : nettoyé et coupé avant tout affichage, et rien ne se fait sans clic.
 -- ponytail: en mémoire seulement (la session) ; une demande du Commerce vaut quelques minutes
 ns.DEMANDE_DUREE = 900 -- secondes avant qu'une demande lue disparaisse
 local MAX_TEXTE, MAX_DEMANDES = 160, 30
-local lues = {} -- [qui#objet] = { qui, id (objet) ou sort, lien, texte, ou, t, repondu }
+local lues = {} -- [cle] = { cle (qui#objet, qui#sortN, qui#métier), qui, id (objet), sort ou metier, lien, texte, ou, t, repondu }
 
 local function lienRecette(id)
   local r = ns.recipes()[id]
@@ -176,27 +177,71 @@ function ns.nettoyer(s, max)
   return (s:gsub("\1(%d+)\2", function(n) return liens[tonumber(n)] end))
 end
 
-local function estDemande(msg)
+-- Pourquoi une ligne n'est pas une demande (nil : elle en est une). « LF » seul en tête ; LFW (une offre), LFG, LFM, LF1M
+-- (des groupes) n'en sont pas.
+local function pasDemande(msg)
   local l = msg:lower()
-  return l:find("^%s*wtb") or l:find("^%s*buy") or l:find("^%s*search") or l:find("%f[%w]wtb%f[%W]")
+  if l:find("^%s*wtb") or l:find("^%s*buy") or l:find("^%s*search") or l:find("%f[%w]wtb%f[%W]") or l:find("^%s*lf%f[%W]")
+    or l:find("^%s*cherche") or l:find("^%s*recherche") then return end
+  if l:find("^%s*wts") or l:find("^%s*lfw") then return "une offre (WTS, LFW), pas une demande" end
+  return "pas une demande (WTB, Buy, Search, LF, cherche en tête)"
 end
 
+-- Les mots qui nomment un métier dans une demande sans lien, par métier tel que le socle le nomme sur le client français
+-- (son relevé et sa réserve). En mot entier, en minuscules, accents tels qu'écrits.
+-- ponytail: client français seulement ; un autre client nomme ses métiers autrement (« Blacksmithing ») : ajouter ses clés
+local METIERS = {
+  { "Forge", { "blacksmith", "blacksmithing", "bs", "forgeron", "forge" } },
+  { "Travail du cuir", { "leatherworker", "leatherworking", "lw", "travailleur du cuir", "cuir" } },
+  { "Couture", { "tailor", "tailoring", "couturier", "couturière", "couture" } },
+  { "Alchimie", { "alchemist", "alchemy", "alch", "alchi", "alchimiste", "alchimie" } },
+  { "Ingénierie", { "engineer", "engineering", "engi", "ingé", "ingenieur", "ingénieur", "ingénierie" } },
+  { "Enchantement", { "enchanter", "enchanting", "ench", "enchanteur", "enchantement" } },
+  { "Cuisine", { "cook", "cooking", "cuisinier", "cuisine" } },
+  { "Secourisme", { "first aid", "secouriste", "secourisme" } },
+}
+
+-- mot dans l, entier : ni lettre ni octet d'un caractère accentué juste avant ou juste après.
+local function motEntier(l, mot)
+  local i = 1
+  while true do
+    local a, b = l:find(mot, i, true)
+    if not a then return false end
+    if not l:sub(a - 1, a - 1):find("[%a\128-\255]") and not l:sub(b + 1, b + 1):find("[%a\128-\255]") then return true end
+    i = a + 1
+  end
+end
+
+-- Le premier métier qu'un de mes persos a, nommé dans le texte (hors liens) de msg.
+local function metierNomme(msg, mesMetiers)
+  local l = ns.nettoyer(msg):gsub("|H.-|h.-|h", " "):lower()
+  for _, m in ipairs(METIERS) do
+    if mesMetiers[m[1]] then
+      for _, mot in ipairs(m[2]) do if motEntier(l, mot) then return m[1] end end
+    end
+  end
+end
+
+-- Lit une ligne : listée, rend nil ; écartée, rend la raison (affichée par /handshake essai demande).
 local function demandeLue(msg, sender, ou)
-  if not estDemande(msg) then return end
+  local raison = pasDemande(msg)
+  if raison then return raison end
   local lines, _, _, _, recettes, liens = ns.parseList(msg) -- le lecteur des listes reçues, pas un second
-  if not liens then return end -- des noms tapés entre crochets ne suffisent pas
-  local objets, sorts = ns.jeSaisFabriquer()
-  local id, sort
-  for _, l in ipairs(lines) do if objets[l.id] then id = l.id break end end
-  if not id then for _, r in ipairs(recettes) do if sorts[r] then sort = r break end end end
-  if not (id or sort) then return end
-  local cle = sender .. "#" .. (id or ("sort" .. sort))
+  local objets, sorts, mesMetiers = ns.jeSaisFabriquer()
+  local id, sort, metier
+  if liens then -- des noms tapés entre crochets ne suffisent pas
+    for _, l in ipairs(lines) do if objets[l.id] then id = l.id break end end
+    if not id then for _, r in ipairs(recettes) do if sorts[r] then sort = r break end end end
+  end
+  if not (id or sort) then metier = metierNomme(msg, mesMetiers) end
+  if not (id or sort or metier) then return "ni objet, ni recette, ni métier que tes persos savent faire" end
+  local cle = sender .. "#" .. (id or sort and ("sort" .. sort) or metier)
   local d, neuve = lues[cle], lues[cle] == nil
-  d = d or { qui = sender, id = id, sort = sort, lien = id and ns.lienObjet(id) or lienRecette(sort) }
+  d = d or { cle = cle, qui = sender, id = id, sort = sort, metier = metier, lien = id and ns.lienObjet(id) or sort and lienRecette(sort) }
   d.texte, d.ou, d.t = ns.nettoyer(msg, MAX_TEXTE), ou, GetTime()
   lues[cle] = d
   if neuve then
-    dire(("%s demande %s %s (/handshake demandes)."):format(ns.nettoyer(sender, 48), d.lien, ou))
+    dire(("%s demande %s %s (/handshake demandes)."):format(ns.nettoyer(sender, 48), d.lien or ("quelqu'un en " .. metier:lower()), ou))
   end
   if ns.refreshDemandes then ns.refreshDemandes() end
 end
@@ -209,18 +254,20 @@ function ns.demandesLues()
   end
   table.sort(out, function(a, b) return a.t > b.t end)
   for i = #out, MAX_DEMANDES + 1, -1 do
-    lues[out[i].qui .. "#" .. (out[i].id or ("sort" .. out[i].sort))], out[i] = nil, nil
+    lues[out[i].cle], out[i] = nil, nil
   end
   return out
 end
 
--- « Répondre » (un clic) : un chuchotement à l'auteur de la demande d, avec le lien refait ici.
+-- « Répondre » (un clic) : un chuchotement à l'auteur de la demande d, avec le lien refait ici, ou le métier.
 function ns.repondreDemande(d)
-  ns.whisper(("Bonjour ! Je peux te fabriquer %s. Intéressé(e) ?"):format(d.lien), d.qui)
+  local quoi = d.lien and ("te fabriquer " .. d.lien) or ("t'aider en " .. d.metier:lower())
+  ns.whisper(("Bonjour ! Je peux %s. Intéressé(e) ?"):format(quoi), d.qui)
   d.repondu = true
 end
 
--- Ce qui arrive des canaux publics (CHAT_MSG_CHANNEL, CHAT_MSG_YELL) : l'écho de mon annonce, les demandes des autres.
+-- Ce qui arrive des canaux publics (CHAT_MSG_CHANNEL, CHAT_MSG_YELL) : l'écho de mon annonce, les demandes des autres
+-- (rend la raison d'une ligne écartée par le lecteur des demandes).
 function ns.lireCanal(event, msg, sender, _, _, _, _, _, canal, base, _, _, guid)
   if type(msg) ~= "string" or type(sender) ~= "string" or (issecretvalue and (issecretvalue(msg) or issecretvalue(sender))) then return end
   local commerce = event == "CHAT_MSG_CHANNEL" and estCommerce(base)
@@ -229,7 +276,16 @@ function ns.lireCanal(event, msg, sender, _, _, _, _, _, canal, base, _, _, guid
     if commerce and attente and canal == attente.canal then attente = nil end
     return
   end
-  demandeLue(msg, sender, commerce and "dans le Commerce" or "en criant")
+  return demandeLue(msg, sender, commerce and "dans le Commerce" or "en criant")
+end
+
+-- /handshake essai demande <texte> : texte lu comme une ligne du Commerce, d'un faux auteur « Essai » (pas moi), par le
+-- même chemin ; écarté, la raison en une ligne. Rien ne part sur le réseau. Les essais d'avant sont oubliés, pour que
+-- chacun soit signalé.
+function ns.essaiDemande(texte)
+  for k, d in pairs(lues) do if d.qui == "Essai" then lues[k] = nil end end
+  local raison = ns.lireCanal("CHAT_MSG_CHANNEL", texte, "Essai", "", "", "", "", 0, 0, "Commerce")
+  if raison then print("|cff999999[essai]|r pas listée : " .. raison .. ".") end
 end
 
 local f = CreateFrame("Frame")
@@ -278,7 +334,7 @@ local function construire()
   fenetre.vide:SetPoint("TOPLEFT", 16, -48)
   fenetre.vide:SetWidth(W - 32)
   fenetre.vide:SetJustifyH("LEFT")
-  fenetre.vide:SetText("Aucune demande lue. Les demandes du Commerce et des cris (WTB, Buy, Search) pour ce que tes persos savent fabriquer s'affichent ici, quelques minutes.")
+  fenetre.vide:SetText("Aucune demande lue. Les demandes du Commerce et des cris (WTB, Buy, Search, LF, cherche) pour ce que tes persos savent fabriquer, ou pour un métier qu'ils ont, s'affichent ici, quelques minutes.")
   fenetre.rows = {}
   for i = 1, ROWS do
     local r = CreateFrame("Frame", nil, fenetre)
@@ -291,7 +347,7 @@ local function construire()
     r.objet.icon:SetAllPoints()
     r.objet:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      if r.d.id then GameTooltip:SetItemByID(r.d.id) else GameTooltip:SetSpellByID(r.d.sort) end
+      if r.d.id then GameTooltip:SetItemByID(r.d.id) elseif r.d.sort then GameTooltip:SetSpellByID(r.d.sort) else return end
       GameTooltip:Show()
     end)
     r.objet:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -323,8 +379,10 @@ function ns.refreshDemandes()
     r:SetShown(d ~= nil)
     if d then
       r.d = d
-      r.objet.icon:SetTexture(d.id and C_Item.GetItemIconByID(d.id) or (GetSpellTexture and GetSpellTexture(d.sort)) or 134400)
-      r.qui:SetText(("%s · depuis %s · %s"):format(ns.nettoyer(d.qui, 48), date("%H:%M", time() - math.floor(GetTime() - d.t)), d.ou))
+      r.objet:SetShown(d.metier == nil) -- une demande de métier : pas d'icône, pas de bulle
+      if not d.metier then r.objet.icon:SetTexture(d.id and C_Item.GetItemIconByID(d.id) or (GetSpellTexture and GetSpellTexture(d.sort)) or 134400) end
+      r.qui:SetText(("%s · depuis %s · %s%s"):format(ns.nettoyer(d.qui, 48), date("%H:%M", time() - math.floor(GetTime() - d.t)), d.ou,
+        d.metier and (" · demande de " .. d.metier) or ""))
       r.texte:SetText(d.texte)
       r.repondre:SetText(d.repondu and "Répondu" or "Répondre")
       r.repondre:SetEnabled(not d.repondu)

@@ -32,12 +32,14 @@ function ns.recipes()
   return recettes
 end
 -- Ce que mes persos savent fabriquer, d'après les recettes connues relevées par le socle : { [itemID] = true } (les objets
--- produits) et { [sort] = true } (les clés de recette qui sont un ID de sort : un lien de recette s'y lit).
+-- produits), { [sort] = true } (les clés de recette qui sont un ID de sort : un lien de recette s'y lit) et
+-- { [métier] = true } (les métiers qu'ils ont, nommés comme le socle les nomme : « Forge », « Travail du cuir »…).
 function ns.jeSaisFabriquer()
-  local base, objets, sorts = ns.recipes(), {}, {}
+  local base, objets, sorts, mesMetiers = ns.recipes(), {}, {}, {}
   local d = lib:Lire("recettes connues", "tous")
   for _, metiers in pairs(d and d.persos or {}) do
-    for _, m in pairs(metiers) do
+    for nom, m in pairs(metiers) do
+      if type(m) == "table" and type(m.known) == "table" then mesMetiers[nom] = true end
       for k in pairs(type(m) == "table" and type(m.known) == "table" and m.known or {}) do
         local r = base[k]
         if r and r.output then objets[r.output] = true end
@@ -45,7 +47,7 @@ function ns.jeSaisFabriquer()
       end
     end
   end
-  return objets, sorts
+  return objets, sorts, mesMetiers
 end
 -- Noms d'objets : le catalogue des objets du socle, sinon ceux arrivés du serveur cette session, en mémoire seulement.
 local nomsDeSession = {}

@@ -195,6 +195,35 @@ test("Demandes lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS
     if not ok then error(err, 0) end
 end)
 
+test("Demandes lues par métier : « LF BS » listée en demande de Forge, sans icône ; /handshake essai demande", function()
+    local moi = AzerothCommuneDB.chars[UnitGUID("player")]
+    local avant, P, dits = moi.recipes, print, {}
+    moi.recipes = { Forge = { rank = 300, known = {} } }
+    print = function(s) dits[#dits + 1] = s end
+    local ok, err = pcall(function()
+        FireEvent("CHAT_MSG_CHANNEL", "LF BS pls", "Jo Enclume", "", "2. Commerce - Ville", "Jo Enclume", "", 0, 2, "Commerce - Ville", 0, 1, "Player-1-00000E0E")
+        FireEvent("CHAT_MSG_CHANNEL", "LFW blacksmith", "Lou Offre", "", "2. Commerce - Ville", "Lou Offre", "", 0, 2, "Commerce - Ville", 0, 1, "Player-1-00000E0F")
+        SlashCmdList.HANDSHAKE("demandes")
+        local jo, lou
+        for _, r in ipairs(HandshakeDemandesFrame.rows) do
+            if r:IsShown() and r.qui:GetText():find("^Jo Enclume") then jo = r end
+            if r:IsShown() and r.qui:GetText():find("^Lou Offre") then lou = r end
+        end
+        assertNotNil(jo, "la demande de Jo listée")
+        assertTrue(lou == nil, "LFW : une offre, pas listée")
+        assertTrue(jo.qui:GetText():find("demande de Forge", 1, true) ~= nil, jo.qui:GetText())
+        assertEquals("LF BS pls", jo.texte:GetText())
+        assertTrue(not jo.objet:IsShown(), "pas d'icône d'objet")
+        SlashCmdList.HANDSHAKE("essai demande WTS bs")
+        assertTrue(dits[#dits]:find("offre", 1, true) ~= nil, dits[#dits])
+        SlashCmdList.HANDSHAKE("essai demande cherche un forgeron")
+        assertTrue(dits[#dits]:find("Essai", 1, true) ~= nil, dits[#dits])
+    end)
+    moi.recipes, print = avant, P
+    if HandshakeDemandesFrame then HandshakeDemandesFrame:Hide() end
+    if not ok then error(err, 0) end
+end)
+
 if not Composants then return end
 
 test("« Annoncer dans le Commerce » dans le menu « Plus » de Composants : regroupée, 255 octets, liens intacts", function()
