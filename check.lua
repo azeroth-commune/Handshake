@@ -218,6 +218,13 @@ do
   assert(not dit("pas revenue"), "écho reçu : rien à dire")
   t = t + ns.ANNONCE_DELAI
   assert(ns.annoncer(o) and #envoyes == 2, "après le délai : de nouveau")
+  -- Une vieille ligne à moi, relue dans l'historique du chat (ouvrir « Demandes lues »), n'est pas l'écho.
+  NUM_CHAT_WINDOWS, ChatFrame1 = 1, { GetNumMessages = function() return 1 end, GetMessageInfo = function()
+    return "x", 1, 1, 1, 1, 1, 1, "CHAT_MSG_CHANNEL", { envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville", "Moi Dupont",
+      "", 0, 2, "Commerce - Ville", 0, 1, MOI, n = 12 }
+  end }
+  ns.relireChat()
+  NUM_CHAT_WINDOWS, ChatFrame1 = nil, nil
   minuter()
   assert(dit("pas revenue") and ns.annonceRefus(o) == nil, "pas d'écho : signalé, et on peut réessayer")
   assert(not ns.annoncer({ lines = {} }) and not ns.annoncer({ lines = o.lines, fige = true }) and #envoyes == 2, "vide ou partie : rien")

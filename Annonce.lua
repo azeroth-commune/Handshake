@@ -293,7 +293,8 @@ local function lire(t, event, msg, sender, _, _, _, _, _, canal, base, _, lineID
   local commerce = event == "CHAT_MSG_CHANNEL" and estCommerce(base)
   if not (commerce or event == "CHAT_MSG_YELL") then return end
   if ns.deMoi(sender, guid) then -- les miennes ne sont jamais listées
-    if commerce and attente and canal == attente.canal then attente = nil end
+    -- l'écho de mon annonce : en direct seulement (t nil), pas une vieille ligne relue dans l'historique
+    if commerce and attente and canal == attente.canal and not t then attente = nil end
     return
   end
   return demandeLue(msg, sender, commerce and "dans le Commerce" or "en criant", t, lineID)
@@ -309,7 +310,8 @@ local function heureLigne(texte)
   local maintenant = time()
   local d = date("*t", maintenant)
   d.hour, d.min, d.sec = tonumber(h), tonumber(m), tonumber(s) or 0
-  return maintenant - (maintenant - time(d)) % 43200
+  -- 0 h ou plus de 12 h : forcément un format sur 24 heures, lu modulo 24 h (minuit compris)
+  return maintenant - (maintenant - time(d)) % ((d.hour == 0 or d.hour > 12) and 86400 or 43200)
 end
 
 -- Relit l'historique des fenêtres de chat (ChatFrame1..NUM_CHAT_WINDOWS) : les lignes déjà là avant un /reload ou avant la
@@ -323,8 +325,9 @@ function ns.relireChat()
     local c = _G["ChatFrame" .. i]
     for j = 1, c and c.GetNumMessages and c:GetNumMessages() or 0 do
       local texte, _, _, _, _, _, _, event, args = c:GetMessageInfo(j)
-      if type(args) == "table" and type(texte) == "string" and not vues[args[11]] then
-        lire(heureLigne(texte), event, unpack(args, 1, args.n or 18))
+      if type(args) == "table" and type(texte) == "string"
+        and not (issecretvalue and (issecretvalue(texte) or issecretvalue(args[11]))) and not vues[args[11]] then
+        lire(heureLigne(texte) or time(), event, unpack(args, 1, args.n or 18))
       end
     end
   end
@@ -353,6 +356,7 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("PLAYER_LOGOUT")
 f:RegisterEvent("CHAT_MSG_CHANNEL")
 f:RegisterEvent("CHAT_MSG_YELL")
 f:SetScript("OnEvent", function(_, event, ...)
@@ -364,6 +368,7 @@ f:SetScript("OnEvent", function(_, event, ...)
     f:UnregisterEvent("PLAYER_ENTERING_WORLD")
     return C_Timer.After(5, ns.relireChat)
   end
+  if event == "PLAYER_LOGOUT" then return ns.demandesLues() end -- gardées : les fraîches, 30 au plus
   ns.lireCanal(event, ...)
 end)
 
