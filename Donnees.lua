@@ -2,13 +2,13 @@
 -- Aucune donnée relevée n'est sauvegardée ici (ADR 0002 de l'atelier) : base des recettes (vérifier les besoins d'un
 -- contrat), marchands et cours de l'HV (prix d'achat : caution, estimation), objets (noms, recherche) sont lus par le
 -- socle (requis, lib:Lire) ; l'HV passe par son scan ou par un fournisseur (Auctionator…), les recettes connues de mes persos
--- servent aux Demandes lues (Annonce.lua). L'arbre et ses données (sacs, métiers des persos) sont à Composants.
+-- servent aux Annonces lues (Annonce.lua). L'arbre et ses données (sacs, métiers des persos) sont à Composants.
 -- HandshakeDB ne garde que les données propres de Handshake : commandes, contrats, réglages.
 local _, ns = ...
 
 local lib = AzerothCommune
 -- Ce que Handshake lit : le socle ne relève que les types auxquels un add-on a souscrit (GameData#4).
--- « recettes connues » : les Demandes lues (Annonce.lua), ce que mes persos savent fabriquer.
+-- « recettes connues » : les Annonces lues (Annonce.lua), ce que mes persos savent fabriquer.
 for _, t in ipairs({ "base des recettes", "marchands", "objets", "cours de l'HV", "recettes connues" }) do lib:Souscrire(t) end
 
 ---------------------------------------------------------------------------------------------------

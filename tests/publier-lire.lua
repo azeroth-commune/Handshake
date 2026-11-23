@@ -141,8 +141,8 @@ test("Trade Board d'une autre version, ou absent : l'annonce de Handshake, sans 
     HandshakeDB.main = nil
 end)
 
--- Demandes lues (#52) : de fausses lignes du Commerce ; mon perso sait fabriquer un objet de la base des recettes.
-test("Demandes lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS et piège écartés ; Répondre chuchote", function()
+-- Annonces lues (#52) : de fausses lignes du Commerce ; mon perso sait fabriquer un objet de la base des recettes.
+test("Annonces lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS et piège écartés ; Répondre chuchote", function()
     local moi = AzerothCommuneDB.chars[UnitGUID("player")]
     assertNotNil(moi, "mon perso dans la base du socle")
     local cle, objet
@@ -163,7 +163,7 @@ test("Demandes lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS
         commerce("WTB " .. lien .. " pst", "Bob Dupont", "Player-1-00000B0B")
         commerce("WTS " .. lien, "Cid Lebrun", "Player-1-00000C1D")
         commerce("WTB " .. lien .. " |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique]|h |cffff0000rouge|r", "Mal Truand", "Player-1-0000BAD0")
-        SlashCmdList.HANDSHAKE("demandes")
+        SlashCmdList.HANDSHAKE("annonces")
         assertTrue(HandshakeDemandesFrame:IsShown())
         local textes = {}
         for _, r in ipairs(HandshakeDemandesFrame.rows) do
@@ -195,7 +195,7 @@ test("Demandes lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS
     if not ok then error(err, 0) end
 end)
 
-test("Demandes lues par métier : « LF BS » listée en demande de Forge, sans icône ; /handshake essai demande", function()
+test("Annonces lues par métier : « LF BS » listée pour la Forge, sans icône ; /handshake essai lue", function()
     local moi = AzerothCommuneDB.chars[UnitGUID("player")]
     local avant, P, dits = moi.recipes, print, {}
     moi.recipes = { Forge = { rank = 300, known = {} } }
@@ -203,7 +203,7 @@ test("Demandes lues par métier : « LF BS » listée en demande de Forge, sans 
     local ok, err = pcall(function()
         FireEvent("CHAT_MSG_CHANNEL", "LF BS pls", "Jo Enclume", "", "2. Commerce - Ville", "Jo Enclume", "", 0, 2, "Commerce - Ville", 0, 1, "Player-1-00000E0E")
         FireEvent("CHAT_MSG_CHANNEL", "LFW blacksmith", "Lou Offre", "", "2. Commerce - Ville", "Lou Offre", "", 0, 2, "Commerce - Ville", 0, 1, "Player-1-00000E0F")
-        SlashCmdList.HANDSHAKE("demandes")
+        SlashCmdList.HANDSHAKE("annonces")
         local jo, lou
         for _, r in ipairs(HandshakeDemandesFrame.rows) do
             if r:IsShown() and r.qui:GetText():find("^Jo Enclume") then jo = r end
@@ -211,12 +211,12 @@ test("Demandes lues par métier : « LF BS » listée en demande de Forge, sans 
         end
         assertNotNil(jo, "la demande de Jo listée")
         assertTrue(lou == nil, "LFW : une offre, pas listée")
-        assertTrue(jo.qui:GetText():find("demande de Forge", 1, true) ~= nil, jo.qui:GetText())
+        assertTrue(jo.qui:GetText():find("métier : Forge", 1, true) ~= nil, jo.qui:GetText())
         assertEquals("LF BS pls", jo.texte:GetText())
         assertTrue(not jo.objet:IsShown(), "pas d'icône d'objet")
-        SlashCmdList.HANDSHAKE("essai demande WTS bs")
+        SlashCmdList.HANDSHAKE("essai lue WTS bs")
         assertTrue(dits[#dits]:find("offre", 1, true) ~= nil, dits[#dits])
-        SlashCmdList.HANDSHAKE("essai demande cherche un forgeron")
+        SlashCmdList.HANDSHAKE("essai lue cherche un forgeron")
         assertTrue(dits[#dits]:find("Essai", 1, true) ~= nil, dits[#dits])
     end)
     moi.recipes, print = avant, P
@@ -224,7 +224,7 @@ test("Demandes lues par métier : « LF BS » listée en demande de Forge, sans 
     if not ok then error(err, 0) end
 end)
 
-test("Demandes lues : une ligne du Commerce déjà dans le chat (arrivée avant) est lue à l'ouverture de la fenêtre", function()
+test("Annonces lues : une ligne du Commerce déjà dans le chat (arrivée avant) est lue à l'ouverture de la fenêtre", function()
     local moi = AzerothCommuneDB.chars[UnitGUID("player")]
     local cle, objet
     for k, r in pairs(AzerothCommune:Lire("base des recettes") or {}) do
@@ -244,7 +244,7 @@ test("Demandes lues : une ligne du Commerce déjà dans le chat (arrivée avant)
             0, false, false, false, false, { userID = 0 })
         local derniere = ChatFrame1:GetMessageInfo(ChatFrame1:GetNumMessages())
         assertTrue(derniere:find("Ana Avant", 1, true) ~= nil, "la ligne est dans ChatFrame1 : " .. derniere)
-        SlashCmdList.HANDSHAKE("demandes")
+        SlashCmdList.HANDSHAKE("annonces")
         local ana
         for _, r in ipairs(HandshakeDemandesFrame.rows) do
             if r:IsShown() and r.qui:GetText():find("^Ana Avant") then ana = r end
@@ -255,7 +255,7 @@ test("Demandes lues : une ligne du Commerce déjà dans le chat (arrivée avant)
         assertTrue(t:find("|Hitem:" .. objet, 1, true) ~= nil and not t:find("|T", 1, true) and not t:find("Faux nom", 1, true), t)
         -- Rouvrir : lue une fois.
         HandshakeDemandesFrame:Hide()
-        SlashCmdList.HANDSHAKE("demandes")
+        SlashCmdList.HANDSHAKE("annonces")
         local n = 0
         for _, r in ipairs(HandshakeDemandesFrame.rows) do
             if r:IsShown() and r.qui:GetText():find("^Ana Avant") then n = n + 1 end

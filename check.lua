@@ -218,7 +218,7 @@ do
   assert(not dit("pas revenue"), "écho reçu : rien à dire")
   t = t + ns.ANNONCE_DELAI
   assert(ns.annoncer(o) and #envoyes == 2, "après le délai : de nouveau")
-  -- Une vieille ligne à moi, relue dans l'historique du chat (ouvrir « Demandes lues »), n'est pas l'écho.
+  -- Une vieille ligne à moi, relue dans l'historique du chat (ouvrir « Annonces lues »), n'est pas l'écho.
   NUM_CHAT_WINDOWS, ChatFrame1 = 1, { ForEachMessage = function(_, op)
     op({ message = "x", extraData = { 1, 1, 1, "CHAT_MSG_CHANNEL", { envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville",
       "Moi Dupont", "", 0, 2, "Commerce - Ville", 0, 1, MOI, n = 12 }, n = 5 }, timestamp = GetTime() })
@@ -297,7 +297,7 @@ do
 end
 print("Handshake : annoncer par Trade Board OK")
 
--- Demandes lues (#52) : une ligne de demande (WTB, Buy, Search en tête, ou WTB n'importe où) du Commerce ou d'un cri, avec
+-- Annonces lues (#52) : une ligne de demande (WTB, Buy, Search en tête, ou WTB n'importe où) du Commerce ou d'un cri, avec
 -- le lien d'un objet ou d'une recette qu'un de mes persos sait fabriquer, entre dans la liste ; WTS, sans lien, objet que
 -- je ne sais pas faire, autre canal, mes propres annonces : non. Même joueur, même objet : une entrée. Le texte est nettoyé
 -- et coupé avant tout affichage ; les demandes vieillissent ; « Répondre » chuchote à l'auteur.
@@ -356,7 +356,7 @@ end
 print("Handshake : demandes lues OK")
 
 -- Demandes par métier, sans lien : une ligne de demande (« LF » seul en tête, « cherche », « recherche », ou les règles
--- d'avant) qui nomme, en mot entier, un métier qu'un de mes persos a, entre dans la liste comme « demande de <Métier> » ;
+-- d'avant) qui nomme, en mot entier, un métier qu'un de mes persos a, entre dans la liste avec « métier : <Métier> » ;
 -- LFW (une offre), LFG, LFM, LF1M (des groupes) : non. Un lien d'objet que je sais faire l'emporte. /handshake essai
 -- demande : la même lecture, d'un faux auteur « Essai », et la raison d'un refus dans le chat.
 do
@@ -423,17 +423,17 @@ do
   -- /handshake essai demande : la même lecture, d'« Essai » ; refusée, la raison en une ligne ; rien sur le réseau.
   -- Chaque essai garde les précédents (la clé habituelle : joueur#objet, joueur#métier) et se signale, même déjà listé.
   local n = #dits
-  SlashCmdList.HANDSHAKE("essai demande WTB " .. marteau .. " pst")
+  SlashCmdList.HANDSHAKE("essai lue WTB " .. marteau .. " pst")
   local essai = de("Essai")
   assert(#essai == 1 and essai[1].id == 5541 and #dits == n + 1 and dits[#dits]:find("Essai", 1, true), "essai : listée, signalée")
-  SlashCmdList.HANDSHAKE("essai demande cherche un forgeron")
+  SlashCmdList.HANDSHAKE("essai lue cherche un forgeron")
   assert(#de("Essai") == 2 and #dits == n + 2 and dits[#dits]:find("forge", 1, true), "un 2e essai : le 1er reste, le 2e signalé")
-  SlashCmdList.HANDSHAKE("essai demande WTB " .. marteau .. " encore")
+  SlashCmdList.HANDSHAKE("essai lue WTB " .. marteau .. " encore")
   assert(#de("Essai") == 2 and #dits == n + 3 and dits[#dits]:find("Hitem:5541", 1, true), "le même essai : une entrée, signalée de nouveau")
   n = #dits
-  SlashCmdList.HANDSHAKE("essai demande WTS " .. marteau)
+  SlashCmdList.HANDSHAKE("essai lue WTS " .. marteau)
   assert(#dits == n + 1 and dits[#dits]:find("offre", 1, true), "essai : la raison du refus : " .. dits[#dits])
-  SlashCmdList.HANDSHAKE("essai demande LF alchemist")
+  SlashCmdList.HANDSHAKE("essai lue LF alchemist")
   assert(#dits == n + 2 and dits[#dits]:find("métier", 1, true), "essai : la raison du refus : " .. dits[#dits])
   assert(#chuchotes == 1, "essai : rien sur le réseau")
   -- « Répondre » sur une ligne d'essai : le vrai message, chuchoté à moi-même (le faux auteur « Essai » n'existe pas).

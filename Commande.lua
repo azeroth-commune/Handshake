@@ -603,9 +603,9 @@ end
 
 ---------------------------------------------------------------------------------------------------
 -- /handshake (ou /commande) : avec Composants, la fenêtre des projets, où vivent les commandes ; sans lui, la commande à
--- la main. /handshake liste : la commande à la main ; /handshake demandes : les Demandes lues (Annonce.lua). /handshake
+-- la main. /handshake liste : la commande à la main ; /handshake annonces : les Annonces lues (Annonce.lua). /handshake
 -- essai : la commande à la main revient comme un chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée) ;
--- /handshake essai annonce : son annonce, affichée seulement ; /handshake essai demande <texte> : texte lu comme une
+-- /handshake essai annonce : son annonce, affichée seulement ; /handshake essai lue <texte> : texte lu comme une
 -- demande du Commerce (Annonce.lua). /handshake debug : Debug.lua.
 function ns.ouvrir()
   if Composants then return Composants.Ouvrir() end
@@ -615,8 +615,8 @@ SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
   args = args or ""
   if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end
-  if args:match("^%s*demandes%s*$") then return ns.openDemandes() end
-  local essai = args:match("^%s*essai%s+demande%s*(.*)$")
+  if args:match("^%s*annonces%s*$") then return ns.openDemandes() end
+  local essai = args:match("^%s*essai%s+lue%s*(.*)$")
   if essai then return ns.essaiDemande(essai) end -- lue comme une ligne du Commerce, d'« Essai » ; rien sur le réseau
   if args:match("^%s*essai%s+annonce") then -- l'annonce de la commande à la main, affichée, rien sur le réseau
     local ok, err = ns.annoncer(ns.commandeMain(), true)

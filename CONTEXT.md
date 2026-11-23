@@ -37,7 +37,7 @@ _Avoid_: pourboire, tip
 
 **Annonce**:
 Une ligne publiée ou lue dans le chat public (canal Commerce, cris) : la mienne, « WTB [lien] xN, … », publiée d'un clic
-depuis une commande pas encore partie ; ou celle d'un autre, lue parce qu'elle demande ce que je sais fabriquer. Elle
+depuis une commande pas encore partie ; ou celle d'un autre, lue parce qu'elle demande ce que je sais fabriquer ou un métier que j'ai (la fenêtre « Annonces lues »). Elle
 n'engage à rien : seul le contrat engage.
 _Avoid_: offre (c'est le prix), publicité
 

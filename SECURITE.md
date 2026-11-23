@@ -237,7 +237,7 @@ le contrat engage, et rien de ce qu'une annonce dit ne passe dans un contrat. Pu
 (jamais d'envoi automatique, ni de répétition) ; une limite par période empêche de répéter la même annonce, et le mode
 essai comme le mode debug ne publient rien sur le réseau.
 
-## Ajout : Demandes lues dans le chat public (Handshake#52)
+## Ajout : Annonces lues dans le chat public (Handshake#52)
 
 Handshake lit le canal Commerce et les cris : du texte d'inconnus, sans aucune garantie, comme le sont les messages de
 contrat (P2, P4). Ce qui en est montré :
@@ -253,7 +253,7 @@ contrat (P2, P4). Ce qui en est montré :
 - **est bornée** : seules les lignes de demande (« WTB », « Buy », « Search ») avec le lien d'un objet ou d'une recette
   qu'un de mes persos sait fabriquer ; une entrée par joueur et par objet, 30 au plus, oubliées après 15 min. Mes propres
   lignes ne sont pas lues. Un nom d'auteur que le nettoyage changerait est écarté (il sert tel quel à « Répondre »).
-- **l'historique du chat** (les lignes déjà dans les fenêtres de chat, lues à l'ouverture de « Demandes lues » et une fois
+- **l'historique du chat** (les lignes déjà dans les fenêtres de chat, lues à l'ouverture de « Annonces lues » et une fois
   à l'entrée en jeu) est lui aussi du texte d'inconnus : les données que le client garde avec chaque ligne (l'évènement et
   ses arguments, auteur, GUID, lineID) passent par **le même lecteur**, avec le même nettoyage et les mêmes bornes ; une
   ligne sans ces données est sautée, jamais analysée depuis son texte affiché. Une ligne déjà listée (même lineID) n'est
@@ -265,6 +265,6 @@ contrat (P2, P4). Ce qui en est montré :
   « cherche », « recherche » en tête ; LFW, LFG, LFM restent écartés) qui nomme en mot entier un métier qu'un de mes persos
   a. C'est toujours du texte d'inconnus : même nettoyage, même borne (une entrée par joueur et par métier), aucune bulle
   d'objet, et « Répondre » envoie le même genre de chuchotement fixe, sur un clic seulement ;
-- **`/handshake essai demande <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
+- **`/handshake essai lue <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
   part sur le réseau (sauf un clic sur « Répondre », qui sur une ligne d'essai chuchote le vrai message à moi-même, jamais au faux auteur « Essai »). Les essais d'avant restent listés
   (une entrée par objet ou métier) ; chaque essai écrit sa ligne de signal ou la raison du refus.

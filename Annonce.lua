@@ -141,7 +141,7 @@ function ns.annoncer(order, loop, rec)
 end
 
 ---------------------------------------------------------------------------------------------------
--- Lire : les Demandes lues, côté artisan. Une ligne du Commerce ou un cri qui demande (« WTB », « Buy », « Search »,
+-- Lire : les Annonces lues, côté artisan. Une ligne du Commerce ou un cri qui demande (« WTB », « Buy », « Search »,
 -- « LF » seul, « cherche », « recherche » en tête, ou « WTB » n'importe où, comme Trade Board) le lien d'un objet ou d'une
 -- recette qu'un de mes persos sait fabriquer, sinon, sans tel lien, un métier qu'un de mes persos a (« LF BS »). Le texte
 -- vient d'inconnus (SECURITE.md) : nettoyé et coupé avant tout affichage, et rien ne se fait sans clic. Lues en direct et
@@ -228,7 +228,7 @@ local function metierNomme(msg, mesMetiers)
   end
 end
 
--- Lit une ligne : listée, rend nil ; écartée, rend la raison (affichée par /handshake essai demande). t : son heure (time() ;
+-- Lit une ligne : listée, rend nil ; écartée, rend la raison (affichée par /handshake essai lue). t : son heure (time() ;
 -- nil : maintenant) ; lineID : celui du serveur ; toujours : signalée même déjà listée (un essai).
 local function demandeLue(msg, sender, ou, t, lineID, toujours)
   t = t or time()
@@ -257,10 +257,10 @@ local function demandeLue(msg, sender, ou, t, lineID, toujours)
   if d and d.t > t then return end -- une ligne plus vieille que celle déjà listée (relue dans l'historique)
   d = d or { cle = cle, qui = sender, id = id, sort = sort, metier = metier, lien = id and ns.lienObjet(id) or sort and lienRecette(sort) }
   d.texte, d.ou, d.t = ns.nettoyer(msg, MAX_TEXTE), ou, t
-  if toujours then d.essai = true end -- une ligne de /handshake essai demande : « Répondre » me chuchote à moi
+  if toujours then d.essai = true end -- une ligne de /handshake essai lue : « Répondre » me chuchote à moi
   lues[cle] = d
   if neuve or toujours then
-    dire(("%s demande %s %s (/handshake demandes)."):format(ns.nettoyer(sender, 48), d.lien or ("quelqu'un en " .. metier:lower()), ou))
+    dire(("%s demande %s %s (/handshake annonces)."):format(ns.nettoyer(sender, 48), d.lien or ("quelqu'un en " .. metier:lower()), ou))
   end
   if ns.refreshDemandes then ns.refreshDemandes() end
 end
@@ -343,7 +343,7 @@ function ns.restaurerDemandes()
   ns.demandesLues()
 end
 
--- /handshake essai demande <texte> : texte lu par le même lecteur, comme une ligne du Commerce d'un faux auteur « Essai »
+-- /handshake essai lue <texte> : texte lu par le même lecteur, comme une ligne du Commerce d'un faux auteur « Essai »
 -- (pas moi), signalé à chaque fois, même déjà listé ; écarté, la raison en une ligne. Les essais d'avant restent (une entrée
 -- par objet ou métier, comme pour tout auteur). Rien ne part sur le réseau.
 function ns.essaiDemande(texte)
@@ -372,9 +372,9 @@ end)
 
 ---------------------------------------------------------------------------------------------------
 -- Les fenêtres de Handshake hors Contrats, reliées par des onglets en bas (skill ui-addon, modèle : Négoce) : la commande à
--- la main et les Demandes lues. Un onglet ouvre sa fenêtre à la place de celle-ci, qui se ferme.
+-- la main et les Annonces lues. Un onglet ouvre sa fenêtre à la place de celle-ci, qui se ferme.
 local ONGLETS = { { "Commande", "HandshakeMainFrame", function() ns.openCommandeMain() end },
-  { "Demandes lues", "HandshakeDemandesFrame", function() ns.openDemandes() end } }
+  { "Annonces lues", "HandshakeDemandesFrame", function() ns.openDemandes() end } }
 function ns.onglets(frame, n)
   frame.Tabs = {}
   for i, o in ipairs(ONGLETS) do
@@ -397,17 +397,17 @@ function ns.onglets(frame, n)
   PanelTemplates_SetTab(frame, n)
 end
 
--- « Demandes lues » (/handshake demandes) : une ligne par demande, qui, depuis quand, où, son texte nettoyé ; l'objet
+-- « Annonces lues » (/handshake annonces) : une ligne par demande, qui, depuis quand, où, son texte nettoyé ; l'objet
 -- (survol : sa bulle) ; « Répondre », un clic, un chuchotement ; une fois fait, le bouton le dit.
 local W, ROW, ROWS = 560, 38, 10
 local fenetre
 local function construire()
-  fenetre = ns.newWindow("HandshakeDemandesFrame", "Demandes lues", W, 64 + ROWS * ROW)
+  fenetre = ns.newWindow("HandshakeDemandesFrame", "Annonces lues", W, 64 + ROWS * ROW)
   fenetre.vide = fenetre:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   fenetre.vide:SetPoint("TOPLEFT", 16, -48)
   fenetre.vide:SetWidth(W - 32)
   fenetre.vide:SetJustifyH("LEFT")
-  fenetre.vide:SetText("Aucune demande lue : le chat vient d'être relu. Les demandes du Commerce et des cris (WTB, Buy, Search, LF, cherche) pour ce que tes persos savent fabriquer, ou pour un métier qu'ils ont, s'affichent ici, quelques minutes.")
+  fenetre.vide:SetText("Aucune annonce lue : le chat vient d'être relu. Les annonces du Commerce et des cris (WTB, Buy, Search, LF, cherche) pour ce que tes persos savent fabriquer, ou pour un métier qu'ils ont, s'affichent ici, quelques minutes.")
   fenetre.rows = {}
   for i = 1, ROWS do
     local r = CreateFrame("Frame", nil, fenetre)
@@ -455,7 +455,7 @@ function ns.refreshDemandes()
       r.objet:SetShown(d.metier == nil) -- une demande de métier : pas d'icône, pas de bulle
       if not d.metier then r.objet.icon:SetTexture(d.id and C_Item.GetItemIconByID(d.id) or (GetSpellTexture and GetSpellTexture(d.sort)) or 134400) end
       r.qui:SetText(("%s · depuis %s · %s%s"):format(ns.nettoyer(d.qui, 48), date("%H:%M", d.t), d.ou,
-        d.metier and (" · demande de " .. d.metier) or ""))
+        d.metier and (" · métier : " .. d.metier) or ""))
       r.texte:SetText(d.texte)
       r.repondre:SetText(d.repondu and "Répondu" or "Répondre")
       r.repondre:SetEnabled(not d.repondu)
