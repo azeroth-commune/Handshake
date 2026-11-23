@@ -154,6 +154,7 @@ local lues = {}
 -- ponytail: les lignes listées de la session, par lineID, pour ne pas relire une ligne déjà listée (ni la remettre une fois
 -- oubliée) ; quelques dizaines par session au plus
 local vues = {}
+local passe -- pendant une relecture du chat : { ns.jeSaisFabriquer() }, calculé une fois pour toutes ses lignes
 
 local function lienRecette(id)
   local r = ns.recipes()[id]
@@ -236,7 +237,8 @@ local function demandeLue(msg, sender, ou, t, lineID, toujours)
   local raison = pasDemande(msg)
   if raison then return raison end
   local lines, _, _, _, recettes, liens = ns.parseList(msg) -- le lecteur des listes reçues, pas un second
-  local objets, sorts, mesMetiers = ns.jeSaisFabriquer()
+  local objets, sorts, mesMetiers
+  if passe then objets, sorts, mesMetiers = passe[1], passe[2], passe[3] else objets, sorts, mesMetiers = ns.jeSaisFabriquer() end
   local id, sort, metier
   if liens then -- des noms tapés entre crochets ne suffisent pas
     for _, l in ipairs(lines) do if objets[l.id] then id = l.id break end end
@@ -302,35 +304,31 @@ end
 -- Ce qui arrive en direct des canaux publics.
 function ns.lireCanal(event, ...) return lire(nil, event, ...) end
 
--- L'heure (time()) d'une ligne du chat d'après son horodatage en tête (« 14:05 », « 2:05 PM », « [14:05:33] »), nil sans
--- horodatage. Un format sur 12 heures se lit comme le plus récent des deux moments possibles (modulo 12 h).
-local function heureLigne(texte)
-  local h, m, s = texte:match("^%[?(%d%d?):(%d%d):?(%d*)")
-  if not h then return end
-  local maintenant = time()
-  local d = date("*t", maintenant)
-  d.hour, d.min, d.sec = tonumber(h), tonumber(m), tonumber(s) or 0
-  -- 0 h ou plus de 12 h : forcément un format sur 24 heures, lu modulo 24 h (minuit compris)
-  return maintenant - (maintenant - time(d)) % ((d.hour == 0 or d.hour > 12) and 86400 or 43200)
-end
-
 -- Relit l'historique des fenêtres de chat (ChatFrame1..NUM_CHAT_WINDOWS) : les lignes déjà là avant un /reload ou avant la
--- fin du login. Le client garde avec chaque ligne l'évènement et ses arguments bruts (ChatFrameOverrides.lua :
--- AddMessage(texte, r, g, b, id, accessID, typeID, event, SafePack(...), formateur)) : ils passent par le même lecteur que
--- le direct. Une ligne déjà listée (même lineID, vue dans une autre fenêtre) n'est pas relue.
+-- fin du login. Le client garde chaque ligne avec l'évènement et ses arguments bruts (ChatFrameOverrides.lua :
+-- AddMessage(texte, r, g, b, id, accessID, typeID, event, SafePack(...), formateur)) et son heure d'arrivée
+-- (ScrollingMessageFrame.lua, PackageEntry : timestamp = GetTime()) : ForEachMessage rend l'entrée entière, l'heure est donc
+-- exacte quel que soit le réglage d'horodatage du chat. Même lecteur que le direct ; mes recettes calculées une fois par
+-- relecture (passe) ; une ligne déjà listée (même lineID, vue dans une autre fenêtre) n'est pas relue.
 -- ponytail: une ligne sans ces données (écrite par un add-on, copiée par « Déplacer dans une nouvelle fenêtre ») est sautée,
 -- pas analysée depuis son texte affiché
 function ns.relireChat()
+  local maintenant, gt = time(), GetTime()
+  passe = { ns.jeSaisFabriquer() }
   for i = 1, NUM_CHAT_WINDOWS or 0 do
     local c = _G["ChatFrame" .. i]
-    for j = 1, c and c.GetNumMessages and c:GetNumMessages() or 0 do
-      local texte, _, _, _, _, _, _, event, args = c:GetMessageInfo(j)
-      if type(args) == "table" and type(texte) == "string"
-        and not (issecretvalue and (issecretvalue(texte) or issecretvalue(args[11]))) and not vues[args[11]] then
-        lire(heureLigne(texte) or time(), event, unpack(args, 1, args.n or 18))
-      end
+    if c and c.ForEachMessage then
+      c:ForEachMessage(function(e)
+        local x = e.extraData
+        local event, args = x and x[4], x and x[5]
+        if type(args) == "table" and type(e.message) == "string" and type(e.timestamp) == "number"
+          and not (issecretvalue and (issecretvalue(e.message) or issecretvalue(args[11]))) and not vues[args[11]] then
+          lire(maintenant - math.floor(gt - e.timestamp + 0.5), event, unpack(args, 1, args.n or 18))
+        end
+      end)
     end
   end
+  passe = nil
 end
 
 -- À l'entrée en jeu : les demandes gardées de ce perso (HandshakeDB.demandes[GUID]) reviennent, les vieilles sont oubliées.

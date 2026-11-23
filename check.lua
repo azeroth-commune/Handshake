@@ -219,9 +219,9 @@ do
   t = t + ns.ANNONCE_DELAI
   assert(ns.annoncer(o) and #envoyes == 2, "après le délai : de nouveau")
   -- Une vieille ligne à moi, relue dans l'historique du chat (ouvrir « Demandes lues »), n'est pas l'écho.
-  NUM_CHAT_WINDOWS, ChatFrame1 = 1, { GetNumMessages = function() return 1 end, GetMessageInfo = function()
-    return "x", 1, 1, 1, 1, 1, 1, "CHAT_MSG_CHANNEL", { envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville", "Moi Dupont",
-      "", 0, 2, "Commerce - Ville", 0, 1, MOI, n = 12 }
+  NUM_CHAT_WINDOWS, ChatFrame1 = 1, { ForEachMessage = function(_, op)
+    op({ message = "x", extraData = { 1, 1, 1, "CHAT_MSG_CHANNEL", { envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville",
+      "Moi Dupont", "", 0, 2, "Commerce - Ville", 0, 1, MOI, n = 12 }, n = 5 }, timestamp = GetTime() })
   end }
   ns.relireChat()
   NUM_CHAT_WINDOWS, ChatFrame1 = nil, nil
@@ -457,8 +457,9 @@ print("Handshake : demandes par métier OK")
 -- nettoyées), les vieilles sont oubliées.
 do
   local dits, stubMT0 = {}, getmetatable(CreateFrame())
-  local T0, P0, chars0 = time, print, AzerothCommuneDB.chars
+  local T0, P0, chars0, GT0 = time, print, AzerothCommuneDB.chars, GetTime
   local t = T0({ year = 2026, month = 11, day = 23, hour = 14, min = 10, sec = 0 })
+  GetTime = function() return 50000 end
   time = function(x) if x then return T0(x) end return t end
   print = function(s) dits[#dits + 1] = s end
   AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
@@ -474,16 +475,19 @@ do
   recharger()
   -- Une ligne telle que la fenêtre de chat la garde (ChatFrameOverrides.lua : AddMessage(texte, r, g, b, id, accessID,
   -- typeID, event, SafePack(...), formateur)).
-  local function ligne(event, msg, qui, base, lineID, guid, horo)
+  -- L'entrée telle que ScrollingMessageFrame la garde (PackageEntry) : extraData = { id, accessID, typeID, event, args, … },
+  -- timestamp = GetTime() à son arrivée ; age : il y a combien de secondes elle est arrivée.
+  local function ligne(event, msg, qui, base, lineID, guid, age)
     local args = { msg, qui, "", base and ("2. " .. base) or "", qui, "", 0, base and 2 or 0, base or "", 0, lineID, guid,
       0, false, false, false, false, { userID = 0 }, n = 18 }
-    return { (horo or "") .. "|Hplayer:" .. qui .. ":" .. lineID .. "|h[" .. qui .. "]|h: " .. msg, 1, 1, 1, 1, 1, 1, event, args }
+    return { message = "|Hplayer:" .. qui .. ":" .. lineID .. "|h[" .. qui .. "]|h: " .. msg, r = 1, g = 1, b = 1,
+      extraData = { 1, 1, 1, event, args, nil, n = 6 }, timestamp = GetTime() - (age or 0) }
   end
   local function cadre(lignes)
-    return { GetNumMessages = function() return #lignes end, GetMessageInfo = function(_, i) return unpack(lignes[i], 1, 9) end }
+    return { ForEachMessage = function(_, op) for _, e in ipairs(lignes) do if op(e) then break end end end }
   end
   local CH, CR = "CHAT_MSG_CHANNEL", "CHAT_MSG_YELL"
-  local bob = ligne(CH, "WTB " .. marteau .. " pst", "Bob Dupont", "Commerce - Ville", 101, "Player-6942-00000B0B", "14:05 ")
+  local bob = ligne(CH, "WTB " .. marteau .. " pst", "Bob Dupont", "Commerce - Ville", 101, "Player-6942-00000B0B", 300)
   NUM_CHAT_WINDOWS = 2
   ChatFrame1 = cadre({
     bob,
@@ -493,17 +497,21 @@ do
     ligne(CH, "WTB " .. marteau .. " x2", "Moi Dupont", "Commerce - Ville", 106, MOI),
     ligne(CH, "WTB |cff1eff00|Hitem:5541::::|h[Épée gratuite]|h|r |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h \7fin",
       "Mal Truand", "Commerce - Ville", 107, "Player-6942-0000BAD0"),
-    { "|cffa78ffcHandshake :|r une ligne écrite par un add-on, sans données", 1, 1, 1 },
-    ligne(CH, "WTB " .. marteau, "Fil Long", "Commerce - Ville", 109, "Player-6942-00000F11", "13:00 "), -- 70 min : trop vieille
+    { message = "|cffa78ffcHandshake :|r une ligne écrite par un add-on, sans données", r = 1, g = 1, b = 1, timestamp = GetTime() },
+    ligne(CH, "WTB " .. marteau, "Fil Long", "Commerce - Ville", 109, "Player-6942-00000F11", 4200), -- 70 min : trop vieille
   })
   ChatFrame2 = cadre({ bob })
+  local J0, appels = ns.jeSaisFabriquer, 0
+  ns.jeSaisFabriquer = function() appels = appels + 1 return J0() end
   ns.relireChat()
+  ns.jeSaisFabriquer = J0
+  assert(appels == 1, "mes recettes, calculées une fois par relecture : " .. appels)
   local function rangs() local r = {} for _, d in ipairs(ns.demandesLues()) do r[d.qui] = d end return r end
   local function noms() local n = {} for q in pairs(rangs()) do n[#n + 1] = q end table.sort(n) return table.concat(n, ",") end
   assert(noms() == "Bob Dupont,Dan Cri,Mal Truand", "l'historique : Commerce et cri, pas l'offre, le Général, les miennes, les vieilles : " .. noms())
   assert(#dits == 3, "une ligne de signal par demande, la ligne vue dans deux fenêtres une fois : " .. #dits)
   local r = rangs()
-  assert(r["Bob Dupont"].t == t - 300 and r["Dan Cri"].t == t, "l'heure de l'horodatage, sinon maintenant")
+  assert(r["Bob Dupont"].t == t - 300 and r["Dan Cri"].t == t, "l'heure d'arrivée de la ligne, gardée par le client")
   assert(r["Dan Cri"].ou == "en criant" and r["Bob Dupont"].ou == "dans le Commerce", "où")
   local mal = r["Mal Truand"].texte
   assert(not mal:gsub("|cff1eff00|Hitem:5541::::::::31:::::::::|h%[Marteau%]|h|r", ""):find("|", 1, true)
@@ -526,7 +534,7 @@ do
   t = t + ns.DEMANDE_DUREE + 1
   assert(#ns.demandesLues() == 0 and next(HandshakeDB.demandes[MOI]) == nil, "elles vieillissent, gardées comprises")
   ChatFrame1, ChatFrame2, NUM_CHAT_WINDOWS = nil, nil, nil
-  time, print, AzerothCommuneDB.chars = T0, P0, chars0
+  time, print, AzerothCommuneDB.chars, GetTime = T0, P0, chars0, GT0
 end
 print("Handshake : historique du chat et /reload OK")
 
