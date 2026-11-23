@@ -144,11 +144,16 @@ end
 -- Lire : les Demandes lues, côté artisan. Une ligne du Commerce ou un cri qui demande (« WTB », « Buy », « Search »,
 -- « LF » seul, « cherche », « recherche » en tête, ou « WTB » n'importe où, comme Trade Board) le lien d'un objet ou d'une
 -- recette qu'un de mes persos sait fabriquer, sinon, sans tel lien, un métier qu'un de mes persos a (« LF BS »). Le texte
--- vient d'inconnus (SECURITE.md) : nettoyé et coupé avant tout affichage, et rien ne se fait sans clic.
--- ponytail: en mémoire seulement (la session) ; une demande du Commerce vaut quelques minutes
+-- vient d'inconnus (SECURITE.md) : nettoyé et coupé avant tout affichage, et rien ne se fait sans clic. Lues en direct et
+-- dans l'historique du chat (ns.relireChat) ; gardées par perso dans HandshakeDB.demandes, déjà nettoyées, pour un /reload.
 ns.DEMANDE_DUREE = 900 -- secondes avant qu'une demande lue disparaisse
 local MAX_TEXTE, MAX_DEMANDES = 160, 30
-local lues = {} -- [cle] = { cle (qui#objet, qui#sortN, qui#métier), qui, id (objet), sort ou metier, lien, texte, ou, t, repondu }
+-- [cle] = { cle (qui#objet, qui#sortN, qui#métier), qui, id (objet), sort ou metier, lien (refait ici), texte (nettoyé), ou,
+-- t (time()), repondu } ; à l'entrée en jeu, la table gardée du perso (ns.restaurerDemandes)
+local lues = {}
+-- ponytail: les lignes listées de la session, par lineID, pour ne pas relire une ligne déjà listée (ni la remettre une fois
+-- oubliée) ; quelques dizaines par session au plus
+local vues = {}
 
 local function lienRecette(id)
   local r = ns.recipes()[id]
@@ -222,8 +227,12 @@ local function metierNomme(msg, mesMetiers)
   end
 end
 
--- Lit une ligne : listée, rend nil ; écartée, rend la raison (affichée par /handshake essai demande).
-local function demandeLue(msg, sender, ou)
+-- Lit une ligne : listée, rend nil ; écartée, rend la raison (affichée par /handshake essai demande). t : son heure (time() ;
+-- nil : maintenant) ; lineID : celui du serveur ; toujours : signalée même déjà listée (un essai).
+local function demandeLue(msg, sender, ou, t, lineID, toujours)
+  t = t or time()
+  if time() - t > ns.DEMANDE_DUREE then return "trop vieille" end
+  if ns.nettoyer(sender) ~= sender then return "nom d'auteur douteux" end -- gardé tel quel (Répondre) : rien à nettoyer
   local raison = pasDemande(msg)
   if raison then return raison end
   local lines, _, _, _, recettes, liens = ns.parseList(msg) -- le lecteur des listes reçues, pas un second
@@ -242,10 +251,12 @@ local function demandeLue(msg, sender, ou)
   if not (id or sort or metier) then return "ni objet, ni recette, ni métier que tes persos savent faire" end
   local cle = sender .. "#" .. (id or sort and ("sort" .. sort) or metier)
   local d, neuve = lues[cle], lues[cle] == nil
+  if lineID then vues[lineID] = true end
+  if d and d.t > t then return end -- une ligne plus vieille que celle déjà listée (relue dans l'historique)
   d = d or { cle = cle, qui = sender, id = id, sort = sort, metier = metier, lien = id and ns.lienObjet(id) or sort and lienRecette(sort) }
-  d.texte, d.ou, d.t = ns.nettoyer(msg, MAX_TEXTE), ou, GetTime()
+  d.texte, d.ou, d.t = ns.nettoyer(msg, MAX_TEXTE), ou, t
   lues[cle] = d
-  if neuve then
+  if neuve or toujours then
     dire(("%s demande %s %s (/handshake demandes)."):format(ns.nettoyer(sender, 48), d.lien or ("quelqu'un en " .. metier:lower()), ou))
   end
   if ns.refreshDemandes then ns.refreshDemandes() end
@@ -255,7 +266,7 @@ end
 function ns.demandesLues()
   local out = {}
   for k, d in pairs(lues) do
-    if GetTime() - d.t > ns.DEMANDE_DUREE then lues[k] = nil else out[#out + 1] = d end
+    if time() - d.t > ns.DEMANDE_DUREE then lues[k] = nil else out[#out + 1] = d end
   end
   table.sort(out, function(a, b) return a.t > b.t end)
   for i = #out, MAX_DEMANDES + 1, -1 do
@@ -271,9 +282,9 @@ function ns.repondreDemande(d)
   d.repondu = true
 end
 
--- Ce qui arrive des canaux publics (CHAT_MSG_CHANNEL, CHAT_MSG_YELL) : l'écho de mon annonce, les demandes des autres
--- (rend la raison d'une ligne écartée par le lecteur des demandes).
-function ns.lireCanal(event, msg, sender, _, _, _, _, _, canal, base, _, _, guid)
+-- Une ligne des canaux publics (les arguments de CHAT_MSG_CHANNEL / CHAT_MSG_YELL), lue à l'heure t (nil : maintenant) :
+-- l'écho de mon annonce, les demandes des autres (rend la raison d'une ligne écartée par le lecteur des demandes).
+local function lire(t, event, msg, sender, _, _, _, _, _, canal, base, _, lineID, guid)
   if type(msg) ~= "string" or type(sender) ~= "string" or (issecretvalue and (issecretvalue(msg) or issecretvalue(sender))) then return end
   local commerce = event == "CHAT_MSG_CHANNEL" and estCommerce(base)
   if not (commerce or event == "CHAT_MSG_YELL") then return end
@@ -281,24 +292,74 @@ function ns.lireCanal(event, msg, sender, _, _, _, _, _, canal, base, _, _, guid
     if commerce and attente and canal == attente.canal then attente = nil end
     return
   end
-  return demandeLue(msg, sender, commerce and "dans le Commerce" or "en criant")
+  return demandeLue(msg, sender, commerce and "dans le Commerce" or "en criant", t, lineID)
+end
+-- Ce qui arrive en direct des canaux publics.
+function ns.lireCanal(event, ...) return lire(nil, event, ...) end
+
+-- L'heure (time()) d'une ligne du chat d'après son horodatage en tête (« 14:05 », « 2:05 PM », « [14:05:33] »), nil sans
+-- horodatage. Un format sur 12 heures se lit comme le plus récent des deux moments possibles (modulo 12 h).
+local function heureLigne(texte)
+  local h, m, s = texte:match("^%[?(%d%d?):(%d%d):?(%d*)")
+  if not h then return end
+  local maintenant = time()
+  local d = date("*t", maintenant)
+  d.hour, d.min, d.sec = tonumber(h), tonumber(m), tonumber(s) or 0
+  return maintenant - (maintenant - time(d)) % 43200
 end
 
--- /handshake essai demande <texte> : texte lu comme une ligne du Commerce, d'un faux auteur « Essai » (pas moi), par le
--- même chemin ; écarté, la raison en une ligne. Rien ne part sur le réseau. Les essais d'avant sont oubliés, pour que
--- chacun soit signalé.
+-- Relit l'historique des fenêtres de chat (ChatFrame1..NUM_CHAT_WINDOWS) : les lignes déjà là avant un /reload ou avant la
+-- fin du login. Le client garde avec chaque ligne l'évènement et ses arguments bruts (ChatFrameOverrides.lua :
+-- AddMessage(texte, r, g, b, id, accessID, typeID, event, SafePack(...), formateur)) : ils passent par le même lecteur que
+-- le direct. Une ligne déjà listée (même lineID, vue dans une autre fenêtre) n'est pas relue.
+-- ponytail: une ligne sans ces données (écrite par un add-on, copiée par « Déplacer dans une nouvelle fenêtre ») est sautée,
+-- pas analysée depuis son texte affiché
+function ns.relireChat()
+  for i = 1, NUM_CHAT_WINDOWS or 0 do
+    local c = _G["ChatFrame" .. i]
+    for j = 1, c and c.GetNumMessages and c:GetNumMessages() or 0 do
+      local texte, _, _, _, _, _, _, event, args = c:GetMessageInfo(j)
+      if type(args) == "table" and type(texte) == "string" and not vues[args[11]] then
+        lire(heureLigne(texte), event, unpack(args, 1, args.n or 18))
+      end
+    end
+  end
+end
+
+-- À l'entrée en jeu : les demandes gardées de ce perso (HandshakeDB.demandes[GUID]) reviennent, les vieilles sont oubliées.
+-- On n'y garde que ce que demandeLue a déjà nettoyé (texte coupé et nettoyé, IDs, lien refait ici), jamais la ligne brute.
+function ns.restaurerDemandes()
+  HandshakeDB.demandes = HandshakeDB.demandes or {}
+  local moi = UnitGUID("player")
+  local gardees = HandshakeDB.demandes[moi] or {}
+  for k, d in pairs(lues) do gardees[k] = d end
+  lues = gardees
+  HandshakeDB.demandes[moi] = lues
+  ns.demandesLues()
+end
+
+-- /handshake essai demande <texte> : texte lu par le même lecteur, comme une ligne du Commerce d'un faux auteur « Essai »
+-- (pas moi), signalé à chaque fois, même déjà listé ; écarté, la raison en une ligne. Les essais d'avant restent (une entrée
+-- par objet ou métier, comme pour tout auteur). Rien ne part sur le réseau.
 function ns.essaiDemande(texte)
-  for k, d in pairs(lues) do if d.qui == "Essai" then lues[k] = nil end end
-  local raison = ns.lireCanal("CHAT_MSG_CHANNEL", texte, "Essai", "", "", "", "", 0, 0, "Commerce")
+  local raison = demandeLue(texte, "Essai", "dans le Commerce", nil, nil, true)
   if raison then print("|cff999999[essai]|r pas listée : " .. raison .. ".") end
 end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("CHAT_MSG_CHANNEL")
 f:RegisterEvent("CHAT_MSG_YELL")
 f:SetScript("OnEvent", function(_, event, ...)
-  if event == "PLAYER_LOGIN" then return ns.balayerTB() end
+  if event == "PLAYER_LOGIN" then
+    ns.restaurerDemandes()
+    return ns.balayerTB()
+  end
+  if event == "PLAYER_ENTERING_WORLD" then -- une fois, quand les fenêtres de chat ont reçu les lignes du login
+    f:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    return C_Timer.After(5, ns.relireChat)
+  end
   ns.lireCanal(event, ...)
 end)
 
@@ -339,7 +400,7 @@ local function construire()
   fenetre.vide:SetPoint("TOPLEFT", 16, -48)
   fenetre.vide:SetWidth(W - 32)
   fenetre.vide:SetJustifyH("LEFT")
-  fenetre.vide:SetText("Aucune demande lue. Les demandes du Commerce et des cris (WTB, Buy, Search, LF, cherche) pour ce que tes persos savent fabriquer, ou pour un métier qu'ils ont, s'affichent ici, quelques minutes.")
+  fenetre.vide:SetText("Aucune demande lue : le chat vient d'être relu. Les demandes du Commerce et des cris (WTB, Buy, Search, LF, cherche) pour ce que tes persos savent fabriquer, ou pour un métier qu'ils ont, s'affichent ici, quelques minutes.")
   fenetre.rows = {}
   for i = 1, ROWS do
     local r = CreateFrame("Frame", nil, fenetre)
@@ -386,7 +447,7 @@ function ns.refreshDemandes()
       r.d = d
       r.objet:SetShown(d.metier == nil) -- une demande de métier : pas d'icône, pas de bulle
       if not d.metier then r.objet.icon:SetTexture(d.id and C_Item.GetItemIconByID(d.id) or (GetSpellTexture and GetSpellTexture(d.sort)) or 134400) end
-      r.qui:SetText(("%s · depuis %s · %s%s"):format(ns.nettoyer(d.qui, 48), date("%H:%M", time() - math.floor(GetTime() - d.t)), d.ou,
+      r.qui:SetText(("%s · depuis %s · %s%s"):format(ns.nettoyer(d.qui, 48), date("%H:%M", d.t), d.ou,
         d.metier and (" · demande de " .. d.metier) or ""))
       r.texte:SetText(d.texte)
       r.repondre:SetText(d.repondu and "Répondu" or "Répondre")
@@ -395,7 +456,9 @@ function ns.refreshDemandes()
   end
 end
 
+-- Ouvrir la fenêtre relit d'abord le chat : pas besoin d'attendre de nouvelles lignes.
 function ns.openDemandes()
+  ns.relireChat()
   if not fenetre then construire() end
   fenetre:Show()
   ns.refreshDemandes()

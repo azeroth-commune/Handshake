@@ -224,6 +224,53 @@ test("Demandes lues par métier : « LF BS » listée en demande de Forge, sans 
     if not ok then error(err, 0) end
 end)
 
+test("Demandes lues : une ligne du Commerce déjà dans le chat (arrivée avant) est lue à l'ouverture de la fenêtre", function()
+    local moi = AzerothCommuneDB.chars[UnitGUID("player")]
+    local cle, objet
+    for k, r in pairs(AzerothCommune:Lire("base des recettes") or {}) do
+        if type(k) == "number" and r.output then cle, objet = k, r.output break end
+    end
+    local avant, cl, zl, censure = moi.recipes, ChatFrame1.channelList, ChatFrame1.zoneChannelList, C_ChatInfo.IsChatLineCensored
+    moi.recipes = { Forge = { rank = 300, known = { [cle] = "easy" } } }
+    local ok, err = pcall(function()
+        -- ChatFrame1 abonné au Commerce ; la ligne passe par le vrai gestionnaire du chat de Blizzard, mais pas par Handshake
+        -- (comme une ligne arrivée avant son chargement). Le simulateur n'a pas IsChatLineCensored : bouchon.
+        C_ChatInfo.IsChatLineCensored = censure or function() return false end
+        ChatFrame1:AddMessageGroup("CHANNEL")
+        ChatFrame1.channelList, ChatFrame1.zoneChannelList = { "Commerce - Ville" }, { 0 }
+        local lien = "|cffffffff|Hitem:" .. objet .. "::::::::::::::::|h[Faux nom]|h|r"
+        ChatFrame1:GetScript("OnEvent")(ChatFrame1, "CHAT_MSG_CHANNEL", "WTB " .. lien .. " |TInterface\\Icons\\INV_Misc_Coin_01:0|t svp",
+            "Ana Avant", "", "2. Commerce - Ville", "Ana Avant", "", 0, 2, "Commerce - Ville", 0, 4242, "Player-1-00000A4A",
+            0, false, false, false, false, { userID = 0 })
+        local derniere = ChatFrame1:GetMessageInfo(ChatFrame1:GetNumMessages())
+        assertTrue(derniere:find("Ana Avant", 1, true) ~= nil, "la ligne est dans ChatFrame1 : " .. derniere)
+        SlashCmdList.HANDSHAKE("demandes")
+        local ana
+        for _, r in ipairs(HandshakeDemandesFrame.rows) do
+            if r:IsShown() and r.qui:GetText():find("^Ana Avant") then ana = r end
+        end
+        assertNotNil(ana, "la demande d'avant listée")
+        assertTrue(ana.qui:GetText():find("dans le Commerce", 1, true) ~= nil, ana.qui:GetText())
+        local t = ana.texte:GetText()
+        assertTrue(t:find("|Hitem:" .. objet, 1, true) ~= nil and not t:find("|T", 1, true) and not t:find("Faux nom", 1, true), t)
+        -- Rouvrir : lue une fois.
+        HandshakeDemandesFrame:Hide()
+        SlashCmdList.HANDSHAKE("demandes")
+        local n = 0
+        for _, r in ipairs(HandshakeDemandesFrame.rows) do
+            if r:IsShown() and r.qui:GetText():find("^Ana Avant") then n = n + 1 end
+        end
+        assertEquals(1, n)
+        -- Gardée pour un /reload, nettoyée.
+        local g = HandshakeDB.demandes[UnitGUID("player")]["Ana Avant#" .. objet]
+        assertNotNil(g, "gardée dans HandshakeDB")
+        assertTrue(not g.texte:find("|T", 1, true), g.texte)
+    end)
+    moi.recipes, ChatFrame1.channelList, ChatFrame1.zoneChannelList, C_ChatInfo.IsChatLineCensored = avant, cl, zl, censure
+    if HandshakeDemandesFrame then HandshakeDemandesFrame:Hide() end
+    if not ok then error(err, 0) end
+end)
+
 if not Composants then return end
 
 test("« Annoncer dans le Commerce » dans le menu « Plus » de Composants : regroupée, 255 octets, liens intacts", function()

@@ -251,11 +251,20 @@ contrat (P2, P4). Ce qui en est montré :
   chat ; « Répondre » (un clic) envoie un chuchotement fixe, écrit par Handshake, à l'auteur. Rien de lu ne devient une
   commande, un contrat ni un prix ;
 - **est bornée** : seules les lignes de demande (« WTB », « Buy », « Search ») avec le lien d'un objet ou d'une recette
-  qu'un de mes persos sait fabriquer ; une entrée par joueur et par objet, 30 au plus, oubliées après 15 min, en mémoire
-  seulement (rien n'est sauvegardé). Mes propres lignes ne sont pas lues.
+  qu'un de mes persos sait fabriquer ; une entrée par joueur et par objet, 30 au plus, oubliées après 15 min. Mes propres
+  lignes ne sont pas lues. Un nom d'auteur que le nettoyage changerait est écarté (il sert tel quel à « Répondre »).
+- **l'historique du chat** (les lignes déjà dans les fenêtres de chat, lues à l'ouverture de « Demandes lues » et une fois
+  à l'entrée en jeu) est lui aussi du texte d'inconnus : les données que le client garde avec chaque ligne (l'évènement et
+  ses arguments, auteur, GUID, lineID) passent par **le même lecteur**, avec le même nettoyage et les mêmes bornes ; une
+  ligne sans ces données est sautée, jamais analysée depuis son texte affiché. Une ligne déjà listée (même lineID) n'est
+  pas relue ; une ligne plus vieille que 15 min (d'après son horodatage) n'entre pas. Rien ne se fait sans clic.
+- **gardée pour un /reload** : par perso dans `HandshakeDB.demandes`, seulement ce que le lecteur a déjà produit (texte
+  nettoyé et coupé, IDs de l'objet, de la recette, nom du métier, lien refait ici, auteur, lieu, heure), jamais la ligne
+  brute ; oubliée après 15 min comme en mémoire. Au chargement, seules les fraîches reviennent.
 - **demandes par métier, sans lien** (« LF BS », « cherche forgeron ») : une ligne de demande (aussi « LF » seul,
   « cherche », « recherche » en tête ; LFW, LFG, LFM restent écartés) qui nomme en mot entier un métier qu'un de mes persos
   a. C'est toujours du texte d'inconnus : même nettoyage, même borne (une entrée par joueur et par métier), aucune bulle
   d'objet, et « Répondre » envoie le même genre de chuchotement fixe, sur un clic seulement ;
 - **`/handshake essai demande <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
-  part sur le réseau (sauf un clic sur « Répondre », comme pour toute demande lue).
+  part sur le réseau (sauf un clic sur « Répondre », comme pour toute demande lue). Les essais d'avant restent listés
+  (une entrée par objet ou métier) ; chaque essai écrit sa ligne de signal ou la raison du refus.

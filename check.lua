@@ -298,6 +298,8 @@ do
   local t, dits, chuchotes = 5000, {}, {}
   local G0, P0, W0, chars0 = GetTime, print, ns.whisper, AzerothCommuneDB.chars
   GetTime = function() return t end
+  local T0 = time
+  time = function(x) if x then return T0(x) end return t end
   print = function(s) dits[#dits + 1] = s end
   ns.whisper = function(msg, cible) chuchotes[#chuchotes + 1] = { msg = msg, cible = cible } end
   -- Un perso sait faire le marteau (recette 1 : objet 5541) ; personne la cuirasse (recette 2 : 2870).
@@ -342,7 +344,7 @@ do
   assert(#chuchotes == 1 and chuchotes[1].cible == bob.qui and chuchotes[1].msg:find("Hitem:5541") and bob.repondu, "Répondre : un chuchotement à l'auteur")
   t = t + ns.DEMANDE_DUREE + 1
   assert(#ns.demandesLues() == 0, "les vieilles demandes disparaissent")
-  GetTime, print, ns.whisper, AzerothCommuneDB.chars = G0, P0, W0, chars0
+  GetTime, print, ns.whisper, AzerothCommuneDB.chars, time = G0, P0, W0, chars0, T0
 end
 print("Handshake : demandes lues OK")
 
@@ -354,6 +356,8 @@ do
   local t, dits, chuchotes = 20000, {}, {}
   local G0, P0, W0, chars0 = GetTime, print, ns.whisper, AzerothCommuneDB.chars
   GetTime = function() return t end
+  local T0 = time
+  time = function(x) if x then return T0(x) end return t end
   print = function(s) dits[#dits + 1] = s end
   ns.whisper = function(msg, cible) chuchotes[#chuchotes + 1] = { msg = msg, cible = cible } end
   AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
@@ -410,20 +414,106 @@ do
   assert(canal("WTS bs", "Cid Lebrun"):find("offre", 1, true) and canal("LFM bs", "Cid Lebrun"):find("pas une demande", 1, true)
     and canal("LF alchemist", "Cid Lebrun"):find("métier", 1, true) and canal("LF bs", "Cid Lebrun") == nil, "raisons du lecteur")
   -- /handshake essai demande : la même lecture, d'« Essai » ; refusée, la raison en une ligne ; rien sur le réseau.
+  -- Chaque essai garde les précédents (la clé habituelle : joueur#objet, joueur#métier) et se signale, même déjà listé.
   local n = #dits
   SlashCmdList.HANDSHAKE("essai demande WTB " .. marteau .. " pst")
   local essai = de("Essai")
   assert(#essai == 1 and essai[1].id == 5541 and #dits == n + 1 and dits[#dits]:find("Essai", 1, true), "essai : listée, signalée")
+  SlashCmdList.HANDSHAKE("essai demande cherche un forgeron")
+  assert(#de("Essai") == 2 and #dits == n + 2 and dits[#dits]:find("forge", 1, true), "un 2e essai : le 1er reste, le 2e signalé")
+  SlashCmdList.HANDSHAKE("essai demande WTB " .. marteau .. " encore")
+  assert(#de("Essai") == 2 and #dits == n + 3 and dits[#dits]:find("Hitem:5541", 1, true), "le même essai : une entrée, signalée de nouveau")
+  n = #dits
   SlashCmdList.HANDSHAKE("essai demande WTS " .. marteau)
-  assert(#dits == n + 2 and dits[#dits]:find("offre", 1, true), "essai : la raison du refus : " .. dits[#dits])
+  assert(#dits == n + 1 and dits[#dits]:find("offre", 1, true), "essai : la raison du refus : " .. dits[#dits])
   SlashCmdList.HANDSHAKE("essai demande LF alchemist")
-  assert(#dits == n + 3 and dits[#dits]:find("métier", 1, true), "essai : la raison du refus : " .. dits[#dits])
+  assert(#dits == n + 2 and dits[#dits]:find("métier", 1, true), "essai : la raison du refus : " .. dits[#dits])
   assert(#chuchotes == 1, "essai : rien sur le réseau")
   t = t + ns.DEMANDE_DUREE + 1
   assert(#ns.demandesLues() == 0, "elles vieillissent comme les autres")
-  GetTime, print, ns.whisper, AzerothCommuneDB.chars = G0, P0, W0, chars0
+  GetTime, print, ns.whisper, AzerothCommuneDB.chars, time = G0, P0, W0, chars0, T0
 end
 print("Handshake : demandes par métier OK")
+
+-- L'historique du chat (les lignes déjà dans ChatFrame1..NUM_CHAT_WINDOWS, avant /reload ou avant la fin du login) : les
+-- données que le client garde avec chaque ligne (l'évènement, ses arguments bruts) passent par le même lecteur. Une ligne
+-- vue dans deux fenêtres : lue une fois ; les miennes, les offres, les autres canaux : non ; l'heure de l'horodatage quand
+-- il y en a un, sinon maintenant. Les demandes lues survivent à un /reload (HandshakeDB.demandes, par perso, déjà
+-- nettoyées), les vieilles sont oubliées.
+do
+  local dits, stubMT0 = {}, getmetatable(CreateFrame())
+  local T0, P0, chars0 = time, print, AzerothCommuneDB.chars
+  local t = T0({ year = 2026, month = 11, day = 23, hour = 14, min = 10, sec = 0 })
+  time = function(x) if x then return T0(x) end return t end
+  print = function(s) dits[#dits + 1] = s end
+  AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
+  local marteau = AzerothCommuneItems.items[5541].link
+  -- Un /reload : Annonce.lua rechargé (sa mémoire repart à zéro), puis l'entrée en jeu (PLAYER_LOGIN).
+  local function recharger()
+    local C0, ev = CreateFrame, nil
+    CreateFrame = function() return setmetatable({ SetScript = function(_, _, fn) ev = fn end }, stubMT0) end
+    assert(loadfile("Handshake/Annonce.lua"))("Handshake", ns)
+    CreateFrame = C0
+    ev(nil, "PLAYER_LOGIN")
+  end
+  recharger()
+  -- Une ligne telle que la fenêtre de chat la garde (ChatFrameOverrides.lua : AddMessage(texte, r, g, b, id, accessID,
+  -- typeID, event, SafePack(...), formateur)).
+  local function ligne(event, msg, qui, base, lineID, guid, horo)
+    local args = { msg, qui, "", base and ("2. " .. base) or "", qui, "", 0, base and 2 or 0, base or "", 0, lineID, guid,
+      0, false, false, false, false, { userID = 0 }, n = 18 }
+    return { (horo or "") .. "|Hplayer:" .. qui .. ":" .. lineID .. "|h[" .. qui .. "]|h: " .. msg, 1, 1, 1, 1, 1, 1, event, args }
+  end
+  local function cadre(lignes)
+    return { GetNumMessages = function() return #lignes end, GetMessageInfo = function(_, i) return unpack(lignes[i], 1, 9) end }
+  end
+  local CH, CR = "CHAT_MSG_CHANNEL", "CHAT_MSG_YELL"
+  local bob = ligne(CH, "WTB " .. marteau .. " pst", "Bob Dupont", "Commerce - Ville", 101, "Player-6942-00000B0B", "14:05 ")
+  NUM_CHAT_WINDOWS = 2
+  ChatFrame1 = cadre({
+    bob,
+    ligne(CH, "WTS " .. marteau, "Cid Lebrun", "Commerce - Ville", 102, "Player-6942-00000C1D"),
+    ligne(CR, "Buy " .. marteau .. " now", "Dan Cri", nil, 103, "Player-6942-00000DA0"),
+    ligne(CH, "WTB " .. marteau, "Eve Rune", "Général - Hurlevent", 104, "Player-6942-00000E7E"),
+    ligne(CH, "WTB " .. marteau .. " x2", "Moi Dupont", "Commerce - Ville", 106, MOI),
+    ligne(CH, "WTB |cff1eff00|Hitem:5541::::|h[Épée gratuite]|h|r |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h \7fin",
+      "Mal Truand", "Commerce - Ville", 107, "Player-6942-0000BAD0"),
+    { "|cffa78ffcHandshake :|r une ligne écrite par un add-on, sans données", 1, 1, 1 },
+    ligne(CH, "WTB " .. marteau, "Fil Long", "Commerce - Ville", 109, "Player-6942-00000F11", "13:00 "), -- 70 min : trop vieille
+  })
+  ChatFrame2 = cadre({ bob })
+  ns.relireChat()
+  local function rangs() local r = {} for _, d in ipairs(ns.demandesLues()) do r[d.qui] = d end return r end
+  local function noms() local n = {} for q in pairs(rangs()) do n[#n + 1] = q end table.sort(n) return table.concat(n, ",") end
+  assert(noms() == "Bob Dupont,Dan Cri,Mal Truand", "l'historique : Commerce et cri, pas l'offre, le Général, les miennes, les vieilles : " .. noms())
+  assert(#dits == 3, "une ligne de signal par demande, la ligne vue dans deux fenêtres une fois : " .. #dits)
+  local r = rangs()
+  assert(r["Bob Dupont"].t == t - 300 and r["Dan Cri"].t == t, "l'heure de l'horodatage, sinon maintenant")
+  assert(r["Dan Cri"].ou == "en criant" and r["Bob Dupont"].ou == "dans le Commerce", "où")
+  local mal = r["Mal Truand"].texte
+  assert(not mal:gsub("|cff1eff00|Hitem:5541::::::::31:::::::::|h%[Marteau%]|h|r", ""):find("|", 1, true)
+    and not mal:find("Épée gratuite", 1, true) and not mal:find("[%z\1-\31]"), "nettoyée comme une ligne en direct : " .. mal)
+  ns.relireChat()
+  assert(#dits == 3 and #ns.demandesLues() == 3 and rangs()["Bob Dupont"].t == t - 300, "relire : rien de neuf, l'heure ne bouge pas")
+  -- Gardées par perso dans HandshakeDB, déjà nettoyées : le texte propre et les IDs, jamais la ligne brute.
+  local gardees = HandshakeDB.demandes[MOI]
+  local n = 0
+  for _, d in pairs(gardees) do
+    n = n + 1
+    for k, v in pairs(d) do assert(type(v) ~= "string" or k == "lien" or not v:find("|T", 1, true) and not v:find("Épée", 1, true), "gardée nettoyée : " .. k) end
+  end
+  assert(n == 3, "les trois gardées")
+  -- /reload : le chat est vide, les fraîches reviennent, les vieilles sont oubliées.
+  gardees["Vieux Pas#5541"] = { cle = "Vieux Pas#5541", qui = "Vieux Pas", id = 5541, texte = "WTB", ou = "dans le Commerce", t = t - ns.DEMANDE_DUREE - 1 }
+  ChatFrame1, ChatFrame2 = cadre({}), cadre({})
+  recharger()
+  assert(noms() == "Bob Dupont,Dan Cri,Mal Truand" and not HandshakeDB.demandes[MOI]["Vieux Pas#5541"], "après /reload : " .. noms())
+  t = t + ns.DEMANDE_DUREE + 1
+  assert(#ns.demandesLues() == 0 and next(HandshakeDB.demandes[MOI]) == nil, "elles vieillissent, gardées comprises")
+  ChatFrame1, ChatFrame2, NUM_CHAT_WINDOWS = nil, nil, nil
+  time, print, AzerothCommuneDB.chars = T0, P0, chars0
+end
+print("Handshake : historique du chat et /reload OK")
 
 
 aucunReleve("après les calculs")
