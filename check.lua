@@ -504,6 +504,30 @@ assert(chezTesteur and chezTesteur.status == "a_signer" and chezTesteur.peer.nam
 HandshakeDB.contracts[ns.ctKey(essai)], HandshakeDB.debug = nil, nil
 print("Handshake : mode debug, le Testeur OK")
 
+-- #49 : un projet à lignes fabrication (Composants#7). « Tout le projet » : la fabrication devient l'objet produit × fois,
+-- l'enchantement (rien de produit) aucune ligne ; demande, brouillon et son écart, envoi en clair ne plantent plus.
+do
+  AzerothCommuneDB.recipes[2] = { name = "Enchantement", reagents = { { id = 3858, qty = 1 } } }
+  local fab = C.NouveauProjet({ lines = { { recette = 1, fois = 2 }, { recette = 2, fois = 3 } } })
+  C.Tenir(fab, "test") -- comme Maîtrise
+  ns.projetArtisan(fab, BELN)
+  ns.projetOffre(fab, 30000)
+  local v = ns.projetCommande(fab)
+  assert(#v.lines == 1 and v.lines[1].id == 7963 and v.lines[1].qty == 2, "fabrication → objet × fois, enchantement ignoré")
+  local ct = assert(ns.projetEnvoyer(fab))
+  assert(#ct.o == 1 and ct.o[1].id == 7963 and ct.o[1].qty == 2, "demande : la claymore × 2")
+  assert(not ns.projetCommande(fab).ecart, "brouillon : pas d'écart avec son projet")
+  local partis, realWhisper = 0, ns.whisper
+  ns.whisper = function() partis = partis + 1 end
+  ns.sendOrder(ns.projetCommande(fab))
+  ns.whisper = realWhisper
+  assert(partis >= 1, "en clair : chuchoté")
+  HandshakeDB.contracts[ns.ctKey(ct)], AzerothCommuneDB.recipes[2] = nil, nil
+  C.Tenir(fab, nil)
+  C.Supprimer(fab.id)
+end
+print("Handshake : projet à lignes fabrication OK")
+
 -- Je réponds (l'artisan) : Belegard ouvre la demande dans son arbre, demande aussi le minerai et chiffre 5 po.
 ns.ctPropose(v1)
 as(BEL)

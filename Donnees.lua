@@ -13,8 +13,9 @@ for _, t in ipairs({ "base des recettes", "marchands", "objets", "cours de l'HV"
 ---------------------------------------------------------------------------------------------------
 -- Accès aux données (par la lib)
 -- Recettes : la base des recettes du socle (AzerothCommune#48) : celles relevées dans les fenêtres de métier, puis sa
--- réserve Classic (provenance « source externe ») pour les objets qu'aucune recette vue ne fabrique (les métiers que tu
--- n'as pas). Chaque recette porte sa compétence requise (level) quand la réserve la connaît.
+-- réserve extraite du client (marquée par provenance) pour les objets qu'aucune recette vue ne fabrique (les métiers que
+-- tu n'as pas). Chaque recette porte, quand la réserve la connaît, la compétence pour l'apprendre (level), plafonnée au
+-- jaune (AzerothCommune#64).
 local nomsDemandes = {} -- recettes dont on a déjà demandé les noms d'objets
 function ns.recipes()
   local recettes = lib:Lire("base des recettes") or {}

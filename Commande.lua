@@ -127,10 +127,27 @@ end
 -- blocs) et mes apports sous ses cases. Tout se lit sur l'arbre de la demande (dem = ns.arbreDemande, aucun stock
 -- déduit) : ce qu'un bloc livre = ce que le suivant reçoit, quel que soit le stock affiché dans la fenêtre. Si le bloc a
 -- disparu (tout acheté…), elle reste, vide.
+-- Les lignes du projet telles qu'elles s'échangent : une fabrication { recette, fois } (Composants) devient l'objet produit
+-- × fois × quantité produite ; un enchantement (rien de produit) ou une recette absente de la base ne s'échange pas : pas
+-- de ligne (#49).
+local function objets(lines)
+  local out, recettes = {}, nil
+  for _, l in ipairs(lines) do
+    if l.recette then
+      recettes = recettes or ns.recipes()
+      local r = recettes[l.recette]
+      if r and r.output then out[#out + 1] = { id = r.output, qty = l.fois * math.max(1, r.made_min or 1) } end
+    else
+      out[#out + 1] = l
+    end
+  end
+  return out
+end
+
 local function part(p, c, dem, v)
   if not c.bloc then
     local r = rangement(p)
-    v.lines, v.apports, v.reponse = p.lines, r.apports, r.reponse
+    v.lines, v.apports, v.reponse = objets(p.lines), r.apports, r.reponse
     return v
   end
   v.lines, v.apports = {}, {}
