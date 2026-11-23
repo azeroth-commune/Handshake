@@ -192,7 +192,7 @@ end
 -- ponytail: client français seulement ; un autre client nomme ses métiers autrement (« Blacksmithing ») : ajouter ses clés
 local METIERS = {
   { "Forge", { "blacksmith", "blacksmithing", "bs", "forgeron", "forge" } },
-  { "Travail du cuir", { "leatherworker", "leatherworking", "lw", "travailleur du cuir", "cuir" } },
+  { "Travail du cuir", { "leatherworker", "leatherworking", "lw", "travailleur du cuir" } }, -- pas « cuir » seul : « WTB cuir lourd »
   { "Couture", { "tailor", "tailoring", "couturier", "couturière", "couture" } },
   { "Alchimie", { "alchemist", "alchemy", "alch", "alchi", "alchimiste", "alchimie" } },
   { "Ingénierie", { "engineer", "engineering", "engi", "ingé", "ingenieur", "ingénieur", "ingénierie" } },
@@ -233,7 +233,12 @@ local function demandeLue(msg, sender, ou)
     for _, l in ipairs(lines) do if objets[l.id] then id = l.id break end end
     if not id then for _, r in ipairs(recettes) do if sorts[r] then sort = r break end end end
   end
-  if not (id or sort) then metier = metierNomme(msg, mesMetiers) end
+  if not (id or sort) then
+    -- une offre de service qui achète aussi ses composants (« WTS BS services, WTB mats ») n'est pas une demande de métier
+    local l = msg:lower()
+    if motEntier(l, "wts") or motEntier(l, "lfw") then return "une offre (WTS, LFW), pas une demande" end
+    metier = metierNomme(msg, mesMetiers)
+  end
   if not (id or sort or metier) then return "ni objet, ni recette, ni métier que tes persos savent faire" end
   local cle = sender .. "#" .. (id or sort and ("sort" .. sort) or metier)
   local d, neuve = lues[cle], lues[cle] == nil

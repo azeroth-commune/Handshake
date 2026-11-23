@@ -374,7 +374,16 @@ do
   canal("WTS bs services", "Cid Lebrun")
   canal("LF quelqu'un a Forgefer", "Cid Lebrun")
   canal("cherche ma blacksmithe", "Cid Lebrun")
-  assert(#de("Cid Lebrun") == 0, "métier qu'aucun perso n'a, offre, groupe, mot dans un autre mot : rien")
+  -- Une offre de service qui achète aussi ses composants (« WTB » plus loin) n'est pas une demande de métier ; ni un
+  -- achat de composants tapé sans lien (« cuir » seul ne nomme pas le métier), même quand un perso a le Travail du cuir.
+  AzerothCommuneDB.chars["Player-6942-00000C01"] = { recipes = { ["Travail du cuir"] = { rank = 1, known = {} } } }
+  canal("WTS BS services, WTB mats", "Cid Lebrun")
+  canal("LFW bs, also WTB arcanite", "Cid Lebrun")
+  canal("WTB cuir lourd x20", "Cid Lebrun")
+  assert(#de("Cid Lebrun") == 0, "métier qu'aucun perso n'a, offre, groupe, mot dans un autre mot, composants : rien")
+  canal("LF lw pour une armure", "Jo Cuir")
+  canal("cherche un travailleur du cuir", "Lea Peau")
+  assert(#de("Jo Cuir") == 1 and #de("Lea Peau") == 1 and de("Lea Peau")[1].metier == "Travail du cuir", "lw, travailleur du cuir")
   canal("WTB forgeron pour une ceinture", "Dan Cri")
   canal("cherche un forgeron", "Eve Rune")
   canal("Recherche Blacksmith !", "Fil Long")
@@ -382,7 +391,7 @@ do
   -- Même joueur, même métier : une entrée ; un lien d'objet que je sais faire l'emporte sur le métier de la même ligne.
   canal("LF blacksmith", "Bob Dupont")
   canal("cherche forgeron", "Bob Dupont")
-  assert(#de("Bob Dupont") == 1 and #dits == 4, "même joueur, même métier : une entrée, pas de second signal")
+  assert(#de("Bob Dupont") == 1 and #dits == 6, "même joueur, même métier : une entrée, pas de second signal")
   canal("LF bs " .. marteau, "Gus Marteau")
   local gus = de("Gus Marteau")
   assert(#gus == 1 and gus[1].id == 5541 and not gus[1].metier, "le lien de l'objet l'emporte sur le métier")
