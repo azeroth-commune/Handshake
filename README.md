@@ -5,7 +5,10 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
 
 - **Requiert** le socle Azeroth Commune (`## Dependencies: AzerothCommune`).
 - **Seul**, Handshake sert par la commande à la main (`/handshake liste`, ou `/handshake`), les contrats (`/contrat`) et
-  le panneau qui vérifie chaque échange.
+  le panneau qui vérifie chaque échange. Dans le chat public (`Annonce.lua`) : « Annoncer » une commande dans le canal
+  Commerce, et les **Demandes lues** (`/handshake demandes`, onglet de la commande à la main) : les demandes du Commerce et
+  des cris pour ce que mes persos savent fabriquer (recettes connues relevées par le socle), en mémoire le temps de la
+  session, chacune quelques minutes.
 - **Avec Composants** (chargé ou non, aucun des deux ne requiert l'autre), les commandes rejoignent ses projets : chaque
   commande est rangée sous l'identité d'un projet de Composants (`HandshakeDB.commandes[p.id]`), et la fenêtre des projets
   de Composants dessine « Commander » sur un bloc, Ctrl+clic « j'apporte » sur une case et la barre des commandes en

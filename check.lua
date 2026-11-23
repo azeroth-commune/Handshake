@@ -290,6 +290,62 @@ do
 end
 print("Handshake : annoncer par Trade Board OK")
 
+-- Demandes lues (#52) : une ligne de demande (WTB, Buy, Search en tête, ou WTB n'importe où) du Commerce ou d'un cri, avec
+-- le lien d'un objet ou d'une recette qu'un de mes persos sait fabriquer, entre dans la liste ; WTS, sans lien, objet que
+-- je ne sais pas faire, autre canal, mes propres annonces : non. Même joueur, même objet : une entrée. Le texte est nettoyé
+-- et coupé avant tout affichage ; les demandes vieillissent ; « Répondre » chuchote à l'auteur.
+do
+  local t, dits, chuchotes = 5000, {}, {}
+  local G0, P0, W0, chars0 = GetTime, print, ns.whisper, AzerothCommuneDB.chars
+  GetTime = function() return t end
+  print = function(s) dits[#dits + 1] = s end
+  ns.whisper = function(msg, cible) chuchotes[#chuchotes + 1] = { msg = msg, cible = cible } end
+  -- Un perso sait faire le marteau (recette 1 : objet 5541) ; personne la cuirasse (recette 2 : 2870).
+  AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
+  local marteau = link(5541, "Marteau")
+  AzerothCommuneItems.items[5541] = { name = "Marteau", link = marteau }
+  local function canal(msg, qui, guid, base)
+    ns.lireCanal("CHAT_MSG_CHANNEL", msg, qui, "", "2. " .. (base or "Commerce - Ville"), qui, "", 0, 2, base or "Commerce - Ville", 0, 1, guid or "Player-6942-00000B0B")
+  end
+  local function noms() local n = {} for _, d in ipairs(ns.demandesLues()) do n[#n + 1] = d.qui end table.sort(n) return table.concat(n, ",") end
+  canal("WTB " .. marteau .. " pst", "Bob Dupont")
+  assert(noms() == "Bob Dupont", "une demande de ce que je sais faire : listée")
+  assert(#dits == 1 and dits[1]:find("Bob Dupont") and dits[1]:find("Hitem:5541"), "signal discret : une ligne dans le chat")
+  canal("WTB " .. marteau .. " pst !!", "Bob Dupont")
+  assert(#ns.demandesLues() == 1 and #dits == 1, "même joueur, même objet : une entrée, pas de second signal")
+  canal("WTS " .. marteau, "Cid Lebrun", "Player-6942-00000C1D")
+  canal("WTB [Marteau] pst", "Cid Lebrun", "Player-6942-00000C1D")
+  canal("WTB " .. link(2870, "Cuirasse"), "Cid Lebrun", "Player-6942-00000C1D")
+  canal("WTB " .. marteau, "Cid Lebrun", "Player-6942-00000C1D", "Général - Hurlevent")
+  canal("WTB " .. marteau .. " x2", "Moi Dupont", MOI)
+  assert(noms() == "Bob Dupont", "WTS, sans lien, objet inconnu, autre canal, mon annonce : rien")
+  canal("LF forgeron, wtb " .. marteau, "Cid Lebrun", "Player-6942-00000C1D")
+  ns.lireCanal("CHAT_MSG_YELL", "Buy " .. marteau .. " now", "Dan Cri", "", "", "Dan Cri", "", 0, 0, "", 0, 1, "Player-6942-00000DA0")
+  canal("Search |cffffd000|Henchant:1|h[Faux nom]|h|r", "Eve Rune", "Player-6942-00000E7E")
+  assert(noms() == "Bob Dupont,Cid Lebrun,Dan Cri,Eve Rune", "WTB n'importe où, un cri « Buy », une recette « Search » : " .. noms())
+  -- Piégée : texture, lien inconnu, couleur, caractère de contrôle, faux nom sur un vrai lien ; puis trop longue.
+  canal("WTB |cff1eff00|Hitem:5541::::|h[Épée gratuite]|h|r |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h |cffff0000rouge|r \7fin",
+    "Mal Truand", "Player-6942-0000BAD0")
+  local piege
+  for _, d in ipairs(ns.demandesLues()) do if d.qui == "Mal Truand" then piege = d end end
+  assert(piege, "listée, mais nettoyée")
+  local sans = piege.texte:gsub("|cff1eff00|Hitem:5541::::::::31:::::::::|h%[Marteau%]|h|r", "")
+  assert(not sans:find("|", 1, true) and not sans:find("[%z\1-\31]") and not piege.texte:find("Épée gratuite", 1, true)
+    and sans:find("[clique ici]", 1, true) and sans:find("rouge", 1, true), "seul le lien reconnu reste, refait d'ici : " .. piege.texte)
+  canal("WTB " .. marteau .. " " .. ("bla "):rep(100), "Lia Long", "Player-6942-00000111")
+  for _, d in ipairs(ns.demandesLues()) do assert(#d.texte <= 260, "coupée : " .. #d.texte) end
+  -- Rien sans clic : aucun chuchotement jusqu'ici. « Répondre » chuchote à l'auteur.
+  assert(#chuchotes == 0, "aucune action sans clic")
+  local bob
+  for _, d in ipairs(ns.demandesLues()) do if d.qui == "Bob Dupont" then bob = d end end
+  ns.repondreDemande(bob)
+  assert(#chuchotes == 1 and chuchotes[1].cible == bob.qui and chuchotes[1].msg:find("Hitem:5541") and bob.repondu, "Répondre : un chuchotement à l'auteur")
+  t = t + ns.DEMANDE_DUREE + 1
+  assert(#ns.demandesLues() == 0, "les vieilles demandes disparaissent")
+  GetTime, print, ns.whisper, AzerothCommuneDB.chars = G0, P0, W0, chars0
+end
+print("Handshake : demandes lues OK")
+
 
 aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
@@ -1140,7 +1196,8 @@ end
 for _, k in ipairs({ "nouveauProjet", "projetArbre", "projetDemande", "craftPlan", "crafters", "orderNeeds", "openCraftWindow", "demoOrder", "sendNeeds" }) do
   assert(ns[k] == nil, "ns." .. k .. " : parti dans Composants")
 end
-for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences" }) do
+-- (Les recettes connues sont de nouveau lues, pour les Demandes lues (#52) : ce que mes persos savent fabriquer.)
+for _, t in ipairs({ "inventaires", "métiers et compétences" }) do
   assert(not io.open("Handshake/Donnees.lua"):read("*a"):find('"' .. t .. '"', 1, true), "Handshake ne souscrit plus à " .. t)
 end
 print("Handshake : purge, noms demandés, réserve des recettes OK")

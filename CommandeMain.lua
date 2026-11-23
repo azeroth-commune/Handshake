@@ -327,6 +327,7 @@ local function build()
     refresh()
   end)
   frame.annonce:SetPoint("LEFT", frame.nouvelle, "RIGHT", 6, 0)
+  ns.onglets(frame, 1) -- et l'onglet « Demandes lues » (Annonce.lua)
   frame:SetScript("OnShow", function() refresh() end)
   frame:RegisterEvent("ITEM_DATA_LOAD_RESULT") -- un nom d'objet arrive du serveur
   frame:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE") -- un canal rejoint ou quitté : le Commerce, pour « Annoncer »

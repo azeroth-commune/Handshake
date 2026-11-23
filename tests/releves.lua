@@ -1,7 +1,7 @@
 -- Handshake#1 (ADR 0001 de l'atelier) : Handshake ne sauvegarde aucune donnée relevée ; il souscrit à ses types de
 -- données et les lit par le socle Azeroth Commune.
 test("Handshake souscrit à ses types de données", function()
-    for _, t in ipairs({ "base des recettes", "marchands", "objets", "cours de l'HV" }) do
+    for _, t in ipairs({ "base des recettes", "marchands", "objets", "cours de l'HV", "recettes connues" }) do
         -- tenue par la base du socle (AzerothCommune#41), datée de ce chargement : faite au chargement de Handshake, après
         -- celui du socle (pas une date restée dans des SavedVariables)
         assertType("number", AzerothCommuneDB.souscriptions[t])

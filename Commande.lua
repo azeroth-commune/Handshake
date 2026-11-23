@@ -359,9 +359,11 @@ end
 
 -- Lit une liste : ce qui précède « j'apporte » = ce qu'on veut, ce qui suit (jusqu'au prochain « · ») = les apports.
 -- Liens d'objets (quantité avant « 3x[…] » ou après « […] x3 »), ou à défaut des noms entre
--- crochets tapés à la main. Renvoie lines, genre (« commande », « besoins »…), offre (cuivre), apports.
+-- crochets tapés à la main. Renvoie lines, genre (« commande », « besoins »…), offre (cuivre), apports, puis (dans ce qu'on
+-- veut) les sorts des liens de recette (« |Henchant:… », « |Hspell:… ») et liens (au moins un lien d'objet ou de recette lu,
+-- pas des noms tapés).
 local function parseItems(text)
-  local lines, byId = {}, {}
+  local lines, byId, recettes = {}, {}, {}
   local function add(id, q)
     if not id then return end
     if byId[id] then byId[id].qty = byId[id].qty + q return end
@@ -370,24 +372,29 @@ local function parseItems(text)
   end
   local pos, found = 1, false
   while true do
-    local s, e, id = text:find("|Hitem:(%d+)[^|]*|h[^|]*|h", pos)
+    local s, e, quoi, id = text:find("|H(%a+):(%d+)[^|]*|h[^|]*|h", pos)
     if not s then break end
-    found = true
-    local after = text:sub(e + 1):gsub("^|r", "")
-    local skip, q = after:match("^(%s*[xX]%s*(%d+))")
-    if q then
-      e = e + #skip + (text:sub(e + 1, e + 2) == "|r" and 2 or 0)
-    else
-      local before = text:sub(pos, s - 1):gsub("|c%x%x%x%x%x%x%x%x$", "")
-      q = before:match("(%d+)%s*[xX]?%s*$")
+    if quoi == "item" then
+      found = true
+      local after = text:sub(e + 1):gsub("^|r", "")
+      local skip, q = after:match("^(%s*[xX]%s*(%d+))")
+      if q then
+        e = e + #skip + (text:sub(e + 1, e + 2) == "|r" and 2 or 0)
+      else
+        local before = text:sub(pos, s - 1):gsub("|c%x%x%x%x%x%x%x%x$", "")
+        q = before:match("(%d+)%s*[xX]?%s*$")
+      end
+      add(tonumber(id), tonumber(q) or 1)
+    elseif quoi == "enchant" or quoi == "spell" then -- le lien d'une recette (son sort) : à part, ce n'est pas un objet
+      found = true
+      recettes[#recettes + 1] = tonumber(id)
     end
-    add(tonumber(id), tonumber(q) or 1)
     pos = e + 1
   end
   if not found then
     for q, name in text:gmatch("(%d*)%s*[xX]?%s*%[([^%]]+)%]") do add(ns.findItem(name), tonumber(q) or 1) end
   end
-  return lines
+  return lines, recettes, found
 end
 
 function ns.parseList(text)
@@ -399,7 +406,8 @@ function ns.parseList(text)
   local brought = rest and parseItems(rest:match("^(.-)·") or rest) or {}
   local tip = text:match("offre%s*:?%s*([%d%.,]+)%s*po") or text:match("pourboire%s*:?%s*([%d%.,]+)%s*po")
   tip = tip and tonumber((tip:gsub(",", "."))) and math.floor(tonumber((tip:gsub(",", "."))) * 10000 + 0.5) or nil
-  return parseItems(wanted), kind and kind:lower(), tip, brought
+  local lines, recettes, liens = parseItems(wanted)
+  return lines, kind and kind:lower(), tip, brought, recettes, liens
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -595,9 +603,9 @@ end
 
 ---------------------------------------------------------------------------------------------------
 -- /handshake (ou /commande) : avec Composants, la fenêtre des projets, où vivent les commandes ; sans lui, la commande à
--- la main. /handshake liste : la commande à la main. /handshake essai : la commande à la main revient comme un
--- chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée) ; /handshake essai annonce : son annonce, affichée
--- seulement. /handshake debug : Debug.lua.
+-- la main. /handshake liste : la commande à la main ; /handshake demandes : les Demandes lues (Annonce.lua). /handshake
+-- essai : la commande à la main revient comme un chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée) ;
+-- /handshake essai annonce : son annonce, affichée seulement. /handshake debug : Debug.lua.
 function ns.ouvrir()
   if Composants then return Composants.Ouvrir() end
   ns.openCommandeMain()
@@ -606,6 +614,7 @@ SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
   args = args or ""
   if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end
+  if args:match("^%s*demandes%s*$") then return ns.openDemandes() end
   if args:match("^%s*essai%s+annonce") then -- l'annonce de la commande à la main, affichée, rien sur le réseau
     local ok, err = ns.annoncer(ns.commandeMain(), true)
     if not ok then print("|cffe64d4dHandshake :|r " .. err .. ".") end

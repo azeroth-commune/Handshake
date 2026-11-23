@@ -141,6 +141,60 @@ test("Trade Board d'une autre version, ou absent : l'annonce de Handshake, sans 
     HandshakeDB.main = nil
 end)
 
+-- Demandes lues (#52) : de fausses lignes du Commerce ; mon perso sait fabriquer un objet de la base des recettes.
+test("Demandes lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS et piège écartés ; Répondre chuchote", function()
+    local moi = AzerothCommuneDB.chars[UnitGUID("player")]
+    assertNotNil(moi, "mon perso dans la base du socle")
+    local cle, objet
+    for k, r in pairs(AzerothCommune:Lire("base des recettes") or {}) do
+        if type(k) == "number" and r.output then cle, objet = k, r.output break end
+    end
+    assertNotNil(cle, "une recette dans la base (RecettesClassic.lua du socle présent ?)")
+    local avant, chuchotes = moi.recipes, {}
+    moi.recipes = { Forge = { rank = 300, known = { [cle] = "easy" } } }
+    local S, CS = SendChatMessage, C_ChatInfo.SendChatMessage
+    local function envoi(msg, kind, _, cible) chuchotes[#chuchotes + 1] = { msg = msg, kind = kind, cible = cible } end
+    SendChatMessage, C_ChatInfo.SendChatMessage = envoi, envoi
+    local ok, err = pcall(function()
+        local lien = "|cffffffff|Hitem:" .. objet .. "::::::::::::::::|h[Faux nom]|h|r"
+        local function commerce(msg, qui, guid)
+            FireEvent("CHAT_MSG_CHANNEL", msg, qui, "", "2. Commerce - Ville", qui, "", 0, 2, "Commerce - Ville", 0, 1, guid)
+        end
+        commerce("WTB " .. lien .. " pst", "Bob Dupont", "Player-1-00000B0B")
+        commerce("WTS " .. lien, "Cid Lebrun", "Player-1-00000C1D")
+        commerce("WTB " .. lien .. " |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique]|h |cffff0000rouge|r", "Mal Truand", "Player-1-0000BAD0")
+        SlashCmdList.HANDSHAKE("demandes")
+        assertTrue(HandshakeDemandesFrame:IsShown())
+        local textes = {}
+        for _, r in ipairs(HandshakeDemandesFrame.rows) do
+            if r:IsShown() then textes[#textes + 1] = { qui = r.qui:GetText(), texte = r.texte:GetText(), bouton = r.repondre } end
+        end
+        local vus = {}
+        for _, t in ipairs(textes) do vus[#vus + 1] = t.qui:match("^(%S+ %S+)") end
+        table.sort(vus)
+        assertEquals("Bob Dupont,Mal Truand", table.concat(vus, ","))
+        for _, t in ipairs(textes) do
+            assertTrue(not t.texte:find("|T", 1, true) and not t.texte:find("|Hurl", 1, true) and not t.texte:find("Faux nom", 1, true), t.texte)
+            assertTrue(t.texte:find("|Hitem:" .. objet, 1, true) ~= nil, "le lien refait ici : " .. t.texte)
+        end
+        assertEquals(0, #chuchotes) -- rien sans clic
+        local bob
+        for _, t in ipairs(textes) do if t.qui:find("^Bob Dupont") then bob = t end end
+        bob.bouton:Click()
+        assertEquals(1, #chuchotes)
+        assertEquals("WHISPER", chuchotes[1].kind)
+        assertEquals("Bob Dupont", chuchotes[1].cible)
+        assertEquals("Répondu", bob.bouton:GetText())
+        -- L'onglet « Commande » ouvre la commande à la main à la place.
+        HandshakeDemandesFrame.Tabs[1]:Click()
+        assertTrue(HandshakeMainFrame:IsShown() and not HandshakeDemandesFrame:IsShown(), "les onglets relient les deux fenêtres")
+    end)
+    moi.recipes, SendChatMessage, C_ChatInfo.SendChatMessage = avant, S, CS
+    if HandshakeMainFrame then HandshakeMainFrame:Hide() end
+    if HandshakeDemandesFrame then HandshakeDemandesFrame:Hide() end
+    if not ok then error(err, 0) end
+end)
+
 if not Composants then return end
 
 test("« Annoncer dans le Commerce » dans le menu « Plus » de Composants : regroupée, 255 octets, liens intacts", function()

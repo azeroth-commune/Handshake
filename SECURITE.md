@@ -236,3 +236,20 @@ Une **Annonce** (« WTB [lien] xN, … » dans le canal Commerce) n'engage à ri
 le contrat engage, et rien de ce qu'une annonce dit ne passe dans un contrat. Publier reste un clic du joueur à chaque fois
 (jamais d'envoi automatique, ni de répétition) ; une limite par période empêche de répéter la même annonce, et le mode
 essai comme le mode debug ne publient rien sur le réseau.
+
+## Ajout : Demandes lues dans le chat public (Handshake#52)
+
+Handshake lit le canal Commerce et les cris : du texte d'inconnus, sans aucune garantie, comme le sont les messages de
+contrat (P2, P4). Ce qui en est montré :
+
+- **est nettoyé avant tout affichage** (`ns.nettoyer`) : caractères de contrôle retirés ; un lien d'objet ou de recette
+  reconnu est refait localement depuis son ID (le nom et la couleur sont ceux du client, un « [Épée gratuite] » posé sur
+  un autre ID ne passe pas, n° 1) ; tout autre lien (`|Hurl:…`, `|Hplayer:…`…) est réduit à son texte ; codes de couleur
+  (`|c…|r`), de texture (`|T…|t`), d'atlas (`|A…|a`) et tout autre `|` retirés ; le texte est coupé (160 octets hors
+  liens, jamais au milieu d'un caractère) ; le nom de l'auteur, donné par le serveur, passe par le même nettoyage ;
+- **ne déclenche jamais rien sans clic** : une demande lue ne fait qu'entrer dans une liste et écrire une ligne dans le
+  chat ; « Répondre » (un clic) envoie un chuchotement fixe, écrit par Handshake, à l'auteur. Rien de lu ne devient une
+  commande, un contrat ni un prix ;
+- **est bornée** : seules les lignes de demande (« WTB », « Buy », « Search ») avec le lien d'un objet ou d'une recette
+  qu'un de mes persos sait fabriquer ; une entrée par joueur et par objet, 30 au plus, oubliées après 15 min, en mémoire
+  seulement (rien n'est sauvegardé). Mes propres lignes ne sont pas lues.
