@@ -21,7 +21,8 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
 - **Avec Trade Board** (Kurki ; `## OptionalDeps: TradeBoard`), quand son API hôte a la version attendue
   (`tradeBoard.hostApiVersion == 1`), « Annoncer » ne publie plus lui-même : il ouvre son dialogue de demande, rempli
   avec le premier objet et sa quantité (`OpenRequestDialog("item", id, n)`, le joueur y choisit guilde ou Commerce), et
-  ajoute les autres objets à son tableau (`AddRequest`, guilde par défaut). Quand la commande part en contrat, est
+  ajoute les autres objets à son tableau (`AddRequest`, guilde par défaut). Son API ne prend pas de prix (et le sien est
+  à l'unité) : l'offre de la commande est rappelée dans le chat, à saisir dans son dialogue. Quand la commande part en contrat, est
   remplacée ou que son projet est supprimé, Handshake retire de son tableau les demandes qu'il y a mises
   (`HasOwnRequest`, `RemoveOwnRequest`). Seules ces fonctions de son API hôte sont appelées, jamais `Integrate` (un seul
   hôte possible : Profession Master) ni son intérieur. Sans lui, ou avec une autre version, l'annonce de Handshake.
@@ -43,7 +44,7 @@ H.Offre(p, cuivre, i)   -- son offre (dans une Réponse, mon prix)
 H.Preparer(p, i)        -- « Préparer la demande » (ou « Contre-proposer » dans une Réponse) : le contrat préparé s'ouvre dans Contrats
 H.Agir(p, i)            -- « Nouvelle version » (contrat préparé ouvert dans Contrats, rend nil) ou « Commander de nouveau » (rend le rang)
 H.EnClair(p, i)         -- la demande en texte lisible, chuchotée à l'artisan
-H.Annoncer(p, i)        -- « Annoncer dans le Commerce » : l'Annonce « WTB [lien] xN, … » de la commande i, un clic = un message
+H.Annoncer(p, i)        -- « Annoncer dans le Commerce » : l'Annonce « WTB [lien] xN, … · offre 5 po » de la commande i, un clic = un message
                         --   (limite par période, hors d'une ville refusée, écho vérifié) ; refusée, la raison est dite. Rend true, ou nil
 H.Importer()            -- importer une liste reçue
 H.Apports(p)            -- { [itemID] = true } : les cases que j'apporte dans les commandes du projet, ou nil

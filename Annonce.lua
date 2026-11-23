@@ -1,7 +1,7 @@
 -- Handshake : l'Annonce (CONTEXT.md), une ligne publiée ou lue dans le chat public. Elle n'engage à rien, seul le contrat
 -- engage (SECURITE.md).
 -- Publier : « Annoncer » une commande pas encore partie, un clic = un message dans le canal Commerce, au format que lisent
--- Trade Board, Crafting Order et les autres lecteurs du chat : « WTB [lien] xN, [lien] xM ».
+-- Trade Board, Crafting Order et les autres lecteurs du chat : « WTB [lien] xN, [lien] xM », puis l'offre (« · offre 5 po »).
 local _, ns = ...
 
 ns.ANNONCE_DELAI = 300 -- secondes avant de pouvoir répéter la même annonce
@@ -39,8 +39,9 @@ function ns.deMoi(sender, guid)
   return sender ~= nil and ns.fullName(sender) == ns.myName()
 end
 
--- Le texte de l'annonce d'une commande : « WTB [lien] xN, [lien] xM » en un message, par le formateur de la demande en clair.
-function ns.annonceTexte(order) return ns.listMessages("WTB", order.lines, nil, true)[1] end
+-- Le texte de l'annonce d'une commande : « WTB [lien] xN, [lien] xM · offre 5 po » en un message, par le formateur de la
+-- demande en clair (l'offre aussi).
+function ns.annonceTexte(order) return ns.listMessages("WTB", order.lines, ns.offreTexte(order.tip), true)[1] end
 
 -- ponytail: en mémoire seulement ; après un /reload la limite repart à zéro
 local derniere, attente = {}, nil -- derniere[texte] = GetTime() de sa publication ; attente = l'annonce dont on attend l'écho
@@ -86,6 +87,10 @@ local function annoncerTB(tb, order, rec)
   if rec and next(ids) then rec.tb = ids end
   if #order.lines > 1 then
     dire(("Trade Board : le premier objet dans son dialogue, les %d autres ajoutés à son tableau (guilde ; à changer là-bas)."):format(#order.lines - 1))
+  end
+  -- son API hôte ne prend pas de prix (OpenRequestDialog : genre, id, quantité), et le sien est à l'unité : le joueur le saisit
+  if order.tip and order.tip > 0 then
+    dire(("Trade Board : ton offre (%s pour la commande) est à mettre en prix à l'unité dans son dialogue."):format(ns.poText(order.tip)))
   end
   return true
 end
