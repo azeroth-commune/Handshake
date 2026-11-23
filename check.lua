@@ -186,6 +186,24 @@ do
   local n = select(2, b:gsub("|Hitem:", ""))
   assert(n >= 2 and n < #beaucoup and select(2, b:gsub("|h|r x2", "")) == n, "liens entiers, chacun avec sa quantité")
   assert(relu[1].id == 7963 and relu[1].qty == 2, "relue par le lecteur de listes")
+  -- L'offre (#55) au bout, par le formateur de la demande en clair ; sans offre, inchangée.
+  local o = ns.annonceTexte({ lines = { { id = 7963, qty = 1 }, { id = 7920, qty = 3 } }, tip = 50000 })
+  assert(o == a .. " · offre 5 po", o)
+  assert(ns.annonceTexte({ lines = { { id = 7963, qty = 1 }, { id = 7920, qty = 3 } }, tip = 0 }) == a, "offre nulle : rien")
+  local lr, _, tip = ns.parseList(o)
+  assert(#lr == 2 and lr[1].id == 7963 and lr[1].qty == 1 and lr[2].id == 7920 and lr[2].qty == 3 and tip == 50000, "relue : objets et offre")
+  -- Coupée : l'offre reste au bout, « … » avant elle, chaque lien entier.
+  local c = ns.annonceTexte({ lines = beaucoup, tip = 55600 })
+  assert(#c <= 255 and c:find(" … · offre 5%.56 po$") and c:find("^WTB |c"), #c .. " octets : " .. c)
+  local nc = select(2, c:gsub("|Hitem:", ""))
+  assert(nc >= 1 and select(2, c:gsub("|h|r x2", "")) == nc and select(2, c:gsub("|h", "")) == 2 * nc, "liens entiers")
+  lr, _, tip = ns.parseList(c)
+  assert(#lr >= 1 and lr[1].id == 7963 and tip == 55600, "coupée, relue : objets et offre")
+  -- Un objet seul qui ne laisse pas la place à l'offre : l'offre saute, pas l'objet.
+  local long = { { text = "[" .. ("x"):rep(236) .. "]", qty = 1 } }
+  local sans = ns.listMessages("WTB", long, nil, true)[1]
+  local d = ns.listMessages("WTB", long, ns.offreTexte(50000), true)[1]
+  assert(#sans <= 255 and #sans + #" · offre 5 po" > 255 and d == sans, d)
 end
 print("Handshake : composition de l'annonce OK")
 
@@ -261,8 +279,13 @@ do
   HandshakeDB.contracts = HandshakeDB.contracts or {}
   tradeBoard = faux(1)
   local m = ns.mainNouvelle()
-  m.lines = { { id = 7963, qty = 2 }, { id = 7920, qty = 1 }, { id = 3858, qty = 5 } }
+  m.lines, m.tip = { { id = 7963, qty = 2 }, { id = 7920, qty = 1 }, { id = 3858, qty = 5 } }, 50000
+  local dits, P0 = {}, print
+  print = function(s) dits[#dits + 1] = s end
   assert(ns.annoncer(m, nil, m) and #envoyes == 0, "avec Trade Board : rien publié par Handshake")
+  print = P0
+  -- son API ne prend pas de prix (#55) : l'offre est dite, à saisir dans son dialogue
+  assert(dits[#dits]:find("offre %(5 po pour la commande%).-dialogue"), dits[#dits])
   assert(appels[1] == "OpenRequestDialog item 7963 2" and appels[2] == "AddRequest item 7920 1" and appels[3] == "AddRequest item 3858 5",
     table.concat(appels, " / "))
   assert(ns.annonceEtiquette(m) == "Annoncer (Trade Board)", "le bouton dit par où l'annonce passe")

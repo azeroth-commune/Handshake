@@ -37,9 +37,9 @@ COMMANDE À LA MAIN (sans arbre)
   Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre dans l'arbre » avec Composants).
 
 ANNONCER DANS LE COMMERCE, LIRE LES DEMANDES
-  « Annoncer » (commande à la main, ou menu « Plus » de Composants) publie « WTB [objet] xN, … » dans le canal
-  Commerce, un clic = un message (en ville seulement, pas deux fois la même avant 5 min). Avec Trade Board installé,
-  c'est son dialogue qui s'ouvre. Une annonce n'engage à rien : seul le contrat engage.
+  « Annoncer » (commande à la main, ou menu « Plus » de Composants) publie « WTB [objet] xN, … · offre 5 po » dans le
+  canal Commerce (l'offre si la commande en a une), un clic = un message (en ville seulement, pas deux fois la même avant
+  5 min). Avec Trade Board installé, c'est son dialogue qui s'ouvre : l'offre s'y saisit en prix à l'unité. Une annonce n'engage à rien : seul le contrat engage.
   Côté artisan : une demande du Commerce ou un cri (WTB, Buy, Search, LF, cherche) pour un objet que tes persos savent
   fabriquer, ou qui nomme un métier qu'ils ont (« LF BS », « cherche couturier »), s'affiche dans « Annonces lues »
   (/handshake annonces) ; « Répondre » chuchote à son auteur. Ouvrir la fenêtre relit le chat : les lignes déjà

@@ -1,4 +1,4 @@
--- Annonces (#51, #52, #53) dans le simulateur : publier une commande dans le Commerce (« Annoncer »), par Trade Board quand
+-- Annonces (#51, #52, #53, #55) dans le simulateur : publier une commande dans le Commerce (« Annoncer »), par Trade Board quand
 -- il est là, et lire les demandes du Commerce que je sais fabriquer.
 -- (Nommé pour passer après composants.lua, qui vérifie qu'aucune fenêtre de Composants n'est encore ouverte au départ.)
 local function tous(f, ok, out)
@@ -47,9 +47,9 @@ local function annonceSaine(msg)
     assertEquals(select(2, msg:gsub("|Hitem:", "")), select(2, msg:gsub("|Hitem:[^|]*|h%[[^%]]*%]|h", "")))
 end
 
-test("Annoncer la commande à la main : un message WTB dans le Commerce, puis le bouton dit quand réessayer", function()
+test("Annoncer la commande à la main : un message WTB dans le Commerce, l'offre au bout, puis le bouton dit quand réessayer", function()
     enVille(function(envoyes)
-        HandshakeDB.main = { lines = { { id = 2841, qty = 10 }, { id = 2840, qty = 4 } }, apporte = {} }
+        HandshakeDB.main = { lines = { { id = 2841, qty = 10 }, { id = 2840, qty = 4 } }, apporte = {}, tip = 50000 }
         SlashCmdList.HANDSHAKE("liste")
         local b = boutonQui(HandshakeMainFrame, function(t) return t == "Annoncer" end)
         assertNotNil(b, "le bouton « Annoncer »")
@@ -60,7 +60,7 @@ test("Annoncer la commande à la main : un message WTB dans le Commerce, puis le
         annonceSaine(envoyes[1].msg)
         assertTrue(envoyes[1].msg:find("|Hitem:2841:", 1, true) ~= nil, "le lien de l'objet : " .. envoyes[1].msg)
         assertTrue(envoyes[1].msg:find(" x10, ", 1, true) ~= nil, envoyes[1].msg)
-        assertTrue(envoyes[1].msg:find(" x4$") ~= nil, envoyes[1].msg)
+        assertTrue(envoyes[1].msg:find(" x4 · offre 5 po$") ~= nil, envoyes[1].msg)
         assertTrue(b:GetText():find("^Annoncer à %d") ~= nil, b:GetText())
         assertTrue(not b:IsEnabled(), "trop tôt : grisé")
         b:Click()

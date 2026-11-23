@@ -315,18 +315,21 @@ ns.lienObjet = chatLink
 
 local function po(copper) return (("%.2f"):format(copper / 10000)):gsub("%.?0+$", "") .. " po" end
 ns.poText = po
+-- L'offre écrite en fin de demande en clair et d'annonce : « · offre 5 po » ; nil sans offre.
+function ns.offreTexte(tip) return tip and tip > 0 and ("· offre " .. po(tip)) or nil end
 
 -- lines : { { id, qty } ou { text, qty } } ; extra : texte ajouté à la fin (offre…). Renvoie les messages.
--- annonce (Annonce.lua) : un seul message « WTB [lien] xN, [lien] xM », la forme que lisent les lecteurs du Commerce (Trade
--- Board…) ; trop long, il est coupé entre deux liens, « … » au bout.
+-- annonce (Annonce.lua) : un seul message « WTB [lien] xN, [lien] xM · offre 5 po », la forme que lisent les lecteurs du
+-- Commerce (Trade Board…) ; trop long, il est coupé entre deux liens, « … » avant extra. extra reste au bout tant qu'il
+-- laisse la place à un objet au moins, sinon il saute.
 function ns.listMessages(kind, lines, extra, annonce)
   local tokens = {}
   for _, l in ipairs(lines) do
     local lien = not l.raw and (l.text or chatLink(l.id))
     tokens[#tokens + 1] = l.raw or (annonce and ("%s x%d"):format(lien, l.qty) or ("%dx%s"):format(l.qty, lien))
   end
-  if extra and extra ~= "" then tokens[#tokens + 1] = extra end
   if annonce then
+    local fin = extra and extra ~= "" and (" " .. extra) or ""
     local function joindre(room)
       local msg, n = kind, 0
       for i, t in ipairs(tokens) do
@@ -336,10 +339,12 @@ function ns.listMessages(kind, lines, extra, annonce)
       end
       return msg, n
     end
-    local msg, n = joindre(MAX_MSG)
-    if n < #tokens then msg = joindre(MAX_MSG - #" …") .. " …" end
-    return { msg }
+    local msg, n = joindre(MAX_MSG - #fin)
+    if n < #tokens then msg, n = joindre(MAX_MSG - #fin - #" …"); msg = msg .. " …" end
+    if n == 0 and fin ~= "" then return ns.listMessages(kind, lines, nil, true) end
+    return { msg .. fin }
   end
+  if extra and extra ~= "" then tokens[#tokens + 1] = extra end
   local bodies, cur = {}, nil
   local room = MAX_MSG - #kind - #" (99/99) : "
   for _, t in ipairs(tokens) do
@@ -451,7 +456,7 @@ function ns.sendOrder(order, loop)
     lines[#lines + 1] = { raw = "· j'apporte" }
     for _, l in ipairs(brought) do lines[#lines + 1] = l end
   end
-  send("Commande", lines, order.tip and order.tip > 0 and ("· offre " .. po(order.tip)) or nil, order.player, loop)
+  send("Commande", lines, ns.offreTexte(order.tip), order.player, loop)
 end
 
 ---------------------------------------------------------------------------------------------------
