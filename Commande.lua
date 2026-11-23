@@ -31,7 +31,10 @@ local function commandes(p) return rangement(p).liste end
 -- Supprimer un projet (Composants le signale) efface ses commandes pas encore parties ; jamais un contrat : une commande
 -- envoyée reste dans Contrats, sans écart calculé (plus de projet à comparer).
 function ns.oublierCommandes(p)
-  if p and HandshakeDB.commandes then HandshakeDB.commandes[p.id] = nil end
+  local r = p and HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  if not r then return end
+  for _, c in ipairs(r.liste) do ns.retirerTB(c) end -- ses demandes au tableau de Trade Board (Annonce.lua)
+  HandshakeDB.commandes[p.id] = nil
 end
 
 -- L'arbre de la demande (CONCEPTION.md) d'un projet ou d'une part de projet { lines, choix } : toutes les recettes, aucun
@@ -271,6 +274,9 @@ function ns.projetRecommander(p, i)
   return ns.projetCommander(p, { key = c.bloc, best = c.player })
 end
 
+-- « Annoncer » la commande i (Annonce.lua) ; rend true, ou nil et la raison.
+function ns.projetAnnoncer(p, i) return ns.annoncer(ns.projetCommande(p, i), nil, commandes(p)[i or 1]) end
+
 function ns.projetCommandes(p)
   local out, dem = {}, demandeDe(p)
   for i, c in ipairs(commandes(p)) do out[i] = vue(p, c, dem) end
@@ -305,15 +311,35 @@ local function chatLink(id)
   local it = ns.items()[id]
   return (it and it.link) or select(2, C_Item.GetItemInfo(id)) or ("[" .. ((it and it.name) or ("objet " .. id)) .. "]")
 end
+ns.lienObjet = chatLink
 
 local function po(copper) return (("%.2f"):format(copper / 10000)):gsub("%.?0+$", "") .. " po" end
 ns.poText = po
 
 -- lines : { { id, qty } ou { text, qty } } ; extra : texte ajouté à la fin (offre…). Renvoie les messages.
-function ns.listMessages(kind, lines, extra)
+-- annonce (Annonce.lua) : un seul message « WTB [lien] xN, [lien] xM », la forme que lisent les lecteurs du Commerce (Trade
+-- Board…) ; trop long, il est coupé entre deux liens, « … » au bout.
+function ns.listMessages(kind, lines, extra, annonce)
   local tokens = {}
-  for _, l in ipairs(lines) do tokens[#tokens + 1] = l.raw or ("%dx%s"):format(l.qty, l.text or chatLink(l.id)) end
+  for _, l in ipairs(lines) do
+    local lien = not l.raw and (l.text or chatLink(l.id))
+    tokens[#tokens + 1] = l.raw or (annonce and ("%s x%d"):format(lien, l.qty) or ("%dx%s"):format(l.qty, lien))
+  end
   if extra and extra ~= "" then tokens[#tokens + 1] = extra end
+  if annonce then
+    local function joindre(room)
+      local msg, n = kind, 0
+      for i, t in ipairs(tokens) do
+        local sep = i == 1 and " " or ", "
+        if #msg + #sep + #t > room then break end
+        msg, n = msg .. sep .. t, i
+      end
+      return msg, n
+    end
+    local msg, n = joindre(MAX_MSG)
+    if n < #tokens then msg = joindre(MAX_MSG - #" …") .. " …" end
+    return { msg }
+  end
   local bodies, cur = {}, nil
   local room = MAX_MSG - #kind - #" (99/99) : "
   for _, t in ipairs(tokens) do
@@ -333,9 +359,11 @@ end
 
 -- Lit une liste : ce qui précède « j'apporte » = ce qu'on veut, ce qui suit (jusqu'au prochain « · ») = les apports.
 -- Liens d'objets (quantité avant « 3x[…] » ou après « […] x3 »), ou à défaut des noms entre
--- crochets tapés à la main. Renvoie lines, genre (« commande », « besoins »…), offre (cuivre), apports.
+-- crochets tapés à la main. Renvoie lines, genre (« commande », « besoins »…), offre (cuivre), apports, puis (dans ce qu'on
+-- veut) les sorts des liens de recette (« |Henchant:… », « |Hspell:… ») et liens (au moins un lien d'objet ou de recette lu,
+-- pas des noms tapés).
 local function parseItems(text)
-  local lines, byId = {}, {}
+  local lines, byId, recettes = {}, {}, {}
   local function add(id, q)
     if not id then return end
     if byId[id] then byId[id].qty = byId[id].qty + q return end
@@ -344,24 +372,29 @@ local function parseItems(text)
   end
   local pos, found = 1, false
   while true do
-    local s, e, id = text:find("|Hitem:(%d+)[^|]*|h[^|]*|h", pos)
+    local s, e, quoi, id = text:find("|H(%a+):(%d+)[^|]*|h[^|]*|h", pos)
     if not s then break end
-    found = true
-    local after = text:sub(e + 1):gsub("^|r", "")
-    local skip, q = after:match("^(%s*[xX]%s*(%d+))")
-    if q then
-      e = e + #skip + (text:sub(e + 1, e + 2) == "|r" and 2 or 0)
-    else
-      local before = text:sub(pos, s - 1):gsub("|c%x%x%x%x%x%x%x%x$", "")
-      q = before:match("(%d+)%s*[xX]?%s*$")
+    if quoi == "item" then
+      found = true
+      local after = text:sub(e + 1):gsub("^|r", "")
+      local skip, q = after:match("^(%s*[xX]%s*(%d+))")
+      if q then
+        e = e + #skip + (text:sub(e + 1, e + 2) == "|r" and 2 or 0)
+      else
+        local before = text:sub(pos, s - 1):gsub("|c%x%x%x%x%x%x%x%x$", "")
+        q = before:match("(%d+)%s*[xX]?%s*$")
+      end
+      add(tonumber(id), tonumber(q) or 1)
+    elseif quoi == "enchant" or quoi == "spell" then -- le lien d'une recette (son sort) : à part, ce n'est pas un objet
+      found = true
+      recettes[#recettes + 1] = tonumber(id)
     end
-    add(tonumber(id), tonumber(q) or 1)
     pos = e + 1
   end
   if not found then
     for q, name in text:gmatch("(%d*)%s*[xX]?%s*%[([^%]]+)%]") do add(ns.findItem(name), tonumber(q) or 1) end
   end
-  return lines
+  return lines, recettes, found
 end
 
 function ns.parseList(text)
@@ -373,7 +406,8 @@ function ns.parseList(text)
   local brought = rest and parseItems(rest:match("^(.-)·") or rest) or {}
   local tip = text:match("offre%s*:?%s*([%d%.,]+)%s*po") or text:match("pourboire%s*:?%s*([%d%.,]+)%s*po")
   tip = tip and tonumber((tip:gsub(",", "."))) and math.floor(tonumber((tip:gsub(",", "."))) * 10000 + 0.5) or nil
-  return parseItems(wanted), kind and kind:lower(), tip, brought
+  local lines, recettes, liens = parseItems(wanted)
+  return lines, kind and kind:lower(), tip, brought, recettes, liens
 end
 
 ---------------------------------------------------------------------------------------------------
@@ -562,15 +596,17 @@ function ns.brancherComposants()
   if not C or ns.branche then return end
   ns.branche = true
   for id in pairs(HandshakeDB.commandes or {}) do
-    if not C.Projet(id) then HandshakeDB.commandes[id] = nil end
+    if not C.Projet(id) then ns.oublierCommandes({ id = id }) end
   end
   C.QuandChange(function(p, quoi) if quoi == "supprime" then ns.oublierCommandes(p) end end)
 end
 
 ---------------------------------------------------------------------------------------------------
 -- /handshake (ou /commande) : avec Composants, la fenêtre des projets, où vivent les commandes ; sans lui, la commande à
--- la main. /handshake liste : la commande à la main. /handshake essai : la commande à la main revient comme un
--- chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée). /handshake debug : Debug.lua.
+-- la main. /handshake liste : la commande à la main ; /handshake annonces : les Annonces lues (Annonce.lua). /handshake
+-- essai : la commande à la main revient comme un chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée) ;
+-- /handshake essai annonce : son annonce, affichée seulement ; /handshake essai lue <texte> : texte lu comme une
+-- demande du Commerce (Annonce.lua). /handshake debug : Debug.lua.
 function ns.ouvrir()
   if Composants then return Composants.Ouvrir() end
   ns.openCommandeMain()
@@ -579,6 +615,14 @@ SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
   args = args or ""
   if args:match("^%s*liste%s*$") then return ns.openCommandeMain() end
+  if args:match("^%s*annonces%s*$") then return ns.openDemandes() end
+  local essai = args:match("^%s*essai%s+lue%s*(.*)$")
+  if essai then return ns.essaiDemande(essai) end -- lue comme une ligne du Commerce, d'« Essai » ; rien sur le réseau
+  if args:match("^%s*essai%s+annonce") then -- l'annonce de la commande à la main, affichée, rien sur le réseau
+    local ok, err = ns.annoncer(ns.commandeMain(), true)
+    if not ok then print("|cffe64d4dHandshake :|r " .. err .. ".") end
+    return
+  end
   if args:match("^%s*essai") then return ns.sendOrder(ns.commandeMain(), true) end
   -- /handshake <objet> [qté] [tout], /handshake demo … : l'arbre est à Composants, la commande lui revient.
   if args:match("%S") and Composants and SlashCmdList.COMPOSANTS then return SlashCmdList.COMPOSANTS(args) end

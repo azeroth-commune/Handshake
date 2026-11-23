@@ -6,10 +6,12 @@
 ## Version: 0.2.0-beta
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
 ## Dependencies: AzerothCommune
+## OptionalDeps: TradeBoard
 ## SavedVariables: HandshakeDB
 Donnees.lua
 Commande.lua
 CommandeMain.lua
+Annonce.lua
 Contrat.lua
 ContratUI.lua
 Echange.lua

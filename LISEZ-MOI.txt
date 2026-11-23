@@ -36,10 +36,23 @@ COMMANDE À LA MAIN (sans arbre)
   mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
   Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre dans l'arbre » avec Composants).
 
+ANNONCER DANS LE COMMERCE, LIRE LES DEMANDES
+  « Annoncer » (commande à la main, ou menu « Plus » de Composants) publie « WTB [objet] xN, … » dans le canal
+  Commerce, un clic = un message (en ville seulement, pas deux fois la même avant 5 min). Avec Trade Board installé,
+  c'est son dialogue qui s'ouvre. Une annonce n'engage à rien : seul le contrat engage.
+  Côté artisan : une demande du Commerce ou un cri (WTB, Buy, Search, LF, cherche) pour un objet que tes persos savent
+  fabriquer, ou qui nomme un métier qu'ils ont (« LF BS », « cherche couturier »), s'affiche dans « Annonces lues »
+  (/handshake annonces) ; « Répondre » chuchote à son auteur. Ouvrir la fenêtre relit le chat : les lignes déjà
+  affichées comptent aussi, et la liste tient après un /reload.
+  Pour essayer : /handshake essai lue WTB [objet] (Maj+clic sur un objet pour son lien) : la ligne est lue comme
+  si elle venait du Commerce ; refusée, Handshake dit pourquoi. Rien ne part sur le réseau.
+
 COMMANDES
   /contrat            les contrats (lire, signer, refuser, contre-proposer)
   /handshake          avec Composants : la fenêtre des projets et leurs commandes ; sans : la commande à la main
   /handshake liste    la commande à la main
+  /handshake annonces les annonces lues dans le Commerce
+  /handshake essai lue <texte>       lit <texte> comme une demande du Commerce (pour essayer, rien n'est envoyé)
 
 EN CAS DE PROBLÈME
 Une capture d'écran de la fenêtre + le texte de l'erreur s'il y en a une, envoyés à la personne qui t'a donné

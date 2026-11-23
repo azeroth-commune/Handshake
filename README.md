@@ -5,7 +5,12 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
 
 - **Requiert** le socle Azeroth Commune (`## Dependencies: AzerothCommune`).
 - **Seul**, Handshake sert par la commande à la main (`/handshake liste`, ou `/handshake`), les contrats (`/contrat`) et
-  le panneau qui vérifie chaque échange.
+  le panneau qui vérifie chaque échange. Dans le chat public (`Annonce.lua`) : « Annoncer » une commande dans le canal
+  Commerce, et les **Annonces lues** (`/handshake annonces`, onglet de la commande à la main) : les demandes du Commerce et
+  des cris pour ce que mes persos savent fabriquer (recettes connues relevées par le socle) ou pour un métier qu'ils ont
+  (« LF BS », sans lien), lues en direct et dans l'historique du chat (à l'ouverture de la fenêtre et à l'entrée en jeu),
+  gardées par perso pour un /reload, chacune quelques minutes ; `/handshake essai lue <texte>`
+  lit un texte comme une ligne du Commerce et dit pourquoi elle est écartée.
 - **Avec Composants** (chargé ou non, aucun des deux ne requiert l'autre), les commandes rejoignent ses projets : chaque
   commande est rangée sous l'identité d'un projet de Composants (`HandshakeDB.commandes[p.id]`), et la fenêtre des projets
   de Composants dessine « Commander » sur un bloc, Ctrl+clic « j'apporte » sur une case et la barre des commandes en
@@ -13,6 +18,13 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   (`Composants.Tenir`). Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` :
   supprimer un projet efface ses commandes pas encore parties, jamais un contrat ; à l'entrée en jeu, les commandes
   d'un projet qui n'existe plus sont oubliées.
+- **Avec Trade Board** (Kurki ; `## OptionalDeps: TradeBoard`), quand son API hôte a la version attendue
+  (`tradeBoard.hostApiVersion == 1`), « Annoncer » ne publie plus lui-même : il ouvre son dialogue de demande, rempli
+  avec le premier objet et sa quantité (`OpenRequestDialog("item", id, n)`, le joueur y choisit guilde ou Commerce), et
+  ajoute les autres objets à son tableau (`AddRequest`, guilde par défaut). Quand la commande part en contrat, est
+  remplacée ou que son projet est supprimé, Handshake retire de son tableau les demandes qu'il y a mises
+  (`HasOwnRequest`, `RemoveOwnRequest`). Seules ces fonctions de son API hôte sont appelées, jamais `Integrate` (un seul
+  hôte possible : Profession Master) ni son intérieur. Sans lui, ou avec une autre version, l'annonce de Handshake.
 
 ## API publique
 
@@ -31,6 +43,8 @@ H.Offre(p, cuivre, i)   -- son offre (dans une Réponse, mon prix)
 H.Preparer(p, i)        -- « Préparer la demande » (ou « Contre-proposer » dans une Réponse) : le contrat préparé s'ouvre dans Contrats
 H.Agir(p, i)            -- « Nouvelle version » (contrat préparé ouvert dans Contrats, rend nil) ou « Commander de nouveau » (rend le rang)
 H.EnClair(p, i)         -- la demande en texte lisible, chuchotée à l'artisan
+H.Annoncer(p, i)        -- « Annoncer dans le Commerce » : l'Annonce « WTB [lien] xN, … » de la commande i, un clic = un message
+                        --   (limite par période, hors d'une ville refusée, écho vérifié) ; refusée, la raison est dite. Rend true, ou nil
 H.Importer()            -- importer une liste reçue
 H.Apports(p)            -- { [itemID] = true } : les cases que j'apporte dans les commandes du projet, ou nil
 H.Apporter(p, id, oui)  -- « j'apporte » (oui) ou « je le reprends » (nil)

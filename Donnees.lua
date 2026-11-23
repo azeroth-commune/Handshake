@@ -1,14 +1,15 @@
 -- Handshake, la base : les données dont les contrats ont besoin (fenêtres, montants, noms d'objets : le socle).
 -- Aucune donnée relevée n'est sauvegardée ici (ADR 0002 de l'atelier) : base des recettes (vérifier les besoins d'un
 -- contrat), marchands et cours de l'HV (prix d'achat : caution, estimation), objets (noms, recherche) sont lus par le
--- socle (requis, lib:Lire) ; l'HV passe par son scan ou par un fournisseur (Auctionator…). L'arbre et ses données (sacs,
--- recettes connues, métiers des persos) sont à Composants.
+-- socle (requis, lib:Lire) ; l'HV passe par son scan ou par un fournisseur (Auctionator…), les recettes connues de mes persos
+-- servent aux Annonces lues (Annonce.lua). L'arbre et ses données (sacs, métiers des persos) sont à Composants.
 -- HandshakeDB ne garde que les données propres de Handshake : commandes, contrats, réglages.
 local _, ns = ...
 
 local lib = AzerothCommune
 -- Ce que Handshake lit : le socle ne relève que les types auxquels un add-on a souscrit (GameData#4).
-for _, t in ipairs({ "base des recettes", "marchands", "objets", "cours de l'HV" }) do lib:Souscrire(t) end
+-- « recettes connues » : les Annonces lues (Annonce.lua), ce que mes persos savent fabriquer.
+for _, t in ipairs({ "base des recettes", "marchands", "objets", "cours de l'HV", "recettes connues" }) do lib:Souscrire(t) end
 
 ---------------------------------------------------------------------------------------------------
 -- Accès aux données (par la lib)
@@ -29,6 +30,24 @@ function ns.recipes()
     end
   end
   return recettes
+end
+-- Ce que mes persos savent fabriquer, d'après les recettes connues relevées par le socle : { [itemID] = true } (les objets
+-- produits), { [sort] = true } (les clés de recette qui sont un ID de sort : un lien de recette s'y lit) et
+-- { [métier] = true } (les métiers qu'ils ont, nommés comme le socle les nomme : « Forge », « Travail du cuir »…).
+function ns.jeSaisFabriquer()
+  local base, objets, sorts, mesMetiers = ns.recipes(), {}, {}, {}
+  local d = lib:Lire("recettes connues", "tous")
+  for _, metiers in pairs(d and d.persos or {}) do
+    for nom, m in pairs(metiers) do
+      if type(m) == "table" and type(m.known) == "table" then mesMetiers[nom] = true end
+      for k in pairs(type(m) == "table" and type(m.known) == "table" and m.known or {}) do
+        local r = base[k]
+        if r and r.output then objets[r.output] = true end
+        if type(k) == "number" then sorts[k] = true end
+      end
+    end
+  end
+  return objets, sorts, mesMetiers
 end
 -- Noms d'objets : le catalogue des objets du socle, sinon ceux arrivés du serveur cette session, en mémoire seulement.
 local nomsDeSession = {}

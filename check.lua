@@ -171,6 +171,378 @@ assert(#l3 == 2 and l3[1].id == 3858 and l3[1].qty == 36 and l3[2].qty == 1, "no
 assert(ns.poText(55600) == "5.56 po" and ns.poText(50000) == "5 po")
 print("Handshake : texte échangé OK")
 
+-- Annonce (#51) : « WTB [lien] xN, [lien] xM » en un seul message de 255 octets au plus, par le formateur de la demande
+-- en clair ; trop d'objets : coupée entre deux liens, « … » au bout, chaque lien entier.
+do
+  local claym, camail = AzerothCommuneItems.items[7963].link, AzerothCommuneItems.items[7920].link
+  local a = ns.annonceTexte({ lines = { { id = 7963, qty = 1 }, { id = 7920, qty = 3 } } })
+  assert(a == "WTB " .. claym .. " x1, " .. camail .. " x3", a)
+  assert(a == ns.listMessages("WTB", { { id = 7963, qty = 1 }, { id = 7920, qty = 3 } }, nil, true)[1], "le même formateur que la demande en clair")
+  local beaucoup = {}
+  for _, id in ipairs({ 7963, 7920, 7927, 3858, 7963, 7920 }) do beaucoup[#beaucoup + 1] = { id = id, qty = 2 } end
+  local b = ns.annonceTexte({ lines = beaucoup })
+  assert(#b <= 255 and b:find(" …$") and b:find("^WTB |c"), #b .. " octets : " .. b)
+  local relu = ns.parseList(b)
+  local n = select(2, b:gsub("|Hitem:", ""))
+  assert(n >= 2 and n < #beaucoup and select(2, b:gsub("|h|r x2", "")) == n, "liens entiers, chacun avec sa quantité")
+  assert(relu[1].id == 7963 and relu[1].qty == 2, "relue par le lecteur de listes")
+end
+print("Handshake : composition de l'annonce OK")
+
+-- « Annoncer » (#51) : un clic = un message dans le canal Commerce trouvé par son nom ; hors d'une ville, refusé et dit ;
+-- un second clic trop tôt refusé, avec l'heure où réessayer ; l'écho vérifié (le message revient de moi dans le canal),
+-- sinon signalé et la limite levée ; vide ou partie, rien ; essai et debug : rien sur le réseau.
+do
+  local envoyes, minuteurs, dits, canaux, t = {}, {}, {}, {}, 1000
+  local G0, T0, P0, D0 = GetTime, C_Timer, print, ns.debugSend
+  GetTime = function() return t end
+  C_Timer = { After = function(_, fn) minuteurs[#minuteurs + 1] = fn end, NewTicker = noop }
+  SendChatMessage = function(msg, kind, _, cible) envoyes[#envoyes + 1] = { msg = msg, kind = kind, cible = cible } end
+  GetChannelList = function() return unpack(canaux) end
+  print = function(s) dits[#dits + 1] = s end
+  local function minuter() local m = minuteurs; minuteurs = {}; for _, f in ipairs(m) do f() end end
+  local function dit(motif) for _, s in ipairs(dits) do if s:find(motif) then return true end end end
+  local o = { lines = { { id = 7963, qty = 1 } } }
+  local ok, raison = ns.annoncer(o)
+  assert(not ok and raison:find("Commerce") and #envoyes == 0, "hors d'une ville : refusé, et dit")
+  canaux = { 1, "Général - Hurlevent", false, 2, "Commerce - Ville", false }
+  assert(ns.annonceRefus(o) == nil and ns.annoncer(o), "en ville : part")
+  assert(#envoyes == 1 and envoyes[1].kind == "CHANNEL" and envoyes[1].cible == 2 and envoyes[1].msg == ns.annonceTexte(o), "dans le canal Commerce")
+  t = t + 60
+  local r2, quand = ns.annonceRefus(o)
+  assert(r2 and quand == 1000 + ns.ANNONCE_DELAI, "trop tôt : refusé, avec le moment où réessayer")
+  ok, raison = ns.annoncer(o)
+  assert(not ok and raison:find("à %d") and #envoyes == 1, "second clic trop tôt : rien ne part")
+  ns.lireCanal("CHAT_MSG_CHANNEL", envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville", "Moi Dupont", "", 0, 2, "Commerce - Ville", 0, 1, MOI)
+  minuter()
+  assert(not dit("pas revenue"), "écho reçu : rien à dire")
+  t = t + ns.ANNONCE_DELAI
+  assert(ns.annoncer(o) and #envoyes == 2, "après le délai : de nouveau")
+  -- Une vieille ligne à moi, relue dans l'historique du chat (ouvrir « Annonces lues »), n'est pas l'écho.
+  NUM_CHAT_WINDOWS, ChatFrame1 = 1, { ForEachMessage = function(_, op)
+    op({ message = "x", extraData = { 1, 1, 1, "CHAT_MSG_CHANNEL", { envoyes[1].msg, "Moi Dupont", "", "2. Commerce - Ville",
+      "Moi Dupont", "", 0, 2, "Commerce - Ville", 0, 1, MOI, n = 12 }, n = 5 }, timestamp = GetTime() })
+  end }
+  ns.relireChat()
+  NUM_CHAT_WINDOWS, ChatFrame1 = nil, nil
+  minuter()
+  assert(dit("pas revenue") and ns.annonceRefus(o) == nil, "pas d'écho : signalé, et on peut réessayer")
+  assert(not ns.annoncer({ lines = {} }) and not ns.annoncer({ lines = o.lines, fige = true }) and #envoyes == 2, "vide ou partie : rien")
+  ns.debugSend = function(kind) return kind == "commerce" end
+  assert(ns.annoncer({ lines = { { id = 7920, qty = 1 } } }) and #envoyes == 2, "mode debug : détourné")
+  ns.debugSend = D0
+  dits = {}
+  assert(ns.annoncer({ lines = { { id = 7927, qty = 1 } } }, true) and #envoyes == 2 and dit("%[essai%].-WTB"), "essai : affiché, rien sur le réseau")
+  GetTime, C_Timer, print, SendChatMessage, GetChannelList = G0, T0, P0, nil, nil
+end
+print("Handshake : annoncer dans le Commerce OK")
+
+-- Trade Board (#53), son API hôte en version 1 : « Annoncer » ouvre son dialogue rempli pour le premier objet et ajoute les
+-- autres à son tableau, rien n'est publié par Handshake ; commande partie, remplacée ou son projet supprimé : ses demandes
+-- sont retirées du tableau (seulement celles que Handshake y a mises). Autre version, ou absent : l'annonce de Handshake.
+do
+  local appels, envoyes, possede = {}, {}, { [3858] = true } -- une demande à moi, d'avant Handshake : jamais retirée
+  local function faux(version)
+    local tb = { hostApiVersion = version }
+    for _, f in ipairs({ "OpenRequestDialog", "AddRequest", "RemoveOwnRequest", "Integrate" }) do
+      tb[f] = function(self, kind, id, q)
+        assert(self == tb, "appelé comme méthode")
+        appels[#appels + 1] = ("%s %s %s %s"):format(f, kind, id, q or "")
+        if f == "AddRequest" or f == "OpenRequestDialog" then possede[id] = true elseif f == "RemoveOwnRequest" then possede[id] = nil end
+      end
+    end
+    tb.HasOwnRequest = function(_, kind, id) return kind == "item" and possede[id] == true end
+    return tb
+  end
+  local T0 = C_Timer
+  C_Timer = { After = noop, NewTicker = noop }
+  SendChatMessage = function(msg) envoyes[#envoyes + 1] = msg end
+  GetChannelList = function() return 2, "Commerce - Ville", false end
+  HandshakeDB.contracts = HandshakeDB.contracts or {}
+  tradeBoard = faux(1)
+  local m = ns.mainNouvelle()
+  m.lines = { { id = 7963, qty = 2 }, { id = 7920, qty = 1 }, { id = 3858, qty = 5 } }
+  assert(ns.annoncer(m, nil, m) and #envoyes == 0, "avec Trade Board : rien publié par Handshake")
+  assert(appels[1] == "OpenRequestDialog item 7963 2" and appels[2] == "AddRequest item 7920 1" and appels[3] == "AddRequest item 3858 5",
+    table.concat(appels, " / "))
+  assert(ns.annonceEtiquette(m) == "Annoncer (Trade Board)", "le bouton dit par où l'annonce passe")
+  appels = {}
+  ns.balayerTB()
+  assert(#appels == 0, "pas encore partie : rien de retiré")
+  m.contrat, HandshakeDB.contracts.tbk = "tbk", { status = "envoye" }
+  ns.balayerTB()
+  table.sort(appels)
+  assert(#appels == 2 and appels[1] == "RemoveOwnRequest item 7920 " and appels[2] == "RemoveOwnRequest item 7963 " and possede[3858],
+    "partie en contrat : retirées, sauf celle d'avant : " .. table.concat(appels, " / "))
+  -- Une nouvelle commande à la main remplace l'ancienne ; un projet supprimé emporte ses commandes.
+  appels, m = {}, ns.mainNouvelle()
+  m.lines = { { id = 7927, qty = 1 } }
+  ns.annoncer(m, nil, m)
+  ns.mainNouvelle()
+  assert(appels[#appels] == "RemoveOwnRequest item 7927 ", "commande remplacée : retirée")
+  local p = projetPour("Bel", nil, { { id = 7920, qty = 4 } })
+  ns.projetAnnoncer(p, 1)
+  assert(appels[#appels] == "OpenRequestDialog item 7920 4", "commande d'un projet : le dialogue")
+  ns.oublierCommandes(p)
+  assert(appels[#appels] == "RemoveOwnRequest item 7920 ", "projet supprimé : retirée")
+  for _, a in ipairs(appels) do assert(not a:find("^Integrate"), "jamais Integrate") end
+  -- Autre version de l'API, ou absent : l'annonce de Handshake, sans erreur.
+  for _, tb in ipairs({ faux(2), false }) do
+    tradeBoard, appels = tb or nil, {}
+    local n = #envoyes
+    assert(ns.annoncer({ lines = { { id = 7963, qty = tb and 3 or 4 } } }) and #envoyes == n + 1 and #appels == 0, "repli sur l'annonce de Handshake")
+  end
+  HandshakeDB.main, HandshakeDB.contracts.tbk = nil, nil
+  C_Timer, SendChatMessage, GetChannelList = T0, nil, nil
+end
+print("Handshake : annoncer par Trade Board OK")
+
+-- Annonces lues (#52) : une ligne de demande (WTB, Buy, Search en tête, ou WTB n'importe où) du Commerce ou d'un cri, avec
+-- le lien d'un objet ou d'une recette qu'un de mes persos sait fabriquer, entre dans la liste ; WTS, sans lien, objet que
+-- je ne sais pas faire, autre canal, mes propres annonces : non. Même joueur, même objet : une entrée. Le texte est nettoyé
+-- et coupé avant tout affichage ; les demandes vieillissent ; « Répondre » chuchote à l'auteur.
+do
+  local t, dits, chuchotes = 5000, {}, {}
+  local G0, P0, W0, chars0 = GetTime, print, ns.whisper, AzerothCommuneDB.chars
+  GetTime = function() return t end
+  local T0 = time
+  time = function(x) if x then return T0(x) end return t end
+  print = function(s) dits[#dits + 1] = s end
+  ns.whisper = function(msg, cible) chuchotes[#chuchotes + 1] = { msg = msg, cible = cible } end
+  -- Un perso sait faire le marteau (recette 1 : objet 5541) ; personne la cuirasse (recette 2 : 2870).
+  AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
+  local marteau = link(5541, "Marteau")
+  AzerothCommuneItems.items[5541] = { name = "Marteau", link = marteau }
+  local function canal(msg, qui, guid, base)
+    ns.lireCanal("CHAT_MSG_CHANNEL", msg, qui, "", "2. " .. (base or "Commerce - Ville"), qui, "", 0, 2, base or "Commerce - Ville", 0, 1, guid or "Player-6942-00000B0B")
+  end
+  local function noms() local n = {} for _, d in ipairs(ns.demandesLues()) do n[#n + 1] = d.qui end table.sort(n) return table.concat(n, ",") end
+  canal("WTB " .. marteau .. " pst", "Bob Dupont")
+  assert(noms() == "Bob Dupont", "une demande de ce que je sais faire : listée")
+  assert(#dits == 1 and dits[1]:find("Bob Dupont") and dits[1]:find("Hitem:5541"), "signal discret : une ligne dans le chat")
+  canal("WTB " .. marteau .. " pst !!", "Bob Dupont")
+  assert(#ns.demandesLues() == 1 and #dits == 1, "même joueur, même objet : une entrée, pas de second signal")
+  canal("WTS " .. marteau, "Cid Lebrun", "Player-6942-00000C1D")
+  canal("WTB [Marteau] pst", "Cid Lebrun", "Player-6942-00000C1D")
+  canal("WTB " .. link(2870, "Cuirasse"), "Cid Lebrun", "Player-6942-00000C1D")
+  canal("WTB " .. marteau, "Cid Lebrun", "Player-6942-00000C1D", "Général - Hurlevent")
+  canal("WTB " .. marteau .. " x2", "Moi Dupont", MOI)
+  assert(noms() == "Bob Dupont", "WTS, sans lien, objet inconnu, autre canal, mon annonce : rien")
+  canal("LF forgeron, wtb " .. marteau, "Cid Lebrun", "Player-6942-00000C1D")
+  ns.lireCanal("CHAT_MSG_YELL", "Buy " .. marteau .. " now", "Dan Cri", "", "", "Dan Cri", "", 0, 0, "", 0, 1, "Player-6942-00000DA0")
+  canal("Search |cffffd000|Henchant:1|h[Faux nom]|h|r", "Eve Rune", "Player-6942-00000E7E")
+  assert(noms() == "Bob Dupont,Cid Lebrun,Dan Cri,Eve Rune", "WTB n'importe où, un cri « Buy », une recette « Search » : " .. noms())
+  -- Piégée : texture, lien inconnu, couleur, caractère de contrôle, faux nom sur un vrai lien ; puis trop longue.
+  canal("WTB |cff1eff00|Hitem:5541::::|h[Épée gratuite]|h|r |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h |cffff0000rouge|r \7fin",
+    "Mal Truand", "Player-6942-0000BAD0")
+  local piege
+  for _, d in ipairs(ns.demandesLues()) do if d.qui == "Mal Truand" then piege = d end end
+  assert(piege, "listée, mais nettoyée")
+  local sans = piege.texte:gsub("|cff1eff00|Hitem:5541::::::::31:::::::::|h%[Marteau%]|h|r", "")
+  assert(not sans:find("|", 1, true) and not sans:find("[%z\1-\31]") and not piege.texte:find("Épée gratuite", 1, true)
+    and sans:find("[clique ici]", 1, true) and sans:find("rouge", 1, true), "seul le lien reconnu reste, refait d'ici : " .. piege.texte)
+  canal("WTB " .. marteau .. " " .. ("bla "):rep(100), "Lia Long", "Player-6942-00000111")
+  for _, d in ipairs(ns.demandesLues()) do assert(#d.texte <= 260, "coupée : " .. #d.texte) end
+  -- Rien sans clic : aucun chuchotement jusqu'ici. « Répondre » chuchote à l'auteur.
+  assert(#chuchotes == 0, "aucune action sans clic")
+  local bob
+  for _, d in ipairs(ns.demandesLues()) do if d.qui == "Bob Dupont" then bob = d end end
+  ns.repondreDemande(bob)
+  assert(#chuchotes == 1 and chuchotes[1].cible == bob.qui and chuchotes[1].msg:find("Hitem:5541") and bob.repondu, "Répondre : un chuchotement à l'auteur")
+  t = t + ns.DEMANDE_DUREE + 1
+  assert(#ns.demandesLues() == 0, "les vieilles demandes disparaissent")
+  GetTime, print, ns.whisper, AzerothCommuneDB.chars, time = G0, P0, W0, chars0, T0
+end
+print("Handshake : demandes lues OK")
+
+-- Demandes par métier, sans lien : une ligne de demande (« LF » seul en tête, « cherche », « recherche », ou les règles
+-- d'avant) qui nomme, en mot entier, un métier qu'un de mes persos a, entre dans la liste avec « métier : <Métier> » ;
+-- LFW (une offre), LFG, LFM, LF1M (des groupes) : non. Un lien d'objet que je sais faire l'emporte. /handshake essai
+-- demande : la même lecture, d'un faux auteur « Essai », et la raison d'un refus dans le chat.
+do
+  local t, dits, chuchotes = 20000, {}, {}
+  local G0, P0, W0, chars0 = GetTime, print, ns.whisper, AzerothCommuneDB.chars
+  GetTime = function() return t end
+  local T0 = time
+  time = function(x) if x then return T0(x) end return t end
+  print = function(s) dits[#dits + 1] = s end
+  ns.whisper = function(msg, cible) chuchotes[#chuchotes + 1] = { msg = msg, cible = cible } end
+  AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
+  local marteau = AzerothCommuneItems.items[5541].link
+  local function canal(msg, qui)
+    return ns.lireCanal("CHAT_MSG_CHANNEL", msg, qui, "", "2. Commerce - Ville", qui, "", 0, 2, "Commerce - Ville", 0, 1, "Player-6942-0000" .. #qui .. "F00")
+  end
+  local function de(qui) local r = {} for _, d in ipairs(ns.demandesLues()) do if d.qui == qui then r[#r + 1] = d end end return r end
+  canal("LF BS pls", "Bob Dupont")
+  local bob = de("Bob Dupont")
+  assert(#bob == 1 and bob[1].metier == "Forge" and not bob[1].id and bob[1].texte == "LF BS pls", "« LF BS » : une demande de Forge")
+  assert(#dits == 1 and dits[1]:find("Bob Dupont", 1, true) and dits[1]:find("forge", 1, true), "signal discret aussi : " .. tostring(dits[1]))
+  canal("LF tailor", "Cid Lebrun")
+  canal("LFW blacksmith", "Cid Lebrun")
+  canal("LFM BRD need bs", "Cid Lebrun")
+  canal("LF1M bs", "Cid Lebrun")
+  canal("LFG forge", "Cid Lebrun")
+  canal("WTS bs services", "Cid Lebrun")
+  canal("LF quelqu'un a Forgefer", "Cid Lebrun")
+  canal("cherche ma blacksmithe", "Cid Lebrun")
+  -- Une offre de service qui achète aussi ses composants (« WTB » plus loin) n'est pas une demande de métier ; ni un
+  -- achat de composants tapé sans lien (« cuir » seul ne nomme pas le métier), même quand un perso a le Travail du cuir.
+  AzerothCommuneDB.chars["Player-6942-00000C01"] = { recipes = { ["Travail du cuir"] = { rank = 1, known = {} } } }
+  canal("WTS BS services, WTB mats", "Cid Lebrun")
+  canal("LFW bs, also WTB arcanite", "Cid Lebrun")
+  canal("WTB cuir lourd x20", "Cid Lebrun")
+  assert(#de("Cid Lebrun") == 0, "métier qu'aucun perso n'a, offre, groupe, mot dans un autre mot, composants : rien")
+  canal("LF lw pour une armure", "Jo Cuir")
+  canal("cherche un travailleur du cuir", "Lea Peau")
+  assert(#de("Jo Cuir") == 1 and #de("Lea Peau") == 1 and de("Lea Peau")[1].metier == "Travail du cuir", "lw, travailleur du cuir")
+  canal("WTB forgeron pour une ceinture", "Dan Cri")
+  canal("cherche un forgeron", "Eve Rune")
+  canal("Recherche Blacksmith !", "Fil Long")
+  assert(#de("Dan Cri") == 1 and #de("Eve Rune") == 1 and de("Fil Long")[1].metier == "Forge", "WTB, cherche, recherche")
+  -- Même joueur, même métier : une entrée ; un lien d'objet que je sais faire l'emporte sur le métier de la même ligne.
+  canal("LF blacksmith", "Bob Dupont")
+  canal("cherche forgeron", "Bob Dupont")
+  assert(#de("Bob Dupont") == 1 and #dits == 6, "même joueur, même métier : une entrée, pas de second signal")
+  canal("LF bs " .. marteau, "Gus Marteau")
+  local gus = de("Gus Marteau")
+  assert(#gus == 1 and gus[1].id == 5541 and not gus[1].metier, "le lien de l'objet l'emporte sur le métier")
+  -- Un métier qu'un autre perso a (même sans recette notée) compte ; mots avec accents tels qu'écrits.
+  AzerothCommuneDB.chars["Player-6942-00000A17"] = { recipes = { Couture = { rank = 1, known = {} } } }
+  canal("cherche couturière", "Ida Fil")
+  assert(#de("Ida Fil") == 1 and de("Ida Fil")[1].metier == "Couture", "couturière : Couture")
+  -- Piégée : nettoyée comme les autres.
+  canal("LF BS |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h |cffff0000rouge|r \7fin", "Mal Truand")
+  local piege = de("Mal Truand")[1]
+  assert(piege and not piege.texte:find("[|%z\1-\31]") and piege.texte:find("[clique ici]", 1, true), "nettoyée : " .. tostring(piege and piege.texte))
+  -- « Répondre » : le chuchotement fixe, avec le métier.
+  ns.repondreDemande(de("Bob Dupont")[1])
+  assert(#chuchotes == 1 and chuchotes[1].cible == "Bob Dupont" and chuchotes[1].msg:find("forge", 1, true), "Répondre : " .. tostring(chuchotes[1] and chuchotes[1].msg))
+  -- La raison d'un refus vient du lecteur.
+  assert(canal("WTS bs", "Cid Lebrun"):find("offre", 1, true) and canal("LFM bs", "Cid Lebrun"):find("pas une demande", 1, true)
+    and canal("LF alchemist", "Cid Lebrun"):find("métier", 1, true) and canal("LF bs", "Cid Lebrun") == nil, "raisons du lecteur")
+  -- /handshake essai demande : la même lecture, d'« Essai » ; refusée, la raison en une ligne ; rien sur le réseau.
+  -- Chaque essai garde les précédents (la clé habituelle : joueur#objet, joueur#métier) et se signale, même déjà listé.
+  local n = #dits
+  SlashCmdList.HANDSHAKE("essai lue WTB " .. marteau .. " pst")
+  local essai = de("Essai")
+  assert(#essai == 1 and essai[1].id == 5541 and #dits == n + 1 and dits[#dits]:find("Essai", 1, true), "essai : listée, signalée")
+  SlashCmdList.HANDSHAKE("essai lue cherche un forgeron")
+  assert(#de("Essai") == 2 and #dits == n + 2 and dits[#dits]:find("forge", 1, true), "un 2e essai : le 1er reste, le 2e signalé")
+  SlashCmdList.HANDSHAKE("essai lue WTB " .. marteau .. " encore")
+  assert(#de("Essai") == 2 and #dits == n + 3 and dits[#dits]:find("Hitem:5541", 1, true), "le même essai : une entrée, signalée de nouveau")
+  n = #dits
+  SlashCmdList.HANDSHAKE("essai lue WTS " .. marteau)
+  assert(#dits == n + 1 and dits[#dits]:find("offre", 1, true), "essai : la raison du refus : " .. dits[#dits])
+  SlashCmdList.HANDSHAKE("essai lue LF alchemist")
+  assert(#dits == n + 2 and dits[#dits]:find("métier", 1, true), "essai : la raison du refus : " .. dits[#dits])
+  assert(#chuchotes == 1, "essai : rien sur le réseau")
+  -- « Répondre » sur une ligne d'essai : le vrai message, chuchoté à moi-même (le faux auteur « Essai » n'existe pas).
+  local essaiLigne
+  for _, d in ipairs(ns.demandesLues()) do if d.qui == "Essai" and d.id == 5541 then essaiLigne = d end end
+  ns.repondreDemande(essaiLigne)
+  local moi = ns.myName()
+  assert(moi:find(" ", 1, true), "mon nom complet, pas le prénom seul : " .. tostring(moi))
+  assert(#chuchotes == 2 and chuchotes[2].cible == moi and chuchotes[2].msg:find("Hitem:5541") and essaiLigne.repondu,
+    "Répondre sur un essai : à moi-même, " .. tostring(chuchotes[2] and chuchotes[2].cible))
+  t = t + ns.DEMANDE_DUREE + 1
+  assert(#ns.demandesLues() == 0, "elles vieillissent comme les autres")
+  GetTime, print, ns.whisper, AzerothCommuneDB.chars, time = G0, P0, W0, chars0, T0
+end
+-- Le format de couleur des clients récents, |cnIQ2: (couleur par qualité, vu en jeu le 23/11 : « LF blacksmith for cnIQ2:[Eperons en mithril] ») : retiré.
+do
+  local propre = ns.nettoyer("LF blacksmith for |cnIQ2:|Hitem:5541::::|h[Eperons en mithril]|h|r")
+  assert(not propre:find("cnIQ2", 1, true) and propre:find("^LF blacksmith for |c") and propre:find("Hitem:5541", 1, true), "|cn…: retiré : " .. propre)
+end
+print("Handshake : demandes par métier OK")
+
+-- L'historique du chat (les lignes déjà dans ChatFrame1..NUM_CHAT_WINDOWS, avant /reload ou avant la fin du login) : les
+-- données que le client garde avec chaque ligne (l'évènement, ses arguments bruts) passent par le même lecteur. Une ligne
+-- vue dans deux fenêtres : lue une fois ; les miennes, les offres, les autres canaux : non ; l'heure de l'horodatage quand
+-- il y en a un, sinon maintenant. Les demandes lues survivent à un /reload (HandshakeDB.demandes, par perso, déjà
+-- nettoyées), les vieilles sont oubliées.
+do
+  local dits, stubMT0 = {}, getmetatable(CreateFrame())
+  local T0, P0, chars0, GT0 = time, print, AzerothCommuneDB.chars, GetTime
+  local t = T0({ year = 2026, month = 11, day = 23, hour = 14, min = 10, sec = 0 })
+  GetTime = function() return 50000 end
+  time = function(x) if x then return T0(x) end return t end
+  print = function(s) dits[#dits + 1] = s end
+  AzerothCommuneDB.chars = { [MOI] = { recipes = { Forge = { rank = 150, known = { [1] = "easy" } } } } }
+  local marteau = AzerothCommuneItems.items[5541].link
+  -- Un /reload : Annonce.lua rechargé (sa mémoire repart à zéro), puis l'entrée en jeu (PLAYER_LOGIN).
+  local function recharger()
+    local C0, ev = CreateFrame, nil
+    CreateFrame = function() return setmetatable({ SetScript = function(_, _, fn) ev = fn end }, stubMT0) end
+    assert(loadfile("Handshake/Annonce.lua"))("Handshake", ns)
+    CreateFrame = C0
+    ev(nil, "PLAYER_LOGIN")
+  end
+  recharger()
+  -- Une ligne telle que la fenêtre de chat la garde (ChatFrameOverrides.lua : AddMessage(texte, r, g, b, id, accessID,
+  -- typeID, event, SafePack(...), formateur)).
+  -- L'entrée telle que ScrollingMessageFrame la garde (PackageEntry) : extraData = { id, accessID, typeID, event, args, … },
+  -- timestamp = GetTime() à son arrivée ; age : il y a combien de secondes elle est arrivée.
+  local function ligne(event, msg, qui, base, lineID, guid, age)
+    local args = { msg, qui, "", base and ("2. " .. base) or "", qui, "", 0, base and 2 or 0, base or "", 0, lineID, guid,
+      0, false, false, false, false, { userID = 0 }, n = 18 }
+    return { message = "|Hplayer:" .. qui .. ":" .. lineID .. "|h[" .. qui .. "]|h: " .. msg, r = 1, g = 1, b = 1,
+      extraData = { 1, 1, 1, event, args, nil, n = 6 }, timestamp = GetTime() - (age or 0) }
+  end
+  local function cadre(lignes)
+    return { ForEachMessage = function(_, op) for _, e in ipairs(lignes) do if op(e) then break end end end }
+  end
+  local CH, CR = "CHAT_MSG_CHANNEL", "CHAT_MSG_YELL"
+  local bob = ligne(CH, "WTB " .. marteau .. " pst", "Bob Dupont", "Commerce - Ville", 101, "Player-6942-00000B0B", 300)
+  NUM_CHAT_WINDOWS = 2
+  ChatFrame1 = cadre({
+    bob,
+    ligne(CH, "WTS " .. marteau, "Cid Lebrun", "Commerce - Ville", 102, "Player-6942-00000C1D"),
+    ligne(CR, "Buy " .. marteau .. " now", "Dan Cri", nil, 103, "Player-6942-00000DA0"),
+    ligne(CH, "WTB " .. marteau, "Eve Rune", "Général - Hurlevent", 104, "Player-6942-00000E7E"),
+    ligne(CH, "WTB " .. marteau .. " x2", "Moi Dupont", "Commerce - Ville", 106, MOI),
+    ligne(CH, "WTB |cff1eff00|Hitem:5541::::|h[Épée gratuite]|h|r |TInterface\\Icons\\INV_Misc_Coin_01:0|t |Hurl:http://x|h[clique ici]|h \7fin",
+      "Mal Truand", "Commerce - Ville", 107, "Player-6942-0000BAD0"),
+    { message = "|cffa78ffcHandshake :|r une ligne écrite par un add-on, sans données", r = 1, g = 1, b = 1, timestamp = GetTime() },
+    ligne(CH, "WTB " .. marteau, "Fil Long", "Commerce - Ville", 109, "Player-6942-00000F11", 4200), -- 70 min : trop vieille
+  })
+  ChatFrame2 = cadre({ bob })
+  local J0, appels = ns.jeSaisFabriquer, 0
+  ns.jeSaisFabriquer = function() appels = appels + 1 return J0() end
+  ns.relireChat()
+  ns.jeSaisFabriquer = J0
+  assert(appels == 1, "mes recettes, calculées une fois par relecture : " .. appels)
+  local function rangs() local r = {} for _, d in ipairs(ns.demandesLues()) do r[d.qui] = d end return r end
+  local function noms() local n = {} for q in pairs(rangs()) do n[#n + 1] = q end table.sort(n) return table.concat(n, ",") end
+  assert(noms() == "Bob Dupont,Dan Cri,Mal Truand", "l'historique : Commerce et cri, pas l'offre, le Général, les miennes, les vieilles : " .. noms())
+  assert(#dits == 3, "une ligne de signal par demande, la ligne vue dans deux fenêtres une fois : " .. #dits)
+  local r = rangs()
+  assert(r["Bob Dupont"].t == t - 300 and r["Dan Cri"].t == t, "l'heure d'arrivée de la ligne, gardée par le client")
+  assert(r["Dan Cri"].ou == "en criant" and r["Bob Dupont"].ou == "dans le Commerce", "où")
+  local mal = r["Mal Truand"].texte
+  assert(not mal:gsub("|cff1eff00|Hitem:5541::::::::31:::::::::|h%[Marteau%]|h|r", ""):find("|", 1, true)
+    and not mal:find("Épée gratuite", 1, true) and not mal:find("[%z\1-\31]"), "nettoyée comme une ligne en direct : " .. mal)
+  ns.relireChat()
+  assert(#dits == 3 and #ns.demandesLues() == 3 and rangs()["Bob Dupont"].t == t - 300, "relire : rien de neuf, l'heure ne bouge pas")
+  -- Gardées par perso dans HandshakeDB, déjà nettoyées : le texte propre et les IDs, jamais la ligne brute.
+  local gardees = HandshakeDB.demandes[MOI]
+  local n = 0
+  for _, d in pairs(gardees) do
+    n = n + 1
+    for k, v in pairs(d) do assert(type(v) ~= "string" or k == "lien" or not v:find("|T", 1, true) and not v:find("Épée", 1, true), "gardée nettoyée : " .. k) end
+  end
+  assert(n == 3, "les trois gardées")
+  -- /reload : le chat est vide, les fraîches reviennent, les vieilles sont oubliées.
+  gardees["Vieux Pas#5541"] = { cle = "Vieux Pas#5541", qui = "Vieux Pas", id = 5541, texte = "WTB", ou = "dans le Commerce", t = t - ns.DEMANDE_DUREE - 1 }
+  ChatFrame1, ChatFrame2 = cadre({}), cadre({})
+  recharger()
+  assert(noms() == "Bob Dupont,Dan Cri,Mal Truand" and not HandshakeDB.demandes[MOI]["Vieux Pas#5541"], "après /reload : " .. noms())
+  t = t + ns.DEMANDE_DUREE + 1
+  assert(#ns.demandesLues() == 0 and next(HandshakeDB.demandes[MOI]) == nil, "elles vieillissent, gardées comprises")
+  ChatFrame1, ChatFrame2, NUM_CHAT_WINDOWS = nil, nil, nil
+  time, print, AzerothCommuneDB.chars, GetTime = T0, P0, chars0, GT0
+end
+print("Handshake : historique du chat et /reload OK")
+
 
 aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
@@ -1021,7 +1393,8 @@ end
 for _, k in ipairs({ "nouveauProjet", "projetArbre", "projetDemande", "craftPlan", "crafters", "orderNeeds", "openCraftWindow", "demoOrder", "sendNeeds" }) do
   assert(ns[k] == nil, "ns." .. k .. " : parti dans Composants")
 end
-for _, t in ipairs({ "recettes connues", "inventaires", "métiers et compétences" }) do
+-- (Les recettes connues sont de nouveau lues, pour les Demandes lues (#52) : ce que mes persos savent fabriquer.)
+for _, t in ipairs({ "inventaires", "métiers et compétences" }) do
   assert(not io.open("Handshake/Donnees.lua"):read("*a"):find('"' .. t .. '"', 1, true), "Handshake ne souscrit plus à " .. t)
 end
 print("Handshake : purge, noms demandés, réserve des recettes OK")
@@ -1062,7 +1435,7 @@ print("Handshake : destinataire des chuchotements OK")
 -- L'API publique de Handshake (README.md) : le global Handshake, celui dont Composants se sert ; rien d'autre.
 do
   local API = { "Commandes", "Commande", "Commander", "Artisan", "Offre", "Preparer", "Agir", "EnClair", "Importer", "Apports",
-    "Apporter", "EstReponse" }
+    "Apporter", "EstReponse", "Annoncer" }
   local n = 0
   for _ in pairs(Handshake) do n = n + 1 end
   local readme = assert(io.open("Handshake/README.md"), "README.md"):read("*a")
@@ -1071,8 +1444,8 @@ do
     assert(readme:find("H." .. f .. "(", 1, true), "README : Handshake." .. f)
   end
   assert(n == #API, "l'API publique, rien de plus")
-  assert(not HSTOC:find("OptionalDeps", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
-    "le socle requis ; plus de reliquat BeAGoodPal (Composants déclare Handshake, pas l'inverse : pas de cycle)")
+  assert(HSTOC:find("\n## OptionalDeps: TradeBoard\n", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
+    "le socle requis ; Trade Board seul en option (#53) : Composants déclare Handshake, pas l'inverse, pas de cycle")
 end
 print("Handshake : API publique OK")
 

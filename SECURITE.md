@@ -229,3 +229,42 @@ serveur a donné le GUID. `GetPlayerInfoByGUID` n'est plus lu : la forme de ses 
 Un perso renommé reste le même (GUID identique) : une fois son GUID confirmé, l'échange est conforme et le changement de
 nom signalé. Le protocole passe à « 3 » ; les messages « 2 » (adresses « Prénom-Royaume ») sont refusés, et les contrats
 enregistrés sous l'ancien format sont purgés au chargement (perte de données acceptée).
+
+## Ajout : Annonces dans le chat public (Handshake#51)
+
+Une **Annonce** (« WTB [lien] xN, … » dans le canal Commerce) n'engage à rien : ni prix, ni artisan, ni objet promis. Seul
+le contrat engage, et rien de ce qu'une annonce dit ne passe dans un contrat. Publier reste un clic du joueur à chaque fois
+(jamais d'envoi automatique, ni de répétition) ; une limite par période empêche de répéter la même annonce, et le mode
+essai comme le mode debug ne publient rien sur le réseau.
+
+## Ajout : Annonces lues dans le chat public (Handshake#52)
+
+Handshake lit le canal Commerce et les cris : du texte d'inconnus, sans aucune garantie, comme le sont les messages de
+contrat (P2, P4). Ce qui en est montré :
+
+- **est nettoyé avant tout affichage** (`ns.nettoyer`) : caractères de contrôle retirés ; un lien d'objet ou de recette
+  reconnu est refait localement depuis son ID (le nom et la couleur sont ceux du client, un « [Épée gratuite] » posé sur
+  un autre ID ne passe pas, n° 1) ; tout autre lien (`|Hurl:…`, `|Hplayer:…`…) est réduit à son texte ; codes de couleur
+  (`|c…|r`), de texture (`|T…|t`), d'atlas (`|A…|a`) et tout autre `|` retirés ; le texte est coupé (160 octets hors
+  liens, jamais au milieu d'un caractère) ; le nom de l'auteur, donné par le serveur, passe par le même nettoyage ;
+- **ne déclenche jamais rien sans clic** : une demande lue ne fait qu'entrer dans une liste et écrire une ligne dans le
+  chat ; « Répondre » (un clic) envoie un chuchotement fixe, écrit par Handshake, à l'auteur. Rien de lu ne devient une
+  commande, un contrat ni un prix ;
+- **est bornée** : seules les lignes de demande (« WTB », « Buy », « Search ») avec le lien d'un objet ou d'une recette
+  qu'un de mes persos sait fabriquer ; une entrée par joueur et par objet, 30 au plus, oubliées après 15 min. Mes propres
+  lignes ne sont pas lues. Un nom d'auteur que le nettoyage changerait est écarté (il sert tel quel à « Répondre »).
+- **l'historique du chat** (les lignes déjà dans les fenêtres de chat, lues à l'ouverture de « Annonces lues » et une fois
+  à l'entrée en jeu) est lui aussi du texte d'inconnus : les données que le client garde avec chaque ligne (l'évènement et
+  ses arguments, auteur, GUID, lineID) passent par **le même lecteur**, avec le même nettoyage et les mêmes bornes ; une
+  ligne sans ces données est sautée, jamais analysée depuis son texte affiché. Une ligne déjà listée (même lineID) n'est
+  pas relue ; une ligne plus vieille que 15 min (d'après son heure d'arrivée, gardée par le client avec la ligne) n'entre pas. Rien ne se fait sans clic.
+- **gardée pour un /reload** : par perso dans `HandshakeDB.demandes`, seulement ce que le lecteur a déjà produit (texte
+  nettoyé et coupé, IDs de l'objet, de la recette, nom du métier, lien refait ici, auteur, lieu, heure), jamais la ligne
+  brute ; oubliée après 15 min comme en mémoire. Au chargement, seules les fraîches reviennent.
+- **demandes par métier, sans lien** (« LF BS », « cherche forgeron ») : une ligne de demande (aussi « LF » seul,
+  « cherche », « recherche » en tête ; LFW, LFG, LFM restent écartés) qui nomme en mot entier un métier qu'un de mes persos
+  a. C'est toujours du texte d'inconnus : même nettoyage, même borne (une entrée par joueur et par métier), aucune bulle
+  d'objet, et « Répondre » envoie le même genre de chuchotement fixe, sur un clic seulement ;
+- **`/handshake essai lue <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
+  part sur le réseau (sauf un clic sur « Répondre », qui sur une ligne d'essai chuchote le vrai message à moi-même, jamais au faux auteur « Essai »). Les essais d'avant restent listés
+  (une entrée par objet ou métier) ; chaque essai écrit sa ligne de signal ou la raison du refus.

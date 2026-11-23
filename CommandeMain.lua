@@ -18,6 +18,7 @@ end
 function ns.mainNouvelle()
   local old = HandshakeDB.main
   if old and old.contrat and not ns.commandeEnvoyee(old) then ns.ctStore()[old.contrat] = nil end
+  ns.retirerTB(old) -- ses demandes au tableau de Trade Board (Annonce.lua)
   HandshakeDB.main = nil
   return ns.commandeMain()
 end
@@ -319,8 +320,17 @@ local function build()
   frame.clair:SetPoint("LEFT", frame.go, "RIGHT", 6, 0)
   frame.nouvelle = button(frame, "Nouvelle", 90, function() ns.mainNouvelle(); refresh() end)
   frame.nouvelle:SetPoint("LEFT", frame.clair, "RIGHT", 6, 0)
+  -- « Annoncer » : l'Annonce dans le Commerce (Annonce.lua) ; le bouton dit s'il peut partir, et sinon pourquoi ou quand.
+  frame.annonce = button(frame, "Annoncer", 170, function()
+    local o = order()
+    say(select(2, ns.annoncer(o, nil, o)))
+    refresh()
+  end)
+  frame.annonce:SetPoint("LEFT", frame.nouvelle, "RIGHT", 6, 0)
+  ns.onglets(frame, 1) -- et l'onglet « Annonces lues » (Annonce.lua)
   frame:SetScript("OnShow", function() refresh() end)
   frame:RegisterEvent("ITEM_DATA_LOAD_RESULT") -- un nom d'objet arrive du serveur
+  frame:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE") -- un canal rejoint ou quitté : le Commerce, pour « Annoncer »
   frame:SetScript("OnEvent", function() refresh() end)
 end
 
@@ -371,6 +381,14 @@ function refresh()
   frame.go:SetText(c and "Contre-proposer" or ns.commandeEnvoyee(o) and "Voir la demande" or "Préparer la demande")
   frame.clair:SetShown(not c)
   frame.nouvelle:SetShown(not c)
+  frame.annonce:SetShown(not c)
+  local texte, peut, quand = ns.annonceEtiquette(o)
+  frame.annonce:SetText(texte)
+  frame.annonce:SetEnabled(peut)
+  if quand and frame.minuteur ~= quand then -- « Annoncer à 14:32 » : le bouton se réarme tout seul à l'heure dite
+    frame.minuteur = quand
+    C_Timer.After(quand - GetTime() + 0.1, refresh)
+  end
 end
 ns.refreshCommandeMain = refresh
 

@@ -33,6 +33,13 @@ Handshake = {
     ns.openContracts(ns.ctKey(n))
   end,
   EnClair = function(p, i) ns.sendOrder(ns.projetCommande(p, i)) end, -- la demande en texte lisible, chuchotée à l'artisan
+  -- « Annoncer dans le Commerce » : l'Annonce de la commande i (« WTB [lien] xN, … »), un clic = un message ; refusée (vide,
+  -- partie, trop tôt, hors d'une ville), la raison est dite dans le chat. Rend true, ou nil.
+  Annoncer = function(p, i)
+    local ok, err = ns.projetAnnoncer(p, i)
+    if not ok then print("|cffe64d4dHandshake :|r " .. err .. ".") end
+    return ok
+  end,
   Importer = function() ns.openImport() end,                        -- une liste reçue, en projet
   -- L'apport : une case que le demandeur fournit lui-même, un terme des commandes du projet (jamais du projet).
   Apports = function(p) return ns.projetApports(p) end,             -- { [itemID] = true }, ou nil

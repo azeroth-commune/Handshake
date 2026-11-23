@@ -33,6 +33,14 @@ Tout ce qui n'est pas apporté ; l'artisan la fabrique ou l'achète comme il veu
 Le prix proposé pour la part de l'artisan et son travail.
 _Avoid_: pourboire, tip
 
+### Le chat public
+
+**Annonce**:
+Une ligne publiée ou lue dans le chat public (canal Commerce, cris) : la mienne, « WTB [lien] xN, … », publiée d'un clic
+depuis une commande pas encore partie ; ou celle d'un autre, lue parce qu'elle demande ce que je sais fabriquer ou un métier que j'ai (la fenêtre « Annonces lues »). Elle
+n'engage à rien : seul le contrat engage.
+_Avoid_: offre (c'est le prix), publicité
+
 ## Ambiguïtés relevées
 
 - « Brouillon » désignait aussi un contrat préparé mais pas envoyé. Tranché le 20/11/2026 : le mot va au Brouillon des projets ; un tel contrat est **préparé**.
