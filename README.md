@@ -13,6 +13,13 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   (`Composants.Tenir`). Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` :
   supprimer un projet efface ses commandes pas encore parties, jamais un contrat ; à l'entrée en jeu, les commandes
   d'un projet qui n'existe plus sont oubliées.
+- **Avec Trade Board** (Kurki ; `## OptionalDeps: TradeBoard`), quand son API hôte a la version attendue
+  (`tradeBoard.hostApiVersion == 1`), « Annoncer » ne publie plus lui-même : il ouvre son dialogue de demande, rempli
+  avec le premier objet et sa quantité (`OpenRequestDialog("item", id, n)`, le joueur y choisit guilde ou Commerce), et
+  ajoute les autres objets à son tableau (`AddRequest`, guilde par défaut). Quand la commande part en contrat, est
+  remplacée ou que son projet est supprimé, Handshake retire de son tableau les demandes qu'il y a mises
+  (`HasOwnRequest`, `RemoveOwnRequest`). Seules ces fonctions de son API hôte sont appelées, jamais `Integrate` (un seul
+  hôte possible : Profession Master) ni son intérieur. Sans lui, ou avec une autre version, l'annonce de Handshake.
 
 ## API publique
 

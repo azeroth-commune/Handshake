@@ -31,7 +31,10 @@ local function commandes(p) return rangement(p).liste end
 -- Supprimer un projet (Composants le signale) efface ses commandes pas encore parties ; jamais un contrat : une commande
 -- envoyée reste dans Contrats, sans écart calculé (plus de projet à comparer).
 function ns.oublierCommandes(p)
-  if p and HandshakeDB.commandes then HandshakeDB.commandes[p.id] = nil end
+  local r = p and HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  if not r then return end
+  for _, c in ipairs(r.liste) do ns.retirerTB(c) end -- ses demandes au tableau de Trade Board (Annonce.lua)
+  HandshakeDB.commandes[p.id] = nil
 end
 
 -- L'arbre de la demande (CONCEPTION.md) d'un projet ou d'une part de projet { lines, choix } : toutes les recettes, aucun
@@ -585,7 +588,7 @@ function ns.brancherComposants()
   if not C or ns.branche then return end
   ns.branche = true
   for id in pairs(HandshakeDB.commandes or {}) do
-    if not C.Projet(id) then HandshakeDB.commandes[id] = nil end
+    if not C.Projet(id) then ns.oublierCommandes({ id = id }) end
   end
   C.QuandChange(function(p, quoi) if quoi == "supprime" then ns.oublierCommandes(p) end end)
 end

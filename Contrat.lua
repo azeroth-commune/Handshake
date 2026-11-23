@@ -310,6 +310,7 @@ function ns.ctPropose(c)
   c.hash, c.author, c.status = ns.ctHash(ns.ctCanonical(c)), ns.me(), "envoye"
   store()[key(c)] = c
   send(c.peer.name, ns.ctMessage(c))
+  ns.balayerTB() -- une commande partie en contrat quitte le tableau de Trade Board (Annonce.lua)
   return c
 end
 

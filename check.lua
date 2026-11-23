@@ -230,6 +230,66 @@ do
 end
 print("Handshake : annoncer dans le Commerce OK")
 
+-- Trade Board (#53), son API hôte en version 1 : « Annoncer » ouvre son dialogue rempli pour le premier objet et ajoute les
+-- autres à son tableau, rien n'est publié par Handshake ; commande partie, remplacée ou son projet supprimé : ses demandes
+-- sont retirées du tableau (seulement celles que Handshake y a mises). Autre version, ou absent : l'annonce de Handshake.
+do
+  local appels, envoyes, possede = {}, {}, { [3858] = true } -- une demande à moi, d'avant Handshake : jamais retirée
+  local function faux(version)
+    local tb = { hostApiVersion = version }
+    for _, f in ipairs({ "OpenRequestDialog", "AddRequest", "RemoveOwnRequest", "Integrate" }) do
+      tb[f] = function(self, kind, id, q)
+        assert(self == tb, "appelé comme méthode")
+        appels[#appels + 1] = ("%s %s %s %s"):format(f, kind, id, q or "")
+        if f == "AddRequest" or f == "OpenRequestDialog" then possede[id] = true elseif f == "RemoveOwnRequest" then possede[id] = nil end
+      end
+    end
+    tb.HasOwnRequest = function(_, kind, id) return kind == "item" and possede[id] == true end
+    return tb
+  end
+  local T0 = C_Timer
+  C_Timer = { After = noop, NewTicker = noop }
+  SendChatMessage = function(msg) envoyes[#envoyes + 1] = msg end
+  GetChannelList = function() return 2, "Commerce - Ville", false end
+  HandshakeDB.contracts = HandshakeDB.contracts or {}
+  tradeBoard = faux(1)
+  local m = ns.mainNouvelle()
+  m.lines = { { id = 7963, qty = 2 }, { id = 7920, qty = 1 }, { id = 3858, qty = 5 } }
+  assert(ns.annoncer(m, nil, m) and #envoyes == 0, "avec Trade Board : rien publié par Handshake")
+  assert(appels[1] == "OpenRequestDialog item 7963 2" and appels[2] == "AddRequest item 7920 1" and appels[3] == "AddRequest item 3858 5",
+    table.concat(appels, " / "))
+  assert(ns.annonceEtiquette(m) == "Annoncer (Trade Board)", "le bouton dit par où l'annonce passe")
+  appels = {}
+  ns.balayerTB()
+  assert(#appels == 0, "pas encore partie : rien de retiré")
+  m.contrat, HandshakeDB.contracts.tbk = "tbk", { status = "envoye" }
+  ns.balayerTB()
+  table.sort(appels)
+  assert(#appels == 2 and appels[1] == "RemoveOwnRequest item 7920 " and appels[2] == "RemoveOwnRequest item 7963 " and possede[3858],
+    "partie en contrat : retirées, sauf celle d'avant : " .. table.concat(appels, " / "))
+  -- Une nouvelle commande à la main remplace l'ancienne ; un projet supprimé emporte ses commandes.
+  appels, m = {}, ns.mainNouvelle()
+  m.lines = { { id = 7927, qty = 1 } }
+  ns.annoncer(m, nil, m)
+  ns.mainNouvelle()
+  assert(appels[#appels] == "RemoveOwnRequest item 7927 ", "commande remplacée : retirée")
+  local p = projetPour("Bel", nil, { { id = 7920, qty = 4 } })
+  ns.projetAnnoncer(p, 1)
+  assert(appels[#appels] == "OpenRequestDialog item 7920 4", "commande d'un projet : le dialogue")
+  ns.oublierCommandes(p)
+  assert(appels[#appels] == "RemoveOwnRequest item 7920 ", "projet supprimé : retirée")
+  for _, a in ipairs(appels) do assert(not a:find("^Integrate"), "jamais Integrate") end
+  -- Autre version de l'API, ou absent : l'annonce de Handshake, sans erreur.
+  for _, tb in ipairs({ faux(2), false }) do
+    tradeBoard, appels = tb or nil, {}
+    local n = #envoyes
+    assert(ns.annoncer({ lines = { { id = 7963, qty = tb and 3 or 4 } } }) and #envoyes == n + 1 and #appels == 0, "repli sur l'annonce de Handshake")
+  end
+  HandshakeDB.main, HandshakeDB.contracts.tbk = nil, nil
+  C_Timer, SendChatMessage, GetChannelList = T0, nil, nil
+end
+print("Handshake : annoncer par Trade Board OK")
+
 
 aucunReleve("après les calculs")
 -- Chargement (ADDON_LOADED) : les relevés d'un Handshake d'avant sont purgés, les données propres restent.
@@ -1130,8 +1190,8 @@ do
     assert(readme:find("H." .. f .. "(", 1, true), "README : Handshake." .. f)
   end
   assert(n == #API, "l'API publique, rien de plus")
-  assert(not HSTOC:find("OptionalDeps", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
-    "le socle requis ; plus de reliquat BeAGoodPal (Composants déclare Handshake, pas l'inverse : pas de cycle)")
+  assert(HSTOC:find("\n## OptionalDeps: TradeBoard\n", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
+    "le socle requis ; Trade Board seul en option (#53) : Composants déclare Handshake, pas l'inverse, pas de cycle")
 end
 print("Handshake : API publique OK")
 

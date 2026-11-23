@@ -83,6 +83,64 @@ test("hors d'une ville, le bouton « Annoncer » le dit", function()
     HandshakeDB.main = nil
 end)
 
+-- Un faux Trade Board (son API hôte) : rend la table et le journal de ses appels.
+local function fauxTradeBoard(version)
+    local appels, possede = {}, {}
+    local tb = { hostApiVersion = version }
+    for _, f in ipairs({ "OpenRequestDialog", "AddRequest", "RemoveOwnRequest" }) do
+        tb[f] = function(_, kind, id, q)
+            appels[#appels + 1] = f .. " " .. kind .. " " .. id .. (q and (" " .. q) or "")
+            possede[id] = f ~= "RemoveOwnRequest" or nil
+        end
+    end
+    tb.HasOwnRequest = function(_, _, id) return possede[id] == true end
+    return tb, appels
+end
+
+test("avec Trade Board (version 1) : son dialogue rempli, rien publié par Handshake ; partie en contrat, retirée", function()
+    local tb, appels = fauxTradeBoard(1)
+    tradeBoard = tb
+    local ok, err = pcall(enVille, function(envoyes)
+        HandshakeDB.main = nil
+        local m = { lines = { { id = 2841, qty = 6 } }, apporte = {} }
+        HandshakeDB.main = m
+        SlashCmdList.HANDSHAKE("liste")
+        boutonQui(HandshakeMainFrame, function(t) return t == "Annoncer (Trade Board)" end):Click()
+        assertEquals(0, #envoyes)
+        assertEquals("OpenRequestDialog item 2841 6", appels[1])
+        -- L'artisan connu (son chuchotement donne son GUID), la demande préparée puis envoyée depuis Contrats.
+        FireEvent("CHAT_MSG_WHISPER", "bonjour", "Bel Dupont", "", "", "Bel Dupont", "", 0, 0, "", 0, 1, "Player-1-0000BE11")
+        m.player = "Bel Dupont"
+        boutonQui(HandshakeMainFrame, function(t) return t == "Préparer la demande" end):Click()
+        boutonQui(HandshakeContratsFrame, function(t) return t == "Envoyer la proposition" end):Click()
+        assertEquals("envoye", HandshakeDB.contracts[m.contrat].status)
+        assertEquals("RemoveOwnRequest item 2841", appels[#appels])
+        HandshakeDB.contracts[m.contrat] = nil
+    end)
+    tradeBoard = nil
+    if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
+    HandshakeMainFrame:Hide()
+    HandshakeDB.main = nil
+    if not ok then error(err, 0) end
+end)
+
+test("Trade Board d'une autre version, ou absent : l'annonce de Handshake, sans erreur", function()
+    for _, version in ipairs({ 2, false }) do
+        local tb, appels = fauxTradeBoard(version)
+        tradeBoard = version and tb or nil
+        enVille(function(envoyes)
+            HandshakeDB.main = { lines = { { id = 2842, qty = version and 3 or 5 } }, apporte = {} }
+            SlashCmdList.HANDSHAKE("liste")
+            boutonQui(HandshakeMainFrame, function(t) return t == "Annoncer" end):Click()
+            assertEquals(1, #envoyes)
+            assertEquals(0, #appels)
+        end)
+    end
+    tradeBoard = nil
+    HandshakeMainFrame:Hide()
+    HandshakeDB.main = nil
+end)
+
 if not Composants then return end
 
 test("« Annoncer dans le Commerce » dans le menu « Plus » de Composants : regroupée, 255 octets, liens intacts", function()

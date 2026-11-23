@@ -18,6 +18,7 @@ end
 function ns.mainNouvelle()
   local old = HandshakeDB.main
   if old and old.contrat and not ns.commandeEnvoyee(old) then ns.ctStore()[old.contrat] = nil end
+  ns.retirerTB(old) -- ses demandes au tableau de Trade Board (Annonce.lua)
   HandshakeDB.main = nil
   return ns.commandeMain()
 end
@@ -320,7 +321,7 @@ local function build()
   frame.nouvelle = button(frame, "Nouvelle", 90, function() ns.mainNouvelle(); refresh() end)
   frame.nouvelle:SetPoint("LEFT", frame.clair, "RIGHT", 6, 0)
   -- « Annoncer » : l'Annonce dans le Commerce (Annonce.lua) ; le bouton dit s'il peut partir, et sinon pourquoi ou quand.
-  frame.annonce = button(frame, "Annoncer", 150, function()
+  frame.annonce = button(frame, "Annoncer", 170, function()
     local o = order()
     say(select(2, ns.annoncer(o, nil, o)))
     refresh()
