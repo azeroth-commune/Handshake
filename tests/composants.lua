@@ -61,7 +61,7 @@ test("avec Composants : /handshake ouvre la fenêtre des projets, sa barre des c
 end)
 
 -- Commandes (#6) : « Commander » sur un bloc ajoute une commande à la liste du projet, sans nouvelle page. Les blocs
--- viennent de la base des recettes du socle (sa réserve Classic, AzerothCommune/RecettesClassic.lua, générée, hors du repo :
+-- viennent de la base des recettes du socle (sa réserve Classic, AzerothCommune/RecettesReserve.lua, générée, hors du repo :
 -- à copier dans une branche en worktree),
 -- recettes pas apprises comprises (« tout »).
 local function tous(f, ok, out)
@@ -92,7 +92,7 @@ test("Commander un bloc ajoute une commande au projet, sur la même page", funct
     local nb = #ComposantsDB.projets
     assertEquals(1, #commandes()) -- tout le projet
     local commander = boutons(function(t) return t == "Commander" end)
-    assertTrue(#commander > 0, "des blocs dessinés (AzerothCommune/RecettesClassic.lua présent ?)")
+    assertTrue(#commander > 0, "des blocs dessinés (AzerothCommune/RecettesReserve.lua présent ?)")
     commander[1]:Click()
     assertEquals(nb, #ComposantsDB.projets)
     assertTrue(affiche("Essai : ceintures multi-métiers"))
@@ -108,7 +108,7 @@ test("Démo « set » : pas de boucle de transmutation, les essences s'achètent
     SlashCmdList.COMPOSANTS("demo set")
     local caseDe = {}
     for _, c in ipairs(tous(ComposantsFrame, function(c) return c.node ~= nil end)) do caseDe[c.node.id] = c.node end
-    assertNotNil(caseDe[7076], "une case Essence de terre (AzerothCommune/RecettesClassic.lua présent ?)")
+    assertNotNil(caseDe[7076], "une case Essence de terre (AzerothCommune/RecettesReserve.lua présent ?)")
     assertNotNil(caseDe[7080], "une case Essence d'eau")
     for _, id in ipairs({ 7076, 7078, 7080, 7082, 12803, 12808 }) do
         assertTrue(caseDe[id] == nil or caseDe[id].made == 0, "essence " .. id .. " fabriquée")

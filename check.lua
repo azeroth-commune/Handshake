@@ -25,11 +25,11 @@ local function aucunReleve(quand)
 end
 -- Le socle (dépôt voisin, chargé avant Handshake comme dans le jeu), fichiers dans l'ordre de sa TOC avec son espace de
 -- noms privé : fenêtres, montants, noms d'objets, capture, cours de l'HV (son scan, sinon Auctionator…), la base.
--- ponytail: VendorData.lua et RecettesClassic.lua (générés, ignorés par git) sont sautés : les marchands et la réserve des
--- recettes sont ceux du test (acns.recettesClassic).
+-- ponytail: VendorData.lua et RecettesReserve.lua (générés, ignorés par git) sont sautés : les marchands et la réserve des
+-- recettes sont ceux du test (acns.recettesReserve).
 local acns = {}
 for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+)%.lua") do
-  if f ~= "VendorData" and f ~= "RecettesClassic" and f ~= "CatalogueObjets" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
+  if f ~= "VendorData" and f ~= "RecettesReserve" and f ~= "CatalogueObjets" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
 end
 -- Handshake d'abord, puis Composants (il déclare Handshake en OptionalDeps), puis l'entrée en jeu (PLAYER_LOGIN) : Handshake
 -- se branche sur Composants.
@@ -1388,10 +1388,10 @@ C_Item.GetItemInfo = noop
 assert(ns.recipes()[5] and ns.findItem("barre de cuivre") == 2840 and ns.findItem("Fonte du cuivre") == 2840, "noms en mémoire")
 aucunReleve("noms demandés")
 -- Base des recettes du socle (Handshake#36, AzerothCommune#48) : Handshake y souscrit et la lit par Lire. La réserve
--- Classic est celle du socle (privée : acns.recettesClassic), ajoutée pour les objets sans recette vue, jamais par-dessus
+-- Classic est celle du socle (privée : acns.recettesReserve), ajoutée pour les objets sans recette vue, jamais par-dessus
 -- une recette vue du même objet.
 assert(AzerothCommuneDB.souscriptions["base des recettes"], "Handshake souscrit à la base des recettes")
-acns.recettesClassic = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 }, 1 },
+acns.recettesReserve = { [9001] = { 2840, 1, 1, "Minage", "Barre de cuivre (Classic)", { 2770, 2 }, 1 },
   [9002] = { 4255, 1, 1, "Travail du cuir", "Armure verte en cuir", { 4234, 9 }, 175 },
   [5] = { 2840, 1, 1, "Minage", "Fonte du cuivre", { 2770, 1 }, 25 } }
 local merged = ns.recipes()
@@ -1399,7 +1399,7 @@ assert(merged[5] and not merged[9001], "barre de cuivre déjà vue : la recette 
 assert(merged[9002] and merged[9002].output == 4255 and merged[9002].reagents[1].qty == 9, "armure verte en cuir : recette Classic")
 -- Handshake ne livre plus de réserve et ne remet plus rien au socle (Handshake#36).
 local hstoc = io.open("Handshake/Handshake.toc"):read("*a")
-assert(not hstoc:find("RecettesClassic", 1, true), "plus de réserve dans la TOC de Handshake")
+assert(not hstoc:find("RecettesReserve", 1, true), "plus de réserve dans la TOC de Handshake")
 for f in hstoc:gmatch("([%w_]+)%.lua") do
   local code = io.open("Handshake/" .. f .. ".lua"):read("*a"):gsub("%-%-[^\n]*", "")
   for _, m in ipairs({ "HandshakeClassicRecipes", "RemettreRecettes" }) do assert(not code:find(m, 1, true), f .. ".lua : " .. m) end

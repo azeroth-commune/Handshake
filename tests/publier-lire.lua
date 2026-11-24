@@ -149,7 +149,7 @@ test("Annonces lues : WTB d'un objet que je sais faire, listé et nettoyé ; WTS
     for k, r in pairs(AzerothCommune:Lire("base des recettes") or {}) do
         if type(k) == "number" and r.output then cle, objet = k, r.output break end
     end
-    assertNotNil(cle, "une recette dans la base (RecettesClassic.lua du socle présent ?)")
+    assertNotNil(cle, "une recette dans la base (RecettesReserve.lua du socle présent ?)")
     local avant, chuchotes = moi.recipes, {}
     moi.recipes = { Forge = { rank = 300, known = { [cle] = "easy" } } }
     local S, CS = SendChatMessage, C_ChatInfo.SendChatMessage
