@@ -139,7 +139,8 @@ print("Handshake : commandes et apports hors du projet OK")
 commune.Conteneurs, AzerothCommuneDB.chars = realContainers, {}
 
 -- Suggestions de la commande à la main : la recherche d'objets du socle (AzerothCommune#49), pas d'index à Handshake.
-assert(ns.chercherObjets == commune.ChercherObjets and ns.itemIndex == nil and ns.suggestItems == nil, "la recherche du socle")
+assert(ns.chercherObjets == nil and ns.rechercheObjets == nil and ns.itemIndex == nil and ns.suggestItems == nil, "la recherche du socle")
+assert(io.open("Handshake/CommandeMain.lua"):read("*a"):find("AzerothCommune.RechercheObjets(", 1, true), "sa barre de recherche")
 
 
 -- Texte échangé : liens réels (~80 caractères), découpés sous 255, relus à l'identique.
