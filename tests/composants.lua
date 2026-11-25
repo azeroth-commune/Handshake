@@ -418,3 +418,108 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
     HandshakeDB.contracts[cle] = nil
     if not ok then error(err, 0) end
 end) end)
+
+-- Les contrats dans les Besoins (Composants#27) : une ligne par contrat du projet, « Contrat n°… · à recevoir », verte
+-- « reçu » à la livraison ; Lancer marche avec un contrat pas signé ; tout réuni mais un contrat ouvert, on reste en
+-- Réunir, livré : Fabriquer ; mes apports sont des lignes des Besoins ; abandonné (ou retiré), le bloc revient dans
+-- l'arbre et ses composants dans les Besoins. Les sacs du simulateur sont vides : les lignes d'objets restent à réunir.
+local function lignesContrat()
+    return tous(ComposantsBesoinsFrame, function(c) return c.texte ~= nil and c.abandon ~= nil and c:IsVisible() end)
+end
+local function objetsBesoins()
+    local out = {}
+    for _, c in ipairs(tous(ComposantsBesoinsFrame, function(c) return c.itemID ~= nil and c:IsShown() end)) do out[c.itemID] = c end
+    return out
+end
+local function besoinsAussi(f)
+    sansRecettes(function()
+        local ok, err = pcall(f)
+        if ComposantsBesoinsFrame then ComposantsBesoinsFrame:Hide() end
+        if not ok then error(err, 0) end
+    end)
+end
+
+test("Besoins : la ligne du contrat, verte à la livraison ; les apports ; abandonné, le bloc et ses composants reviennent", function() besoinsAussi(function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = affichePas()
+    -- Les Besoins sans contrat, pour comparer.
+    ComposantsFrame.lancerB:Click()
+    local sans = objetsBesoins()
+    assertEquals(0, #lignesContrat(), "aucun contrat : aucune ligne de contrat")
+    Composants.Ouvrir(p.id)
+    p.phase = nil -- (revenu en Préparer pour commander)
+    Composants.Ouvrir(p.id)
+    local commander = boutons(function(t) return t == "Commander" end)
+    commander[#commander]:Click() -- la première étape : son bloc
+    local c = liste(p)[#liste(p)]
+    artisanConnu()
+    taper((champs()), ARTISAN)
+    local ct = verifierEtEnvoyer(c)
+    assertEquals("envoye", ct.status)
+    panneau():Hide()
+    ComposantsFrame.lancerB:Click()
+    assertEquals("reunir", p.phase, "Lancer avec un contrat pas signé")
+    local l = lignesContrat()
+    assertEquals(1, #l, "une ligne par contrat")
+    assertEquals(("Contrat n°%d · à recevoir"):format(c.n), l[1].texte:GetText())
+    assertTrue(l[1].abandon:IsVisible(), "« Abandonner » sur la ligne")
+    local avec = objetsBesoins()
+    local sorti
+    for id in pairs(sans) do if not avec[id] then sorti = id end end
+    assertNotNil(sorti, "le bloc confié : ses composants sortent des Besoins")
+    -- Livré : la ligne passe au vert ; les lignes d'objets manquent encore, on reste en Réunir.
+    ct.status = "clos" -- (comme après le dernier échange vérifié)
+    Composants.Rafraichir()
+    l = lignesContrat()
+    assertEquals(("|cff59cc73Contrat n°%d · reçu|r"):format(c.n), l[1].texte:GetText())
+    assertTrue(not l[1].abandon:IsVisible(), "livré : rien à abandonner")
+    assertEquals("reunir", p.phase, "des objets à réunir encore")
+    -- Retiré (comme s'il l'avait été) : le bloc revient, la ligne part, ses composants reviennent.
+    ct.status = "retire"
+    Composants.Rafraichir()
+    assertEquals(0, #lignesContrat(), "retiré : plus de ligne")
+    assertNotNil(objetsBesoins()[sorti], "retiré : ses composants reviennent dans les Besoins")
+    -- Commandé de nouveau, un apport coché : une ligne des Besoins ; Abandonner (préparé) : le bloc revient dans l'arbre.
+    p.phase = nil
+    Composants.Ouvrir(p.id)
+    commander = boutons(function(t) return t == "Commander" end)
+    commander[#commander]:Click()
+    local cocher, id
+    for _, e in ipairs(entrees(menu("Apports"))) do
+        local t = MenuUtil.GetElementText(e) or ""
+        if t:find("× ", 1, true) and not t:find("d'un autre bloc", 1, true) then cocher = e break end
+    end
+    assertNotNil(cocher, "une case à cocher dans le menu des apports")
+    menu("Apports"):Pick(cocher, MenuInputContext.MouseButton, "LeftButton")
+    id = next(HandshakeDB.commandes[p.id].apports)
+    panneau():Hide()
+    ComposantsFrame.lancerB:Click()
+    assertNotNil(objetsBesoins()[id], "l'apport : une ligne des Besoins")
+    assertEquals(1, #lignesContrat())
+    lignesContrat()[1].abandon:Click()
+    assertEquals(0, #lignesContrat(), "abandonné : plus de ligne")
+    assertNotNil(objetsBesoins()[sorti], "abandonné : ses composants reviennent dans les Besoins")
+    p.phase = nil
+    Composants.Ouvrir(p.id)
+    assertEquals(0, #casesContrat(), "abandonné : le bloc revient dans l'arbre")
+    assertEquals(#commander, #boutons(function(t) return t == "Commander" end), "il se commande de nouveau")
+end) end)
+
+test("Tout réuni mais le contrat ouvert : Réunir ; livré : Fabriquer", function() besoinsAussi(function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = affichePas()
+    boutons(function(t) return t == "Commander tout" end)[1]:Click()
+    artisanConnu()
+    taper((champs()), ARTISAN)
+    local ct = verifierEtEnvoyer(liste(p)[1])
+    panneau():Hide()
+    ComposantsFrame.lancerB:Click()
+    assertEquals("reunir", p.phase, "Lancer : Réunir")
+    assertNil(next(objetsBesoins()), "tout confié, rien à apporter : rien à réunir")
+    assertEquals(1, #lignesContrat())
+    Composants.Rafraichir()
+    assertEquals("reunir", p.phase, "le contrat ouvert : on reste en Réunir")
+    ct.status = "clos"
+    Composants.Rafraichir()
+    assertEquals("fabriquer", p.phase, "livré : Fabriquer tout seul")
+end) end)

@@ -14,6 +14,10 @@
 --   proposition » le fait partir ; envoyer la v1 vaut signature dès que l'artisan accepte.
 -- - Hors Préparer (Réunir, Fabriquer, Fini : p.phase, l'arbre en lecture seule), seulement la case et son état : ni
 --   Commander, ni Commander tout, et le panneau en lecture (son état, « Voir dans Contrats »).
+-- - Dans les Besoins (l'emplacement des Besoins, Composants#27) : une ligne par contrat vivant du projet, « Contrat n°12 ·
+--   à recevoir », verte « reçu » quand il est livré, son état, « Abandonner » (même hors Préparer : la
+--   lecture seule ne vaut que pour l'emplacement du bloc) ; clic = son panneau. Le projet ne passe en
+--   Fabriquer (puis Fini) que ses contrats livrés ; mes apports sont des lignes des Besoins comme les autres.
 local _, ns = ...
 
 local W8 = "Interface\\Buttons\\WHITE8x8"
@@ -41,6 +45,33 @@ local function poTexte(c) return c and c > 0 and (("%.2f"):format(c / 10000):gsu
 local function enLecture(p) return p.phase ~= nil and p.phase ~= "preparer" end
 -- La clé du contrat à voir dans Contrats (la Réponse, ou le contrat de ce contrat préparé, brouillon compris), nil sinon.
 local function aVoir(v) return v.reponse or (v.contrat and ns.ctStore()[v.contrat] and v.contrat) end
+
+-- « Abandonner » le contrat i (ns.abandonner, Commande.lua : selon son état, effacé, retiré, refusé ou lâché) ; ce qui a
+-- été fait est dit dans le chat. Rend true si le bloc est revenu.
+local DIT = {
+  efface = "contrat n°%d abandonné : le bloc revient dans le projet.",
+  retire = "contrat n°%d retiré (%s en est prévenu) : le bloc revient dans le projet.",
+  refuse = "contrat n°%d refusé (%s en est prévenu) : le bloc revient dans le projet.",
+  lache = "contrat n°%d lâché par le projet : signé, il reste dans Contrats jusqu'à son échéance, rien n'est envoyé à %s ; le bloc revient dans le projet.",
+}
+local function abandonner(p, i)
+  local c = liste(p)[i]
+  local n, qui = c and c.n or 0, c and (ns.projetCommande(p, i).player or "l'artisan")
+  local fait, err = ns.abandonner(p, i)
+  if not fait then dire(err) return end
+  print("|cffa98fffContrats :|r " .. DIT[fait]:format(n, qui))
+  redessiner()
+  return true
+end
+-- Ce qu'« Abandonner » fera, pour la bulle : selon l'état du contrat.
+local function abandonDit(v)
+  if not v.fige then return "Abandonner : il s'efface, le bloc revient" end
+  if v.etat == "signé" then return "Abandonner : le projet le lâche ; signé, il reste dans Contrats jusqu'à l'échéance (rien n'est envoyé)" end
+  if v.etat == "contre-proposé" and ns.ctStatus(ns.ctStore()[v.contrat]) == "a_signer" then
+    return "Abandonner : sa contre-proposition est refusée (il en est prévenu)"
+  end
+  return "Abandonner : ta proposition est retirée (il en est prévenu)"
+end
 
 -- Les zones où chaque contrat est dessiné (pour y ancrer son panneau) : zones["<projet>:<contrat>"] = la zone.
 local zones = {}
@@ -181,14 +212,12 @@ local function construire()
     if voir then root:CreateButton("Voir dans Contrats", function() ns.openContracts(voir) end) end
     if v.reponse or enLecture(p) then return end
     root:CreateButton("Envoyer en clair", function() ns.sendOrder(ns.projetCommande(p, i)) end)
-    if v.fige then return end
-    root:CreateButton("Annoncer dans le Commerce", function() dire(select(2, ns.projetAnnoncer(p, i))); redessiner() end)
-    root:CreateButton("Abandonner", function()
-      local ok, err = ns.abandonner(p, i)
-      if not ok then return dire(err) end
-      P:Hide()
-      redessiner()
-    end)
+    if not v.fige then
+      root:CreateButton("Annoncer dans le Commerce", function() dire(select(2, ns.projetAnnoncer(p, i))); redessiner() end)
+    end
+    if not ns.contratClos(liste(p)[i]) then
+      root:CreateButton("Abandonner", function() if abandonner(p, i) then P:Hide() end end)
+    end
   end)
   -- Sa case disparue (autre projet affiché, contrat abandonné, fenêtre fermée) : le panneau se ferme.
   P:SetScript("OnUpdate", function(self)
@@ -370,12 +399,114 @@ local function caseContrat(zone, p, i)
   b:Show()
 end
 
--- Le fournisseur de l'emplacement du bloc (Composants.Emplacements, branché à l'entrée en jeu : ns.brancherComposants).
+---------------------------------------------------------------------------------------------------
+-- Les lignes des contrats dans les Besoins (l'emplacement des Besoins) : une par contrat vivant, réutilisées d'un dessin à
+-- l'autre. « Contrat n°12 · à recevoir », son état, « Abandonner » ; livré : « Contrat n°12 · reçu », en vert.
+local READY = "|TInterface\\RaidFrame\\ReadyCheck-Ready:14|t"
+local HAUT = 28
+local function ligneContrat(zone, k)
+  zone.hsLignes = zone.hsLignes or {}
+  local b = zone.hsLignes[k]
+  if b then return b end
+  b = CreateFrame("Button", nil, zone)
+  b:SetHeight(HAUT)
+  b.icone = b:CreateTexture(nil, "ARTWORK")
+  b.icone:SetSize(20, 20)
+  b.icone:SetPoint("TOPLEFT", 0, -2)
+  b.texte = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  b.texte:SetPoint("TOPLEFT", 26, -4)
+  b.texte:SetJustifyH("LEFT")
+  b.etat = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  b.abandon = CreateFrame("Button", nil, b, "UIPanelButtonTemplate")
+  b.abandon:SetSize(90, 20)
+  b.abandon:SetPoint("TOPRIGHT", 0, -1)
+  b.abandon:SetText("Abandonner")
+  b.abandon:SetScript("OnClick", function(self) abandonner(b.p, rangDe(b.p, b.id)) end)
+  b.abandon:SetScript("OnEnter", function(self)
+    local q = Composants.Projet(b.p.id)
+    local i = q and rangDe(q, b.id)
+    if not i then return end
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(abandonDit(ns.projetCommande(q, i)), 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  b.abandon:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  b:SetScript("OnClick", function(self) ns.ouvrirPanneau(self.p, self.id) end)
+  b:SetScript("OnEnter", function(self)
+    local q = Composants.Projet(self.p.id)
+    local i = q and rangDe(q, self.id)
+    if not i then return end
+    local v = ns.projetCommande(q, i)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:AddLine(("Contrat n°%d · %s"):format(liste(q)[i].n or 0, v.part))
+    GameTooltip:AddLine(("%s · %s"):format(v.player or "artisan à choisir", etatEnCouleur(v)), 1, 1, 1)
+    for _, l in ipairs(v.lines) do GameTooltip:AddLine(("%d× %s"):format(l.qty, ns.itemLabel(l.id)), 0.8, 0.8, 0.8) end
+    GameTooltip:AddLine("Clic : son panneau (artisan, offre, apports, envoyer)", 0.66, 0.56, 1)
+    GameTooltip:Show()
+  end)
+  b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  zone.hsLignes[k] = b
+  return b
+end
+
+local function besoins(zone, p)
+  local vivants = ns.contratsVivants(p)
+  for k, i in ipairs(vivants) do
+    local c, v = liste(p)[i], ns.projetCommande(p, i)
+    local recu = ns.contratClos(c)
+    local b = ligneContrat(zone, k)
+    b.p, b.id = p, c.id
+    zones[cle(p, c.id)], b.hsCle = b, cle(p, c.id)
+    b:ClearAllPoints()
+    b:SetPoint("TOPLEFT", 0, -(k - 1) * HAUT)
+    b:SetWidth(zone:GetWidth())
+    b.icone:SetTexture(v.lines[1] and C_Item.GetItemIconByID(v.lines[1].id) or "Interface\\Icons\\INV_Misc_Note_01")
+    b.texte:SetText(recu and ("|cff59cc73Contrat n°%d · reçu|r"):format(c.n) or ("Contrat n°%d · à recevoir"):format(c.n))
+    b.etat:ClearAllPoints()
+    b.etat:SetPoint("TOPRIGHT", recu and b or b.abandon, recu and "TOPRIGHT" or "TOPLEFT", recu and 0 or -6, recu and -4 or -3)
+    b.etat:SetText(recu and READY or etatEnCouleur(v))
+    b.abandon:SetShown(not recu)
+    b:Show()
+  end
+  for k = #vivants + 1, #(zone.hsLignes or {}) do zone.hsLignes[k]:Hide() end
+  if panneau and panneau:IsShown() then sync() end
+  return #vivants * HAUT
+end
+
+-- Mes apports : ceux que je coche, d'un contrat vivant (ns.elaguerApports, la seule règle), et les termes de mes contrats
+-- partis et vivants.
+local function aDonner(p)
+  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  if not r or r.reponse then return nil end
+  local out = {}
+  for id in pairs(ns.elaguerApports(p) or {}) do out[id] = true end
+  for _, i in ipairs(ns.contratsVivants(p)) do
+    local ct = ns.commandeEnvoyee(r.liste[i])
+    for _, l in ipairs(ct and ct.m or {}) do out[l.id] = true end
+  end
+  return out
+end
+
+-- Le fournisseur de l'emplacement du bloc et des Besoins (Composants.Emplacements, branché à l'entrée en jeu :
+-- ns.brancherComposants).
 ns.emplacement = {
   confie = function(p, bloc) return ns.contratDuBloc(p, bloc and bloc.key) ~= nil end,
-  -- Mes apports (dans une Réponse : les siens) sortent de l'arbre, seulement ceux d'un contrat vivant (un bloc rendu n'en
-  -- a plus) ; rien n'est rangé pour un projet qu'on ne fait que lire.
-  apports = function(p) return ns.elaguerApports(p) end,
+  -- Dans une Réponse, ses apports (ceux du demandeur) sortent de mon arbre ; les miens (demandeur), non : je dois les
+  -- avoir sur moi pour les donner (aDonner). Dans les deux cas, seulement ceux d'un contrat vivant (ns.elaguerApports :
+  -- un bloc rendu n'en a plus). Rien n'est rangé pour un projet qu'on ne fait que lire.
+  apports = function(p)
+    local vivants = ns.elaguerApports(p) -- élagués à chaque dessin : un refus reçu entre-temps y est vu
+    local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+    return r and r.reponse and vivants or nil
+  end,
+  aDonner = aDonner,
+  besoins = besoins,
+  -- Tous les contrats vivants du projet livrés (aucun : vrai). Un contrat préparé, envoyé ou signé retient en Réunir.
+  clos = function(p)
+    local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+    for _, i in ipairs(ns.contratsVivants(p)) do if not ns.contratClos(r.liste[i]) then return false end end
+    return true
+  end,
   bloc = function(zone, p, bloc, confie)
     zone.hsCle = nil
     if confie then

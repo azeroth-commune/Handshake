@@ -29,7 +29,13 @@ FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
   devient une seule case « Contrat n°12 · artisan · état ». Clic sur la case : son panneau. Mets l'artisan, ton
   « Offre » (ou laisse vide : l'artisan chiffrera), coche dans « Apports » ce que tu fournis toi-même,
   puis « Vérifier et envoyer… » : le contrat s'ouvre dans /contrat ; relis-le, puis « Envoyer la proposition ».
-  « Plus » : voir dans /contrat, envoyer en clair, annoncer dans le Commerce, abandonner (tant qu'il n'est pas parti).
+  « Plus » : voir dans /contrat, envoyer en clair, annoncer dans le Commerce, abandonner.
+  « Lancer » le projet (même si le contrat n'est pas encore signé) : ses Besoins ont une ligne par contrat
+  « Contrat n°12 · à recevoir », verte « reçu » une fois livré, et tes apports sont des lignes comme les autres (il faut
+  les avoir sur toi). Le projet passe en Fabriquer quand tout est dans tes sacs et ses contrats livrés.
+  Abandonner (sur sa ligne des Besoins, ou dans « Plus » en Préparer) : préparé, il s'efface ; envoyé, il est retiré ; contre-proposé par
+  l'artisan, sa proposition est refusée (il en est prévenu) ; signé, le projet le lâche mais il reste dans /contrat
+  jusqu'à son échéance (rien n'est envoyé). Le bloc redevient à faire toi-même ; refusé, retiré ou échu, pareil.
 
 COMMANDE À LA MAIN (sans arbre)
   /handshake, /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que

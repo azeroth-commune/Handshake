@@ -152,32 +152,61 @@ function ns.projetCommander(p, bloc)
   return #r.liste
 end
 
--- Le contrat de ce bloc (key = le métier ; nil = tout le projet), s'il est commandé et vivant : son rang, ou nil. Refusé,
--- retiré ou échu, il rend le bloc (CONTEXT.md de Composants, Bloc), qui se commande de nouveau. Rien n'est rangé pour un
--- projet qu'on ne fait que lire.
+-- Un contrat du projet vit : commandé (numéroté), ni refusé, ni retiré, ni échu, ni abandonné ici (c.abandonne : un
+-- contrat signé que le projet a lâché). Mort, il rend le bloc (CONTEXT.md de Composants, Bloc), qui se commande de nouveau.
+local function vivant(c)
+  local ct = envoyee(c)
+  return c.n ~= nil and not c.abandonne and not (ct and FINIE[ns.ctStatus(ct)])
+end
+-- Les rangs des contrats vivants du projet, dans l'ordre. Rien n'est rangé pour un projet qu'on ne fait que lire.
+function ns.contratsVivants(p)
+  local r, out = HandshakeDB.commandes and HandshakeDB.commandes[p.id], {}
+  for i, c in ipairs(r and r.liste or {}) do if vivant(c) then out[#out + 1] = i end end
+  return out
+end
+-- Le contrat vivant de ce bloc (key = le métier ; nil = tout le projet) : son rang, ou nil.
 function ns.contratDuBloc(p, key)
-  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
-  for i, c in ipairs(r and r.liste or {}) do
-    local ct = envoyee(c)
-    if c.n and c.bloc == key and not (ct and FINIE[ns.ctStatus(ct)]) then return i end
-  end
+  for _, i in ipairs(ns.contratsVivants(p)) do if HandshakeDB.commandes[p.id].liste[i].bloc == key then return i end end
+end
+-- Livré (clos : l'échange vérifié a tout soldé) ?
+function ns.contratClos(c)
+  local ct = envoyee(c)
+  return ct ~= nil and ns.ctStatus(ct) == "clos"
 end
 
--- « Abandonner » un contrat préparé, pas encore parti : son brouillon s'efface et le bloc revient. La 1re place (tout le
--- projet) redevient non commandée. Renvoie true, ou nil et la raison.
+-- « Abandonner » le contrat i : le bloc revient (à faire soi-même), sans jamais forger d'état chez l'autre (SECURITE.md).
+-- Selon où en est le contrat :
+-- - préparé (pas parti) : son brouillon s'efface ; la 1re place (tout le projet) redevient non commandée ;
+-- - envoyé (ma proposition, il n'a pas répondu) : retiré, le geste « Retirer » de Contrats (ns.ctWithdraw, message X) ;
+-- - contre-proposé par lui (à signer, c'est à moi) : refusé, le geste « Refuser » de Contrats (ns.ctRefuse, message R) ;
+-- - signé : aucun message n'annule un contrat signé (P5, n° 20) ; le projet le lâche (c.abandonne), le contrat reste tel
+--   quel dans Contrats (son registre, ses échanges vérifiés, son échéance), rien n'est envoyé ;
+-- - livré : rien à abandonner.
+-- Un brouillon de nouvelle version en attente s'efface dans tous les cas ; le bloc rendu perd ses apports
+-- (ns.elaguerApports). Renvoie ce qui a été fait ("efface", "retire", "refuse", "lache"), ou nil et la raison.
 function ns.abandonner(p, i)
   local r = rangement(p)
   local c = r.liste[i]
-  if not c or envoyee(c) then return nil, "ce contrat est parti : retire-le dans Contrats" end
-  ns.retirerTB(c)
+  if not (c and vivant(c)) then return nil, "pas de contrat vivant à abandonner" end
+  local ct = envoyee(c)
   effacerBrouillons(c)
-  if i == 1 then c.n, c.contrat = nil, nil else table.remove(r.liste, i) end
-  ns.elaguerApports(p)
-  return true
+  if not ct then
+    ns.retirerTB(c)
+    if i == 1 then c.n, c.contrat = nil, nil else table.remove(r.liste, i) end
+    ns.elaguerApports(p)
+    return "efface"
+  end
+  local s, fait = ns.ctStatus(ct), nil
+  if s == "envoye" then ns.ctWithdraw(ct); fait = "retire"
+  elseif s == "a_signer" then ns.ctRefuse(ct); fait = "refuse"
+  elseif s == "signe" then c.abandonne, fait = true, "lache"
+  else return nil, "livré : rien à abandonner" end
+  ns.elaguerApports(p) -- le bloc rendu n'a plus d'apports
+  return fait
 end
 
--- Les apports qui vivent encore (rangés, puis rendus) : ceux d'un contrat vivant. Le projet entier commandé, ou la
--- Réponse : tous ; un bloc : les cases qui entrent dans ses cases (lues sur l'arbre de la demande). Un bloc rendu
+-- Les apports qui vivent encore (rangés, puis rendus) : ceux d'un contrat vivant (ns.contratDuBloc : ni refusé, ni retiré,
+-- ni échu, ni lâché). Le projet entier commandé, ou la Réponse : tous ; un bloc : les cases qui entrent dans ses cases (lues sur l'arbre de la demande). Un bloc rendu
 -- (abandonné, refusé, retiré, échu) n'a plus d'apports : ils quittent le rangement, ses cases reviennent dans l'arbre et
 -- les Besoins. Appelé à chaque dessin (le fournisseur de l'emplacement, Emplacement.lua) : un refus reçu entre-temps y
 -- est vu.
