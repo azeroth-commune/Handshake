@@ -362,7 +362,7 @@ test("la barre de recherche propose les objets de la recherche du socle", functi
     ComposantsFrame:Hide()
 end)
 
--- Réponse (#39) : une demande reçue, « Répondre dans l'arbre » dans Contrats, s'ouvre comme un projet tenu de Composants
+-- Réponse (#39) : une demande reçue, « Répondre » dans Contrats, s'ouvre comme un projet tenu de Composants
 -- (ce qu'il veut, avec la raison de Handshake) ; on y commande un bloc à un autre artisan (sous-traitance).
 local function boutonDe(f, texte)
     local function chercher(x)
@@ -383,8 +383,8 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
     local ok, err = pcall(function()
         SlashCmdList.HANDSHAKECONTRAT()
         parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-            function() return boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre") ~= nil end)
-        boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre"):Click()
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
         HandshakeContratsFrame:Hide()
         assertTrue(ComposantsFrame:IsShown(), "la Réponse s'ouvre dans la fenêtre de Composants")
         local p = affichePas()
@@ -415,6 +415,44 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
         assertNil(HandshakeDB.commandes[p.id])
         assertNotNil(HandshakeDB.contracts[cle], "aucun contrat perdu")
     end)
+    HandshakeDB.contracts[cle] = nil
+    if not ok then error(err, 0) end
+end) end)
+
+-- La Réponse en phases (#60) : « Répondre » la crée et l'ouvre en Préparer ; une nouvelle version de sa demande l'y remet
+-- (Composants.Tenir avec ses lignes), même si elle était allée plus loin.
+test("« Répondre » ouvre la Réponse en Préparer ; une nouvelle version de sa demande l'y remet", function() sansRecettes(function()
+    local cle = "Player-1-0000B0B0#4344"
+    local c = { origin = "Player-1-0000B0B0", id = "4344", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
+        m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
+        hash = "00000000cafe0060", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
+    HandshakeDB.contracts[cle] = c
+    local function repondre()
+        SlashCmdList.HANDSHAKECONTRAT()
+        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
+        HandshakeContratsFrame:Hide()
+        return affichePas()
+    end
+    local p
+    local ok, err = pcall(function()
+        local n = #Composants.Projets()
+        p = repondre()
+        assertEquals(n + 1, #Composants.Projets(), "« Répondre » crée la Réponse")
+        assertEquals("Réponse à Bob", p.name)
+        assertNil(p.phase, "ouverte en Préparer")
+        assertTrue(ComposantsFrame:IsShown() and ComposantsFrame.lancerB:IsVisible(), "la vue Préparer, avec Lancer")
+        assertEquals(p, repondre(), "la même Réponse, rouverte")
+        assertNil(p.phase)
+        -- Passée plus loin (le fil), puis il envoie une nouvelle version : sa demande change, la Réponse revient en Préparer.
+        p.phase = "reunir"
+        c.v, c.hash, c.o = "3", "00000000beef0060", { { id = 10721, qty = 2, unit = 50000 } }
+        assertEquals(p, repondre(), "toujours la même Réponse")
+        assertNil(p.phase, "sa nouvelle demande : en Préparer")
+        assertEquals(2, p.lines[1].qty)
+    end)
+    if p then Composants.Supprimer(p.id) end
     HandshakeDB.contracts[cle] = nil
     if not ok then error(err, 0) end
 end) end)

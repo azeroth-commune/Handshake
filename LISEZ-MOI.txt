@@ -41,7 +41,7 @@ COMMANDE À LA MAIN (sans arbre)
   /handshake, /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
   j'apporte ». Tape un objet dans la recherche (ou glisse un objet de tes sacs sur la liste),
   mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
-  Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre dans l'arbre » avec Composants).
+  Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre » avec Composants : la Réponse, un projet de Composants).
   « Importer une liste reçue » (menu « Plus » de cette fenêtre, avec « Envoyer en clair ») : une liste chuchotée ou collée ; avec Composants, elle devient un
   projet commandé en entier.
 

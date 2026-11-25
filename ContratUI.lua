@@ -104,7 +104,7 @@ function ns.ctDescribe(c, me)
   for _, l in ipairs(c.o) do add(("   %s %d × %s   (%s l'objet)"):format(verb(artisan, "livres", "livre"), l.qty, ns.itemLabel(l.id), ns.money(l.unit))) end
   add(("   %s : %s%s"):format(verb(not artisan, "paies", "paie"), ns.money(delivery), #c.m > 0 and (" (caution rendue %s + prix %s)"):format(ns.money(caution), ns.moneySigned(delivery - caution)) or ""))
   if delivery - caution <= 0 then
-    add(artisan and "   |cffe6994d! Aucun prix pour ton travail : « Répondre dans l'arbre » ou « en liste » pour chiffrer ta part.|r"
+    add(artisan and "   |cffe6994d! Aucun prix pour ton travail : « Répondre » ou « Répondre en liste » pour chiffrer ta part.|r"
       or "   |cffe6994dPrix laissé à l'artisan : il le chiffrera en contre-proposant.|r")
   end
   if #c.m == 0 then add("   |cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r") end
@@ -293,8 +293,8 @@ local function build()
   -- Actions (bas de la fenêtre)
   frame.accept = button("Signer", 90, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)
   frame.refuse = button("Refuser", 80, function(c) ns.ctRefuse(c) end)
-  -- Dans l'arbre : la Réponse, un projet tenu de Composants (seulement s'il est chargé).
-  frame.reply = button("Répondre dans l'arbre", 160, function(c) Composants.Ouvrir(ns.projetReponse(c).id) end)
+  -- « Répondre » : la Réponse, un projet tenu de Composants ouvert en Préparer (seulement s'il est chargé).
+  frame.reply = button("Répondre", 90, function(c) Composants.Ouvrir(ns.projetReponse(c).id) end)
   frame.replyList = button("Répondre en liste", 130, function(c) ns.openCommandeMain(c) end) -- sans arbre (#38)
   frame.send = button("Envoyer la proposition", 170, function(c)
     local ok, err = ns.ctPropose(c)
