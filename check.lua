@@ -1260,7 +1260,7 @@ do
   assert(ns.ctPropose(ct) and ct.status == "envoye" and ct.v == "1" and bases[BEL].contracts[ns.ctKey(ct)], "parti de sa fiche, arrivé chez Belegard")
   assert(ns.projetEnvoyer(p, f) == ct, "parti : pas refait")
   -- Aucun autre chemin ne fait partir la v1 en sautant sa fiche : ni le panneau ni les contrats préparés n'appellent l'envoi.
-  for _, fichier in ipairs({ "Emplacement.lua", "Commande.lua" }) do
+  for _, fichier in ipairs({ "Emplacement.lua", "Commande.lua", "CommandeMain.lua", "Annonce.lua" }) do
     local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
     assert(not code:find("ctPropose", 1, true), fichier .. " envoie un contrat sans sa fiche")
   end
