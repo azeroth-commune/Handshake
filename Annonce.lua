@@ -47,7 +47,7 @@ function ns.annonceTexte(order) return ns.listMessages("WTB", order.lines, ns.of
 local derniere, attente = {}, nil -- derniere[texte] = GetTime() de sa publication ; attente = l'annonce dont on attend l'écho
 
 local function refusBase(order)
-  if not order then return "pas de commande à annoncer" end -- Handshake.Annoncer(p, i) d'un rang qui n'existe pas
+  if not order then return "pas de commande à annoncer" end -- (un rang qui n'existe pas)
   if order.reponse then return "c'est sa demande, pas la tienne" end
   if #(order.lines or {}) == 0 then return "rien à annoncer" end
   if order.fige or ns.commandeEnvoyee(order) then return "demande déjà partie" end

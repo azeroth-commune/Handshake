@@ -1,7 +1,9 @@
--- Handshake : une commande passe d'un joueur à l'autre.
--- Commande = une part d'un projet de Composants (ns.projetCommande, plus bas ; le projet, son arbre et ses blocs : l'API
--- publique de Composants, global Composants, quand il est chargé) ou une commande à la main (CommandeMain.lua) : ses lignes
--- « objet × quantité », le joueur d'en face, une offre, des apports.
+-- Handshake : commander, une demande passe d'un joueur à l'autre.
+-- Commander (CONTEXT.md) une part d'un projet de Composants (un bloc, ou le projet entier) crée un contrat préparé, rattaché
+-- à ce bloc (ns.projetCommander, plus bas ; le projet, son arbre et ses blocs : l'API publique de Composants, global
+-- Composants, quand il est chargé ; Handshake y dessine dans l'emplacement du bloc, Emplacement.lua). Sans Composants : la
+-- commande à la main (CommandeMain.lua). Dans les deux cas : des lignes « objet × quantité », l'artisan, une offre, des
+-- apports.
 -- Échange : du texte avec des liens d'objets, lisible et écrivable à la main (Maj+clic), par chuchotement :
 --   Commande : 1x[Claymore en mithril] 1x[Camail en mithril] · j'apporte 36x[Minerai de mithril] · offre 5 po
 --   Besoins (1/2) : 36x[Minerai de mithril] 12x[Pierre solide] …
@@ -12,11 +14,14 @@ local _, ns = ...
 local MAX_MSG = 255
 
 ---------------------------------------------------------------------------------------------------
--- Les commandes d'un projet (CONTEXT.md), rangées à part dans HandshakeDB.commandes[p.id], rattachées à l'identité du
--- projet de Composants (qui ne sait rien d'elles) : { liste = { { id (unique dans le projet), bloc (le métier ; nil = tout
--- le projet : la 1re, et celles recommandées), player (l'artisan), tip (l'offre, en cuivre), contrat (clé de son contrat,
--- une fois préparée) } }, seq (la dernière identité de commande donnée), apports = { [id] = true } (mes apports, pour
--- toutes ses commandes), reponse (clé du contrat dont il est la réponse), reponseHash }.
+-- Les contrats préparés d'un projet (CONTEXT.md, Commander), rangés à part dans HandshakeDB.commandes[p.id], rattachés à
+-- l'identité du projet de Composants (qui ne sait rien d'eux) : { liste = { { id (unique dans le projet), n (son numéro,
+-- « Contrat n°12 » : donné quand on commande, local, il ne voyage jamais), bloc (le métier ; nil = tout le projet : la 1re
+-- place, commandée ou non, et celles recommandées), player (l'artisan), tip (l'offre, en cuivre), contrat (clé de son
+-- contrat dans Contrats, une fois parti) } }, seq (la dernière identité donnée), apports = { [id] = true } (mes apports,
+-- pour tous ses contrats), reponse (clé du contrat dont il est la réponse), reponseHash }. Une place sans n n'est pas
+-- commandée (la 1re, tant qu'on n'a pas commandé tout le projet). Le mot « commande » reste dans le code (ns.projetCommande…) :
+-- il désigne ce contrat préparé.
 local function rangement(p)
   HandshakeDB.commandes = HandshakeDB.commandes or {}
   local r = HandshakeDB.commandes[p.id]
@@ -28,12 +33,24 @@ local function rangement(p)
 end
 local function commandes(p) return rangement(p).liste end
 
--- Supprimer un projet (Composants le signale) efface ses commandes pas encore parties ; jamais un contrat : une commande
--- envoyée reste dans Contrats, sans écart calculé (plus de projet à comparer).
+-- Le contrat préparé c n'est pas parti : ses brouillons dans Contrats (la v1 pas envoyée, une nouvelle version pas
+-- envoyée) s'effacent ; un contrat parti (envoyé, à signer, signé…) n'est jamais touché.
+local function effacerBrouillons(c)
+  local store = ns.ctStore()
+  for _, k in ipairs({ c.contrat, c.contrat and c.contrat .. "+" }) do
+    if store[k] and store[k].status == "brouillon" then store[k] = nil end
+  end
+end
+
+-- Supprimer un projet (Composants le signale) efface ses contrats préparés ; jamais un contrat parti : il reste dans
+-- Contrats, sans écart calculé (plus de projet à comparer).
 function ns.oublierCommandes(p)
   local r = p and HandshakeDB.commandes and HandshakeDB.commandes[p.id]
   if not r then return end
-  for _, c in ipairs(r.liste) do ns.retirerTB(c) end -- ses demandes au tableau de Trade Board (Annonce.lua)
+  for _, c in ipairs(r.liste) do
+    ns.retirerTB(c) -- ses demandes au tableau de Trade Board (Annonce.lua)
+    effacerBrouillons(c)
+  end
   HandshakeDB.commandes[p.id] = nil
 end
 
@@ -98,12 +115,15 @@ local function envoyee(c)
   return ct and ct.status ~= "brouillon" and ct or nil
 end
 ns.commandeEnvoyee = envoyee
-local ETATS = { envoye = "demande envoyée", a_signer = "contre-proposée", signe = "signée", clos = "livrée",
-  echu = "échue", refuse = "refusée", retire = "retirée" }
+-- Refusé, retiré ou échu : il ne prend plus rien, le bloc revient (il se commande de nouveau).
+local FINIE = { refuse = true, retire = true, echu = true }
+-- L'état d'un contrat, en un mot (« Contrat n°12 · Bel Dupont · envoyé ») ; préparé tant qu'il n'est pas parti.
+local ETATS = { envoye = "envoyé", a_signer = "contre-proposé", signe = "signé", clos = "livré",
+  echu = "échu", refuse = "refusé", retire = "retiré" }
 local function etat(ct)
-  if not ct then return "pas envoyée" end
+  if not ct then return "préparé" end
   local s = ns.ctStatus(ct)
-  if s == "envoye" and ct.v ~= "1" then return "contre-proposée" end -- j'ai répondu à sa contre-proposition
+  if s == "envoye" and ct.v ~= "1" then return "contre-proposé" end -- j'ai répondu à sa contre-proposition
   return ETATS[s] or s
 end
 ns.etatDemande = etat
@@ -114,15 +134,45 @@ function ns.projetOffre(p, cuivre, i)
   return true
 end
 
--- « Commander » un bloc (res.blocs) : une commande de plus dans ce projet, à celui qui en connaît le plus ; le même
--- bloc commandé deux fois redonne la même, tant qu'elle n'est pas envoyée (figée, une nouvelle la remplace pour la
--- suite). Renvoie son rang.
+-- « Commander » un bloc (res.blocs ; { } = tout le projet) : un contrat préparé de plus dans ce projet, numéroté tout de
+-- suite, à celui qui en connaît le plus ; le même bloc commandé deux fois redonne le même, tant qu'il n'est pas parti
+-- (parti, un nouveau le remplace pour la suite). Tout le projet : sa 1re place, si elle n'est pas partie. Renvoie son rang.
+local function numeroter(c)
+  if not c.n then HandshakeDB.numero = (HandshakeDB.numero or 0) + 1; c.n = HandshakeDB.numero end
+end
+ns.numeroter = numeroter
 function ns.projetCommander(p, bloc)
   local r = rangement(p)
-  for i, c in ipairs(r.liste) do if c.bloc == bloc.key and not envoyee(c) then return i end end
+  for i, c in ipairs(r.liste) do
+    if c.bloc == bloc.key and not envoyee(c) then numeroter(c) return i end
+  end
   r.seq = r.seq + 1
   r.liste[#r.liste + 1] = { id = r.seq, bloc = bloc.key, player = bloc.best }
+  numeroter(r.liste[#r.liste])
   return #r.liste
+end
+
+-- Le contrat de ce bloc (key = le métier ; nil = tout le projet), s'il est commandé et vivant : son rang, ou nil. Refusé,
+-- retiré ou échu, il rend le bloc (CONTEXT.md de Composants, Bloc), qui se commande de nouveau. Rien n'est rangé pour un
+-- projet qu'on ne fait que lire.
+function ns.contratDuBloc(p, key)
+  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  for i, c in ipairs(r and r.liste or {}) do
+    local ct = envoyee(c)
+    if c.n and c.bloc == key and not (ct and FINIE[ns.ctStatus(ct)]) then return i end
+  end
+end
+
+-- « Abandonner » un contrat préparé, pas encore parti : son brouillon s'efface et le bloc revient. La 1re place (tout le
+-- projet) redevient non commandée. Renvoie true, ou nil et la raison.
+function ns.abandonner(p, i)
+  local r = rangement(p)
+  local c = r.liste[i]
+  if not c or envoyee(c) then return nil, "ce contrat est parti : retire-le dans Contrats" end
+  ns.retirerTB(c)
+  effacerBrouillons(c)
+  if i == 1 then c.n, c.contrat = nil, nil else table.remove(r.liste, i) end
+  return true
 end
 
 -- La part du projet que vise la commande c, telle que le projet la fait maintenant : ses lignes et ses apports, rangés dans
@@ -198,7 +248,6 @@ end
 -- actuelle (P8, ns.ctEstimation, la même que la fiche du contrat) : v.ecartPrix en %, v.alertePrix au-delà du seuil, ou
 -- v.incomplet (un composant sans prix connu : pas de pourcentage faux). Refusée, retirée ou échue : v.recommander, elle se
 -- commande de nouveau (ns.projetRecommander).
-local FINIE = { refuse = true, retire = true, echu = true }
 local function vue(p, c, dem)
   local v = { id = c.id, part = c.bloc or "tout le projet", bloc = c.bloc, player = c.player, tip = c.tip, choix = p.choix, contrat = c.contrat }
   local ct = envoyee(c)
@@ -250,6 +299,16 @@ function ns.projetEnvoyer(p, i)
   ct.status, c.contrat = "brouillon", ns.ctKey(ct)
   ns.ctStore()[c.contrat] = ct
   return ct
+end
+
+-- « Envoyer » (le panneau du contrat, Emplacement.lua) : le contrat préparé i part d'un clic, en v1 (son brouillon fait
+-- d'après le projet, puis proposé : mêmes bornes, même message que depuis Contrats). Déjà parti : son contrat. Renvoie le
+-- contrat, ou nil et la raison (le brouillon reste alors dans Contrats).
+function ns.projetEnvoyerContrat(p, i)
+  local ct, err = ns.projetEnvoyer(p, i)
+  if not ct then return nil, err end
+  if ct.status ~= "brouillon" then return ct end
+  return ns.ctPropose(ct)
 end
 
 -- « Nouvelle version » (#8) : la commande envoyée i, dont la part du projet a changé, prépare sa contre-proposition
@@ -480,7 +539,9 @@ function ns.importText(text, player)
     m.lines, m.apporte, m.player, m.tip = lines, brought, who, tip
     return ns.openCommandeMain()
   end
+  -- Une liste sans arbre est un projet ordinaire, commandé en entier (CONTEXT.md, Commander) : son contrat préparé.
   local p = Composants.NouveauProjet({ name = (kind == "besoins" and "Besoins" or "Commande") .. (who and (" de " .. who) or ""), lines = lines })
+  ns.projetCommander(p, {})
   ns.projetArtisan(p, who)
   ns.projetOffre(p, tip)
   for _, l in ipairs(brought) do ns.projetApport(p, l.id, true) end
@@ -584,7 +645,17 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
   end
   for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
   ns.purgerProjets(db)
+  ns.numeroterAnciennes(db)
 end)
+
+-- Les commandes d'avant Composants#26 (pas encore de numéro) : celles d'un bloc, et toute place qui a un contrat (même
+-- parti), étaient commandées : elles prennent un numéro, rien n'est effacé. La 1re place sans contrat (le projet entier,
+-- jamais commandé) reste sans numéro.
+function ns.numeroterAnciennes(db)
+  for _, r in pairs(db.commandes or {}) do
+    for _, c in ipairs(r.liste or {}) do if c.bloc or c.contrat then numeroter(c) end end
+  end
+end
 
 -- Les projets sont partis dans Composants (Handshake#39), sans migration (perte acceptée) : ceux d'avant, leurs commandes
 -- (rattachées à des identités que Composants redonnera) et les réglages de l'arbre s'effacent ; les contrats restent.
@@ -593,9 +664,9 @@ function ns.purgerProjets(db)
   db.options, db.orders, db.current, db.force = nil, nil, nil, nil
 end
 
--- Composants chargé (après Handshake : il le déclare en OptionalDeps) : à l'entrée en jeu, ses projets sont lus. Les
--- commandes pas encore parties d'un projet qui n'existe plus sont oubliées (un contrat, lui, reste toujours), puis chaque
--- suppression de projet efface les siennes.
+-- Composants chargé : à l'entrée en jeu, ses projets sont lus. Les contrats préparés d'un projet qui n'existe plus sont
+-- oubliés (un contrat parti, lui, reste toujours), puis chaque suppression de projet efface les siens. Handshake se branche
+-- sur l'emplacement du bloc de Composants (Emplacement.lua) : Composants ne sait rien des contrats.
 function ns.brancherComposants()
   local C = Composants
   if not C or ns.branche then return end
@@ -604,18 +675,17 @@ function ns.brancherComposants()
     if not C.Projet(id) then ns.oublierCommandes({ id = id }) end
   end
   C.QuandChange(function(p, quoi) if quoi == "supprime" then ns.oublierCommandes(p) end end)
+  C.Emplacements(ns.emplacement)
 end
 
 ---------------------------------------------------------------------------------------------------
--- /handshake (ou /commande) : avec Composants, la fenêtre des projets, où vivent les commandes ; sans lui, la commande à
--- la main. /handshake liste : la commande à la main ; /handshake annonces : les Annonces lues (Annonce.lua). /handshake
+-- /handshake (ou /commande) : la fenêtre de Handshake, la commande à la main (Importer une liste reçue, En clair,
+-- Annoncer ; avec Composants, les contrats d'un projet se commandent dans ses blocs). /handshake liste : la même ;
+-- /handshake annonces : les Annonces lues (Annonce.lua). /handshake
 -- essai : la commande à la main revient comme un chuchotement de soi-même, sans réseau (le même chemin qu'à l'arrivée) ;
 -- /handshake essai annonce : son annonce, affichée seulement ; /handshake essai lue <texte> : texte lu comme une
 -- demande du Commerce (Annonce.lua). /handshake debug : Debug.lua.
-function ns.ouvrir()
-  if Composants then return Composants.Ouvrir() end
-  ns.openCommandeMain()
-end
+function ns.ouvrir() ns.openCommandeMain() end
 SLASH_HANDSHAKE1, SLASH_HANDSHAKE2 = "/handshake", "/commande"
 SlashCmdList.HANDSHAKE = function(args)
   args = args or ""

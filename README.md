@@ -11,13 +11,19 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   (« LF BS », sans lien), lues en direct et dans l'historique du chat (à l'ouverture de la fenêtre et à l'entrée en jeu),
   gardées par perso pour un /reload, chacune quelques minutes ; `/handshake essai lue <texte>`
   lit un texte comme une ligne du Commerce et dit pourquoi elle est écartée.
-- **Avec Composants** (chargé ou non, aucun des deux ne requiert l'autre), les commandes rejoignent ses projets : chaque
-  commande est rangée sous l'identité d'un projet de Composants (`HandshakeDB.commandes[p.id]`), et la fenêtre des projets
-  de Composants dessine « Commander » sur un bloc, Ctrl+clic « j'apporte » sur une case et la barre des commandes en
-  appelant l'API ci-dessous. Une demande reçue s'ouvre en **Réponse**, un projet tenu de Composants
-  (`Composants.Tenir`). Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` :
-  supprimer un projet efface ses commandes pas encore parties, jamais un contrat ; à l'entrée en jeu, les commandes
-  d'un projet qui n'existe plus sont oubliées.
+- **Avec Composants** (chargé ou non, aucun des deux ne requiert l'autre ; `## OptionalDeps: TradeBoard, Composants`),
+  Handshake se branche sur l'**emplacement du bloc** de Composants (`Composants.Emplacements`, `Emplacement.lua`) :
+  Composants ne connaît ni Handshake ni les contrats. « Commander » sur un bloc (ou « Commander tout » sur la ligne du
+  projet) crée tout de suite un contrat préparé, numéroté, rattaché au projet et au bloc
+  (`HandshakeDB.commandes[p.id]`) ; le bloc se réduit à une case « Contrat n°12 · artisan · état » ; son panneau (une
+  fenêtre de Handshake) règle l'artisan, l'offre et les apports, et l'envoie (« Envoyer » : la v1 part d'un clic, mêmes
+  bornes et même message que depuis Contrats) ; « Plus » : voir dans Contrats, envoyer en clair, annoncer dans le
+  Commerce, abandonner. Refusé, retiré ou échu, le bloc revient. Une liste reçue (« Importer une liste reçue », dans la
+  fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
+  de Composants (`Composants.Tenir`), son panneau sur la ligne du projet (mon prix, ses apports, contre-proposer).
+  Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` : supprimer un projet efface
+  ses contrats préparés (et leurs brouillons dans Contrats), jamais un contrat parti ; à l'entrée en jeu, ceux d'un
+  projet qui n'existe plus sont oubliés.
 - **Avec Trade Board** (Kurki ; `## OptionalDeps: TradeBoard`), quand son API hôte a la version attendue
   (`tradeBoard.hostApiVersion == 1`), « Annoncer » ne publie plus lui-même : il ouvre son dialogue de demande, rempli
   avec le premier objet et sa quantité (`OpenRequestDialog("item", id, n)`, le joueur y choisit guilde ou Commerce), et
@@ -29,28 +35,8 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
 
 ## API publique
 
-Un seul global, `Handshake`, pour Composants. Seul ce qui suit est promis ; l'intérieur (contrats, échange, réseau) reste
-privé. `p` = un projet de Composants ; `i` = le rang d'une commande dans le projet (1 = tout le projet, ou dans une
-Réponse la Réponse elle-même).
-
-```lua
-local H = Handshake
-H.Commandes(p)          -- les commandes du projet : { { part, bloc, player, tip, lines, apports, etat, fige, ecart, ecartPrix,
-                        --   alertePrix, incomplet, recommander, reponse, vide }, … } ; l'état est lu dans le contrat
-H.Commande(p, i)        -- l'une d'elles
-H.Commander(p, bloc)    -- « Commander » un bloc (Composants.Arbre(p).blocDe[métier]) : rend le rang de sa commande
-H.Artisan(p, nom, i)    -- l'artisan de la commande i (« Prénom Nom »)
-H.Offre(p, cuivre, i)   -- son offre (dans une Réponse, mon prix)
-H.Preparer(p, i)        -- « Préparer la demande » (ou « Contre-proposer » dans une Réponse) : le contrat préparé s'ouvre dans Contrats
-H.Agir(p, i)            -- « Nouvelle version » (contrat préparé ouvert dans Contrats, rend nil) ou « Commander de nouveau » (rend le rang)
-H.EnClair(p, i)         -- la demande en texte lisible, chuchotée à l'artisan
-H.Annoncer(p, i)        -- « Annoncer dans le Commerce » : l'Annonce « WTB [lien] xN, … · offre 5 po » de la commande i, un clic = un message
-                        --   (limite par période, hors d'une ville refusée, écho vérifié) ; refusée, la raison est dite. Rend true, ou nil
-H.Importer()            -- importer une liste reçue
-H.Apports(p)            -- { [itemID] = true } : les cases que j'apporte dans les commandes du projet, ou nil
-H.Apporter(p, id, oui)  -- « j'apporte » (oui) ou « je le reprends » (nil)
-H.EstReponse(p)         -- ce projet est-il la Réponse à une demande reçue ?
-```
+Aucune (Composants#26) : le global `Handshake` reste, vide, et dit seulement que Handshake est chargé. C'est Handshake
+qui se branche sur Composants (`Composants.Emplacements`), jamais l'inverse.
 
 ## Développement
 

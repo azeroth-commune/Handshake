@@ -97,7 +97,7 @@ test("commande à la main → demande → contrat", function()
     HandshakeMainFrame:Show()
     local vu
     for _, r in ipairs({ HandshakeMainFrame:GetRegions() }) do
-        if r.GetText and (r:GetText() or ""):find("demande envoyée", 1, true) then vu = true end
+        if r.GetText and (r:GetText() or ""):find("Contrat envoyé", 1, true) then vu = true end
     end
     assertTrue(vu, "l'état de la demande s'affiche dans la liste")
     HandshakeMainFrame:Hide()

@@ -229,6 +229,10 @@ local function build()
     refresh()
   end)
   frame.annonce:SetPoint("LEFT", frame.nouvelle, "RIGHT", 6, 0)
+  -- Importer une liste reçue (en chuchotement, ou collée) : un projet de Composants commandé en entier, ou, sans lui, cette
+  -- commande à la main.
+  local importer = button(frame, "Importer une liste reçue", 170, function() ns.openImport() end)
+  importer:SetPoint("TOPRIGHT", -14, -46)
   ns.onglets(frame, 1) -- et l'onglet « Annonces lues » (Annonce.lua)
   frame:SetScript("OnShow", function() refresh() end)
   frame:RegisterEvent("ITEM_DATA_LOAD_RESULT") -- un nom d'objet arrive du serveur
@@ -278,7 +282,7 @@ function refresh()
     local ct = o.contrat and ns.ctStore()[o.contrat]
     frame.status:SetText(not ct and "Pas encore préparée."
       or ct.status == "brouillon" and "Brouillon dans Contrats : relis-le, puis « Envoyer la proposition »."
-      or ("Demande : %s. « Nouvelle » pour une autre commande."):format(ns.etatDemande(ct)))
+      or ("Contrat %s. « Nouvelle » pour une autre commande."):format(ns.etatDemande(ct)))
   end
   frame.go:SetText(c and "Contre-proposer" or ns.commandeEnvoyee(o) and "Voir la demande" or "Préparer la demande")
   frame.clair:SetShown(not c)
