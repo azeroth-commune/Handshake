@@ -32,7 +32,7 @@ local function bouton(texte) return enfant(function(c) return c.GetText and c:Ge
 local function affiche(nom) return ComposantsFrame.title:GetText() == nom end -- le titre du gabarit (Composants#30)
 -- Le projet affiché dans la fenêtre de Composants.
 local function affichePas() return ComposantsDB.projets[ComposantsDB.courant] end
--- Les menus déroulants (contrats, projets) : chaque entrée choisie tour à tour jusqu'à ce que ok() soit vrai, ou celle
+-- Les menus déroulants (« Plus ») : chaque entrée choisie tour à tour jusqu'à ce que ok() soit vrai, ou celle
 -- dont le texte est « entree ».
 local function deroulant(f, ok)
     for _, c in ipairs({ f:GetChildren() }) do
@@ -48,6 +48,16 @@ local function parcourir(dd, jusque)
     for _, e in ipairs(entrees) do
         dd:Pick(e, MenuInputContext.MouseButton, "LeftButton")
         if jusque(MenuUtil.GetElementText(e)) then return true end
+    end
+end
+
+-- La colonne des contrats : chaque entrée cliquée tour à tour jusqu'à ce que jusque() soit vrai.
+local function parcourirContrats(jusque)
+    for _, b in ipairs(HandshakeContratsFrame.entrees) do
+        if b:IsShown() then
+            b:Click()
+            if jusque() then return true end
+        end
     end
 end
 
@@ -377,8 +387,7 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
     HandshakeDB.contracts[cle] = c
     local ok, err = pcall(function()
         SlashCmdList.HANDSHAKECONTRAT()
-        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        parcourirContrats(function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
         boutonDe(HandshakeContratsFrame, "Répondre"):Click()
         HandshakeContratsFrame:Hide()
         assertTrue(ComposantsFrame:IsShown(), "la Réponse s'ouvre dans la fenêtre de Composants")
@@ -424,8 +433,7 @@ test("« Répondre » ouvre la Réponse en Préparer ; une nouvelle version de s
     HandshakeDB.contracts[cle] = c
     local function repondre()
         SlashCmdList.HANDSHAKECONTRAT()
-        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        parcourirContrats(function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
         boutonDe(HandshakeContratsFrame, "Répondre"):Click()
         HandshakeContratsFrame:Hide()
         return affichePas()
@@ -464,8 +472,7 @@ test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fic
     local p
     local ok, err = pcall(function()
         SlashCmdList.HANDSHAKECONTRAT()
-        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        parcourirContrats(function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
         boutonDe(HandshakeContratsFrame, "Répondre"):Click()
         HandshakeContratsFrame:Hide()
         p = affichePas()
@@ -514,8 +521,7 @@ test("Réponse : Lancer attend la signature ; Finie quand le contrat est clos, p
     local p
     local ok, err = pcall(function()
         SlashCmdList.HANDSHAKECONTRAT()
-        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        parcourirContrats(function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
         boutonDe(HandshakeContratsFrame, "Répondre"):Click()
         HandshakeContratsFrame:Hide()
         p = affichePas()

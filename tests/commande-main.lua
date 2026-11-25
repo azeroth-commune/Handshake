@@ -12,22 +12,13 @@ end
 local function bouton(f, texte)
     return tous(f, function(c) return c:GetObjectType() == "Button" and c:IsShown() and c.GetText and c:GetText() == texte end)[1]
 end
--- Les menus déroulants (contrats, projets) : chaque entrée choisie tour à tour jusqu'à ce que ok() soit vrai, ou celle
--- dont le texte est « entree ».
-local function deroulant(f, ok)
-    for _, c in ipairs({ f:GetChildren() }) do
-        if c.GenerateMenu and c.GetMenuDescription and c:IsVisible() and ok(c) then return c end
-        local r = deroulant(c, ok)
-        if r then return r end
-    end
-end
-local function parcourir(dd, jusque)
-    dd:GenerateMenu()
-    local entrees = {}
-    for _, e in dd:GetMenuDescription():EnumerateElementDescriptions() do entrees[#entrees + 1] = e end
-    for _, e in ipairs(entrees) do
-        dd:Pick(e, MenuInputContext.MouseButton, "LeftButton")
-        if jusque(MenuUtil.GetElementText(e)) then return true end
+-- La colonne des contrats : chaque entrée cliquée tour à tour jusqu'à ce que jusque() soit vrai.
+local function parcourirContrats(jusque)
+    for _, b in ipairs(HandshakeContratsFrame.entrees) do
+        if b:IsShown() then
+            b:Click()
+            if jusque() then return true end
+        end
     end
 end
 -- Les deux barres de recherche : « ce que je veux » à gauche, « ce que j'apporte » à droite.
@@ -111,8 +102,7 @@ test("une demande reçue se répond dans la liste : ce qu'il veut est figé", fu
         hash = "00000000deadbeef", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
     HandshakeDB.contracts["Player-1-0000B0B0#4242"] = c
     SlashCmdList.HANDSHAKECONTRAT()
-    parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-        function() return bouton(HandshakeContratsFrame, "Répondre en liste") ~= nil end)
+    parcourirContrats(function() return bouton(HandshakeContratsFrame, "Répondre en liste") ~= nil end)
     bouton(HandshakeContratsFrame, "Répondre en liste"):Click()
     assertTrue(HandshakeMainFrame:IsShown())
     local veux, apporte = unpack(recherches())

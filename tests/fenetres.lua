@@ -55,15 +55,56 @@ async_test("Contrats agrandie : le texte suit la largeur ; « Commande à la mai
     local w, h = f:GetSize()
     local main = bouton(f, "Commande à la main")
     assertTrue(main:GetTop() <= f:GetTop() - 24, "sous la barre de titre")
+    local avant = f.body:GetWidth()
     f:SetSize(w + 200, h)
     ensuite(done, function()
         done(function()
             local large = f.body:GetWidth()
             f:SetSize(w, h)
             f:Hide()
-            assertTrue(large > w, "le texte s'élargit avec la fenêtre : " .. large)
+            assertTrue(large >= avant + 190, "le texte s'élargit avec la fenêtre : " .. avant .. " -> " .. large)
+            assertTrue(avant >= 560, "à la taille de départ, le texte garde sa largeur d'avant la colonne : " .. avant)
         end)
     end)
+end)
+
+test("Contrats : une colonne à gauche, une entrée par contrat ; un clic l'affiche, surlignée ; plus de menu déroulant", function()
+    local moi = UnitGUID("player")
+    local cles, noms = {}, { "Aline Brouillon", "Bruno Attente", "Carla Signer", "Denis Signé" }
+    for i, st in ipairs({ "brouillon", "envoye", "a_signer", "signe" }) do
+        local g = ("Player-1-0000C0%02d"):format(i)
+        cles[i] = g .. "#77" .. i
+        HandshakeDB.contracts[cles[i]] = { origin = g, id = "77" .. i, v = "1", parent = "0", client = moi, artisan = g,
+            m = {}, o = { { id = 2841, qty = 1, unit = 100 } }, d = GetServerTime() + 86400, hash = ("0000000%dfeedface"):format(i),
+            status = st, signed = st == "signe" and GetServerTime() or nil, author = moi, peer = { guid = g, name = noms[i] } }
+    end
+    local ok, err = pcall(function()
+        SlashCmdList.HANDSHAKECONTRAT()
+        local f = HandshakeContratsFrame
+        for _, c in ipairs({ f:GetChildren() }) do assertTrue(not c.GetMenuDescription, "plus de menu déroulant") end
+        local montrees = {}
+        for _, b in ipairs(f.entrees) do if b:IsShown() then montrees[#montrees + 1] = b end end
+        for i, cle in ipairs(cles) do
+            local b
+            for _, x in ipairs(montrees) do if x.c == HandshakeDB.contracts[cle] then b = x end end
+            assertNotNil(b, "l'entrée de " .. noms[i])
+            assertTrue(b.nom:GetText():find(noms[i], 1, true) == 1, b.nom:GetText())
+            b:Click()
+            assertTrue(f.body:GetText():find("Contrat avec " .. noms[i], 1, true) ~= nil, "le clic affiche " .. noms[i])
+            for _, x in ipairs(montrees) do assertEquals(x == b, x.fond:IsShown(), "surlignée : seulement l'affichée") end
+            assertTrue(b.trait:IsShown(), "le trait doré")
+            assertEquals(({ "brouillon", "en attente", "à signer", "signé" })[i], (b.etat:GetText():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")), "l'état court")
+        end
+        -- l'ordre de la colonne : à signer, brouillon, en attente, signé (ORDER)
+        local rang = {}
+        for k, x in ipairs(montrees) do rang[x.c] = k end
+        local function r(i) return rang[HandshakeDB.contracts[cles[i]]] end
+        assertTrue(r(3) < r(1) and r(1) < r(2) and r(2) < r(4), "triée comme le menu d'avant")
+        assertTrue(montrees[1]:GetLeft() < f.body:GetLeft(), "la colonne à gauche du contrat")
+    end)
+    if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
+    for _, cle in ipairs(cles) do HandshakeDB.contracts[cle] = nil end
+    if not ok then error(err, 0) end
 end)
 
 test("contrat pendant l'échange : pas de poignée, tout son texte dans le cadre, hors d'Échap, en DIALOG", function()

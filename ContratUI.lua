@@ -8,13 +8,16 @@
 -- répond dans l'arbre ou en liste.
 local _, ns = ...
 
-local W, H = 620, 600
+-- La colonne des contrats à gauche (COL_W), le contrat affiché à droite de X0 : la largeur d'avant (620) en plus.
+local COL_W, X0 = 180, 200
+local W, H = 620 - 14 + X0, 600
+local ENTREE_H = 34
 local frame, list, pos, shownHash = nil, {}, 1, nil
 local firstShown = {} -- empreinte -> moment où cette version a été affichée pour la première fois (réarmement)
 local STATUS = { brouillon = "|cff999999BROUILLON (pas envoyé)|r", envoye = "|cffe6994dEN ATTENTE DE SA RÉPONSE|r",
   a_signer = "|cffffd100À SIGNER PAR TOI|r", signe = "|cff59cc73SIGNÉ|r", clos = "|cff59cc73CLOS|r", echu = "|cffe64d4dÉCHU|r",
   refuse = "|cffe64d4dREFUSÉ|r", retire = "|cff999999RETIRÉ|r" }
--- Dans le menu des contrats : l'état en un mot.
+-- Dans la colonne des contrats : l'état en un mot (avec la couleur de STATUS).
 local COURT = { brouillon = "brouillon", envoye = "en attente", a_signer = "à signer", signe = "signé", clos = "clos",
   echu = "échu", refuse = "refusé", retire = "retiré" }
 local ORDER = { a_signer = 1, brouillon = 2, envoye = 3, signe = 4, echu = 5, clos = 6, refuse = 7, retire = 8 }
@@ -186,8 +189,7 @@ local function refresh()
   list = sorted()
   pos = math.min(math.max(1, pos), math.max(1, #list))
   local c, me = list[pos], ns.me()
-  frame.choix:SetShown(#list > 0)
-  frame.choix:GenerateMenu() -- la liste et le contrat affiché ont pu changer
+  frame.syncColonne() -- la liste et le contrat affiché ont pu changer
   local unsaved = false
   for _, x in ipairs(list) do if x.unsaved then unsaved = true end end
   frame.save:SetShown(unsaved)
@@ -266,27 +268,69 @@ local function build()
     b:SetScript("OnClick", function() local c = list[pos]; if c then onClick(c) end; refresh() end)
     return b
   end
-  -- Le contrat affiché : un menu déroulant de tous les contrats, avec qui et dans quel état (skill ui-addon : pas de < >).
-  frame.choix = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
-  frame.choix:SetWidth(260)
-  frame.choix:SetPoint("TOPLEFT", 14, -32) -- sous la barre de titre du gabarit
-  frame.choix:SetupMenu(function(_, root)
+  -- Le contrat affiché : une colonne de tous les contrats, comme celle des projets de Composants (skill ui-addon : pas de
+  -- menu déroulant) ; une entrée par contrat, qui et quelle version, l'état en dessous ; celle affichée surlignée (le
+  -- surlignage du jeu, tenu, et un trait doré) ; clic = l'afficher. Elle défile au-delà de sa hauteur.
+  local col = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
+  col:SetPoint("TOPLEFT", 10, -30) -- sous la barre de titre du gabarit
+  col:SetPoint("BOTTOMLEFT", 10, 10)
+  col:SetWidth(COL_W)
+  local sc = CreateFrame("ScrollFrame", nil, col, "UIPanelScrollFrameTemplate")
+  sc:SetPoint("TOPLEFT", 4, -4)
+  sc:SetPoint("BOTTOMRIGHT", -24, 4)
+  local liste = CreateFrame("Frame", nil, sc)
+  liste:SetSize(COL_W - 28, 1)
+  sc:SetScrollChild(liste)
+  frame.entrees = {}
+  local function entree(i)
+    local b = CreateFrame("Button", nil, liste)
+    b:SetSize(COL_W - 28, ENTREE_H - 2)
+    b:SetPoint("TOPLEFT", 0, -(i - 1) * ENTREE_H)
+    b.fond = b:CreateTexture(nil, "BACKGROUND")
+    b.fond:SetAllPoints()
+    b.fond:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
+    b.fond:SetBlendMode("ADD")
+    b.fond:SetVertexColor(1, 0.82, 0, 0.5)
+    b.trait = b:CreateTexture(nil, "ARTWORK")
+    b.trait:SetPoint("TOPLEFT"); b.trait:SetPoint("BOTTOMLEFT"); b.trait:SetWidth(2)
+    b.trait:SetColorTexture(1, 0.82, 0, 0.9)
+    b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    b.nom = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    b.nom:SetPoint("TOPLEFT", 8, -4); b.nom:SetPoint("RIGHT", -4, 0)
+    b.nom:SetJustifyH("LEFT"); b.nom:SetWordWrap(false)
+    b.etat = b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    b.etat:SetPoint("TOPLEFT", 8, -18); b.etat:SetPoint("RIGHT", -4, 0)
+    b.etat:SetJustifyH("LEFT")
+    b:SetScript("OnClick", function() pos = i; refresh() end)
+    frame.entrees[i] = b
+    return b
+  end
+  frame.syncColonne = function()
     for i, c in ipairs(list) do
+      local b = frame.entrees[i] or entree(i)
       local s = ns.ctStatus(c)
-      root:CreateRadio(("%s · v%s · %s"):format(c.peer and c.peer.name or "?", c.v, COURT[s] or s),
-        function(k) return pos == k end, function(k) pos = k; refresh() end, i)
+      b.c = c
+      b.nom:SetText(("%s · v%s"):format(c.peer and c.peer.name or "?", c.v))
+      local couleur = (STATUS[s] or ""):match("^|c" .. ("%x"):rep(8)) -- la couleur de l'état en entier (8 chiffres : « |cff999999BROUILLON »)
+      b.etat:SetText(couleur and (couleur .. (COURT[s] or s) .. "|r") or (COURT[s] or s))
+      b.fond:SetShown(i == pos)
+      b.trait:SetShown(i == pos)
+      b:Show()
     end
-  end)
+    for i = #list + 1, #frame.entrees do frame.entrees[i]:Hide() end
+    liste:SetHeight(#list * ENTREE_H + 8)
+    if sc.ScrollBar then sc.ScrollBar:SetShown(liste:GetHeight() > sc:GetHeight()) end -- la barre seulement si ça déborde
+  end
 
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", 14, -66)
+  scroll:SetPoint("TOPLEFT", X0, -60) -- sous « Commande à la main »
   scroll:SetPoint("BOTTOMRIGHT", -32, 96)
   frame.content = CreateFrame("Frame", nil, scroll)
-  frame.content:SetSize(W - 50, 1)
+  frame.content:SetSize(W - X0 - 36, 1)
   scroll:SetScrollChild(frame.content)
   frame.body = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   frame.body:SetPoint("TOPLEFT")
-  frame.body:SetWidth(W - 56)
+  frame.body:SetWidth(W - X0 - 42)
   scroll:SetScript("OnSizeChanged", function(_, w) -- le texte suit la largeur de la fenêtre agrandie
     frame.content:SetWidth(w)
     frame.body:SetWidth(w - 6)
@@ -314,7 +358,7 @@ local function build()
   end)
   frame.readable = button("Envoyer en clair", 130, function(c) readable(c) end)
   frame.actions = { frame.accept, frame.refuse, frame.reply, frame.replyList, frame.send, frame.withdraw, frame.manual, frame.readable }
-  frame.accept:SetPoint("BOTTOMLEFT", 14, 12)
+  frame.accept:SetPoint("BOTTOMLEFT", X0, 12)
   frame.refuse:SetPoint("LEFT", frame.accept, "RIGHT", 6, 0)
   frame.reply:SetPoint("LEFT", frame.refuse, "RIGHT", 6, 0)
   frame.replyList:SetPoint("LEFT", frame.reply, "RIGHT", 6, 0)
@@ -323,8 +367,8 @@ local function build()
   main:SetPoint("TOPRIGHT", -14, -32)
   main:SetText("Commande à la main")
   main:SetScript("OnClick", function() ns.openCommandeMain() end)
-  frame.send:SetPoint("BOTTOMLEFT", 14, 12)
-  frame.withdraw:SetPoint("BOTTOMLEFT", 14, 12)
+  frame.send:SetPoint("BOTTOMLEFT", X0, 12)
+  frame.withdraw:SetPoint("BOTTOMLEFT", X0, 12)
   frame.manual:SetPoint("LEFT", frame.withdraw, "RIGHT", 6, 0)
   frame.save = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   frame.save:SetSize(110, 22)
@@ -334,8 +378,8 @@ local function build()
 
   -- Modifier / contre-proposer : totaux et échéance
   local edit = CreateFrame("Frame", nil, frame)
-  edit:SetPoint("BOTTOMLEFT", 14, 44)
-  edit:SetSize(W - 28, 40)
+  edit:SetPoint("BOTTOMLEFT", X0, 44)
+  edit:SetSize(W - X0 - 14, 40)
   local function field(label, w, anchor)
     local t = edit:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     if anchor then t:SetPoint("LEFT", anchor, "RIGHT", 14, 0) else t:SetPoint("LEFT", 0, 0) end
