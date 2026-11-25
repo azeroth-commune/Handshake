@@ -290,7 +290,7 @@ function refresh()
       or ct.status == "brouillon" and "Brouillon dans Contrats : relis-le, puis « Envoyer la proposition »."
       or ("Contrat %s. « Nouvelle » pour une autre commande."):format(ns.etatDemande(ct)))
   end
-  frame.go:SetText(c and "Contre-proposer" or ns.commandeEnvoyee(o) and "Voir la demande" or "Préparer la demande")
+  frame.go:SetText(c and "Contre-proposer…" or ns.commandeEnvoyee(o) and "Voir la demande" or "Préparer la demande")
   frame.nouvelle:SetShown(not c)
   frame.annonce:SetShown(not c)
   frame.plus:ClearAllPoints()

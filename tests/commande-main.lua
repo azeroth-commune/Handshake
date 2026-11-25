@@ -121,7 +121,7 @@ test("une demande reçue se répond dans la liste : ce qu'il veut est figé", fu
     local qtes = tous(HandshakeMainFrame, function(x) return x:GetObjectType() == "EditBox" and x:IsVisible() and x.liste == "lines" end)
     assertEquals(1, #qtes)
     assertTrue(not qtes[1]:IsEnabled(), "la quantité de ce qu'il veut est grisée")
-    assertNotNil(bouton(HandshakeMainFrame, "Contre-proposer"))
+    assertNotNil(bouton(HandshakeMainFrame, "Contre-proposer…"))
     HandshakeMainFrame:Hide()
     HandshakeContratsFrame:Hide()
     HandshakeDB.contracts["Player-1-0000B0B0#4242"] = nil

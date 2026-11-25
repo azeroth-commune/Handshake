@@ -233,7 +233,7 @@ local function refresh()
       frame.edit.initial = { frame.edit.caution:GetText(), frame.edit.delivery:GetText(), frame.edit.days:GetText() }
     end
     frame.edit.caution:SetEnabled(#c.m > 0)
-    frame.edit.go:SetText(status == "brouillon" and "Modifier" or "Contre-proposer")
+    frame.edit.go:SetText(status == "brouillon" and "Modifier" or "Contre-proposer…")
   end
 end
 ns.refreshContracts = refresh
@@ -361,8 +361,9 @@ local function build()
     if days and (days <= 0 or days > 30) then return print("Contrats : échéance entre 0 et 30 jours.") end
     if ns.ctStatus(c) == "brouillon" then ns.ctEditDraft(c, caution, delivery, days)
     else
-      local ok, err = ns.ctCounter(c, caution, delivery, days)
-      if not ok then print("|cffe64d4dContrats :|r " .. err .. ".") end
+      local n, err = ns.ctCounter(c, caution, delivery, days) -- un brouillon : sa fiche, puis « Envoyer la proposition »
+      if not n then return print("|cffe64d4dContrats :|r " .. err .. ".") end
+      return ns.openContracts(ns.ctKey(n))
     end
     refresh()
   end)

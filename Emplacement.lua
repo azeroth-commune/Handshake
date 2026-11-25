@@ -185,7 +185,7 @@ local function construire()
     local p, i, v = ici()
     if not p then return end
     if enLecture(p) then return ns.openContracts(aVoir(v)) end
-    if v.reponse then -- la contre-proposition de l'artisan (règles de la Réponse : Handshake#60)
+    if v.reponse then -- la contre-proposition de l'artisan : son brouillon, relu sur sa fiche dans Contrats, part de là
       local ct, err = ns.ctReplyFromOrder(v)
       if not ct then return dire(err) end
       ns.openContracts(ns.ctKey(ct))
@@ -268,7 +268,7 @@ function sync()
     P.go:SetText("Voir dans Contrats")
     P.go:SetEnabled(aVoir(v) ~= nil)
   else
-    P.go:SetText(rep and "Contre-proposer" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
+    P.go:SetText(rep and "Contre-proposer…" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
     P.go:SetEnabled((rep or v.fige or not v.vide) and true or false)
   end
 end

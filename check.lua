@@ -715,8 +715,13 @@ assert(atBob and atBob.status == "a_signer" and atBob.author == BEL, "Bob a la p
 assert(atBob.peer.guid == GBEL and atBob.peer.name == BELN and not atBob.peer.verified, "le nom du serveur, le GUID déclaré, pas encore vérifié")
 assert(atBob.hash == bases[BEL].contracts[k].hash, "même empreinte des deux côtés")
 
--- Bob contre-propose une caution de 6000 au lieu de 5400 : v2, parent = v1.
-ns.ctCounter(atBob, 6000, nil, nil)
+-- Bob contre-propose une caution de 6000 au lieu de 5400 : v2, parent = v1. Un brouillon d'abord, à côté de la v1 : rien
+-- ne part avant qu'il ait relu la fiche de SA version et cliqué « Envoyer la proposition » (P8, n° 11, 13, 26, 57).
+local envoyes = #wire
+local brouillon2 = assert(ns.ctCounter(atBob, 6000, nil, nil))
+assert(brouillon2.status == "brouillon" and #wire == envoyes and HandshakeDB.contracts[ns.ctKey(brouillon2)] == brouillon2
+  and HandshakeDB.contracts[k] == atBob and atBob.v == "1" and atBob.status == "a_signer", "contre-proposition : un brouillon, rien n'est parti")
+assert(ns.ctPropose(brouillon2) and #wire == envoyes + 1, "envoyée de sa fiche")
 as(BEL)
 local atBel = HandshakeDB.contracts[k]
 assert(atBel.v == "2" and atBel.status == "a_signer" and atBel.prev.v == "1" and ns.ctTotal(atBel.m) == 36 * 167, "contre-proposition reçue, avec la version d'avant")
@@ -947,7 +952,11 @@ assert(select(2, ns.ctReplyFromOrder(reponse1())):find("rien n'a changé"), "rie
 ns.projetApport(rep, 3858, true)
 ns.projetOffre(rep, 50000)
 assert(ns.projetReponse(recu) == rep and ns.projetApports(rep)[3858], "même version rouverte : mes changements restent")
+local envoyesRep = #wire
 local v2 = ns.ctReplyFromOrder(reponse1())
+assert(v2.status == "brouillon" and #wire == envoyesRep and recu.v == "1" and HandshakeDB.contracts[ns.ctKey(v2)] == v2,
+  "la contre-proposition de l'artisan : un brouillon, relu sur sa fiche ; rien n'est parti")
+assert(ns.ctPropose(v2) and #wire == envoyesRep + 1, "envoyée de sa fiche")
 assert(v2.v == "2" and #v2.m == 2 and v2.m[1].id == 3858 and v2.m[1].unit == 200 and v2.m[2].unit == 500,
   "minerai ajouté au prix de mon scan, cuir à la caution du contrat")
 assert(v2.o[1].unit == 30 * 200 + 4 * 500 + 50000, "livraison = cautions + mon prix")
@@ -955,7 +964,7 @@ as(BOB)
 local back = HandshakeDB.contracts[key1]
 assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob reçoit la contre-proposition")
 assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
-print("Handshake : je réponds (ma part, mes apports, mon prix) OK")
+print("Handshake : je réponds (ma part, mes apports, mon prix ; un brouillon relu sur sa fiche) OK")
 
 -- Commande à la main (#38) : sans arbre, une liste « ce que je veux » et une liste « ce que j'apporte » (objets ×
 -- quantités), remplies par la recherche (un ID) ou par un objet déposé (un ID). Le contrat ne voit que des objets × quantités :
@@ -1028,6 +1037,8 @@ do
   assert(ns.mainAjouter(r, "apporte", 3858, 30) and ns.reponseMain(recue) == r, "apport ajouté ; même version : mes changements restent")
   r.tip = 50000
   local v2 = assert(ns.ctReplyFromOrder(r))
+  assert(v2.status == "brouillon", "en liste aussi : un brouillon")
+  assert(ns.ctPropose(v2))
   assert(v2.v == "2" and txt(v2.m) == "3858:30:200,4234:4:500" and v2.o[1].unit == 30 * 200 + 4 * 500 + 50000, "contre-proposition : " .. txt(v2.m) .. " / " .. txt(v2.o))
   as(BOB)
   local back = HandshakeDB.contracts[ns.ctKey(ct)]
@@ -1188,7 +1199,7 @@ do
   -- Belegard contre-propose (+ 10 pa), Bob signe : la commande suit son contrat, pas le projet.
   as(BEL)
   local chez = HandshakeDB.contracts[ns.ctKey(ct)]
-  ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000)
+  ns.ctPropose(assert(ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000)))
   as(BOB)
   assert(cmd().etat == "contre-proposé", "contre-proposée")
   local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
@@ -1259,9 +1270,11 @@ do
   assert(ct.status == "brouillon" and not bases[BEL].contracts[ns.ctKey(ct)], "un brouillon, rien sur le fil")
   assert(ns.ctPropose(ct) and ct.status == "envoye" and ct.v == "1" and bases[BEL].contracts[ns.ctKey(ct)], "parti de sa fiche, arrivé chez Belegard")
   assert(ns.projetEnvoyer(p, f) == ct, "parti : pas refait")
-  -- Aucun autre chemin ne fait partir la v1 en sautant sa fiche : ni le panneau ni les contrats préparés n'appellent l'envoi.
-  for _, fichier in ipairs({ "Emplacement.lua", "Commande.lua", "CommandeMain.lua", "Annonce.lua" }) do
-    local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
+  -- Aucun autre chemin ne fait partir un contrat en sautant sa fiche, ni la v1 ni une nouvelle version (contre-proposition,
+  -- réponse de l'artisan : des brouillons, Contrat.lua newVersion) : seul « Envoyer la proposition » de Contrats appelle
+  -- l'envoi ; Contrat.lua ne fait que le définir.
+  for _, fichier in ipairs({ "Contrat.lua", "Emplacement.lua", "Commande.lua", "CommandeMain.lua", "Annonce.lua" }) do
+    local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", ""):gsub("function ns%.ctPropose%(", "")
     assert(not code:find("ctPropose", 1, true), fichier .. " envoie un contrat sans sa fiche")
   end
   -- Le minage : préparé (j'apporte le cuivre), son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc
@@ -1349,7 +1362,7 @@ do
   assert(not E.confie(p, C.Arbre(p, true).blocDe.Forge) and lignes(p)[2870] == nil and lignes(p)[5500], "le bloc revient")
   -- Contre-proposé par Belegard (à signer, c'est à moi) : refusé, des deux côtés.
   i, k = forge()
-  as(BEL); ns.ctCounter(bases[BEL].contracts[k], nil, ns.ctTotal(bases[BEL].contracts[k].o) + 1000); as(BOB)
+  as(BEL); ns.ctPropose(assert(ns.ctCounter(bases[BEL].contracts[k], nil, ns.ctTotal(bases[BEL].contracts[k].o) + 1000))); as(BOB)
   assert(HandshakeDB.contracts[k].status == "a_signer", "sa contre-proposition")
   assert(ns.abandonner(p, i) == "refuse" and bases[BEL].contracts[k].status == "refuse", "à signer : refusé, des deux côtés")
   -- Signé : le projet le lâche ; rien ne part, le contrat reste signé des deux côtés (son registre, son échéance).
@@ -1448,7 +1461,7 @@ do
   assert(not cmd(f).ecart and cmd(f).etat == "contre-proposé", "nouvelle version partie : plus d'écart")
   -- Sa contre-proposition qui ne change que le prix : rien à signaler (la part du projet n'a pas bougé).
   as(BEL)
-  ns.ctCounter(recu, nil, ns.ctTotal(recu.o) + 1000)
+  ns.ctPropose(assert(ns.ctCounter(recu, nil, ns.ctTotal(recu.o) + 1000)))
   as(BOB)
   assert(cmd(f).etat == "contre-proposé" and not cmd(f).ecart, "il change son prix : pas d'écart")
   -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
@@ -1484,7 +1497,7 @@ do
   assert(b.v == "4" and b.prev.v == "3", "brouillon de la v4")
   as(BEL)
   local v3 = HandshakeDB.contracts[ns.ctKey(cf)]
-  assert(ns.ctCounter(v3, nil, ns.ctTotal(v3.o) + 500))
+  assert(ns.ctPropose(assert(ns.ctCounter(v3, nil, ns.ctTotal(v3.o) + 500))))
   as(BOB)
   local _, perime = ns.ctPropose(b)
   assert(perime and perime:find("a changé") and not HandshakeDB.contracts[ns.ctKey(b)], "périmé : effacé, pas envoyé")
