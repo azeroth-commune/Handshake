@@ -8,9 +8,10 @@
 -- répond dans l'arbre ou en liste.
 local _, ns = ...
 
--- La colonne des contrats à gauche (COL_W), le contrat affiché à droite de X0 : la largeur d'avant (620) en plus.
-local COL_W, X0 = 180, 200
-local W, H = 620 - 14 + X0, 600
+-- La colonne des contrats à gauche (COL_W), le contrat affiché à droite de X0. W × H : taille de départ et minimum, ce
+-- que prend le cas courant (la ligne « Modifier » et la plus longue rangée de boutons) ; le texte défile, on agrandit.
+local COL_W, X0 = 150, 166
+local W, H = 680, 400
 local ENTREE_H = 34
 local frame, list, pos, shownHash = nil, {}, 1, nil
 local firstShown = {} -- empreinte -> moment où cette version a été affichée pour la première fois (réarmement)
@@ -372,7 +373,7 @@ local function build()
   frame.manual:SetPoint("LEFT", frame.withdraw, "RIGHT", 6, 0)
   frame.save = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   frame.save:SetSize(110, 22)
-  frame.save:SetPoint("BOTTOMRIGHT", -26, 12) -- à gauche de la poignée
+  frame.save:SetPoint("RIGHT", main, "LEFT", -6, 0) -- en haut, à côté de « Commande à la main » : le bas est aux actions
   frame.save:SetText("Sauvegarder")
   frame.save:SetScript("OnClick", ReloadUI)
 
@@ -392,10 +393,10 @@ local function build()
     return e
   end
   edit.caution = field("Caution (po)", 60)
-  edit.delivery = field("À la livraison (po)", 60, edit.caution)
-  edit.days = field("Échéance (jours)", 36, edit.delivery)
+  edit.delivery = field("Livraison (po)", 60, edit.caution)
+  edit.days = field("Délai (jours)", 36, edit.delivery)
   edit.go = CreateFrame("Button", nil, edit, "UIPanelButtonTemplate")
-  edit.go:SetSize(130, 22)
+  edit.go:SetSize(90, 22)
   edit.go:SetPoint("LEFT", edit.days, "RIGHT", 12, 0)
   edit.go:SetScript("OnClick", function()
     local c = list[pos]

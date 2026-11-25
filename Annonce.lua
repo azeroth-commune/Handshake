@@ -404,7 +404,7 @@ end
 
 -- « Annonces lues » (/handshake annonces) : une ligne par demande, qui, depuis quand, où, son texte nettoyé ; l'objet
 -- (survol : sa bulle) ; « Répondre », un clic, un chuchotement ; une fois fait, le bouton le dit.
-local W, ROW, ROWS = 560, 38, 10
+local W, ROW, ROWS = 420, 38, 5 -- taille de départ et minimum : quelques annonces ; plus, on agrandit
 local fenetre
 local function construire()
   fenetre = ns.newWindow("HandshakeDemandesFrame", "Annonces lues", W, 64 + ROWS * ROW)

@@ -85,7 +85,7 @@ end
 ---------------------------------------------------------------------------------------------------
 -- La fenêtre (/handshake liste ; « Répondre en liste » dans Contrats) : l'artisan et l'offre en haut, les deux
 -- listes côte à côte, l'état de la demande et les boutons en bas.
-local W, ROW, ROWS = 580, 24, 10
+local W, ROW, ROWS = 580, 24, 4 -- taille de départ et minimum : 4 lignes par colonne ; plus, on agrandit
 local frame, reponse -- reponse : la clé du contrat auquel on répond (nil = ma commande à la main)
 local function order()
   local c = reponse and ns.ctStore()[reponse]

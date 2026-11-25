@@ -29,10 +29,10 @@ async_test("Commande à la main agrandie : plus de lignes, les boutons du bas re
     local function vues() local n = 0 for _, r in ipairs(f.cols[1].rows) do if r:IsShown() then n = n + 1 end end return n end
     local function fin() f:SetSize(w, h); f:Hide(); HandshakeDB.main = nil end
     ensuite(done, function()
-        assertEquals(10, vues(), "10 lignes à la taille de départ")
-        assertEquals("… et 4 autre(s)", f.cols[1].more:GetText())
+        assertEquals(4, vues(), "4 lignes à la taille de départ")
+        assertEquals("… et 10 autre(s)", f.cols[1].more:GetText())
         assertNotNil(f.ResizeButton, "une poignée")
-        f:SetSize(w + 200, h + 120)
+        f:SetSize(w + 200, h + 260)
         ensuite(done, function()
             done(function()
                 local ok, err = pcall(function()
@@ -63,7 +63,7 @@ async_test("Contrats agrandie : le texte suit la largeur ; « Commande à la mai
             f:SetSize(w, h)
             f:Hide()
             assertTrue(large >= avant + 190, "le texte s'élargit avec la fenêtre : " .. avant .. " -> " .. large)
-            assertTrue(avant >= 560, "à la taille de départ, le texte garde sa largeur d'avant la colonne : " .. avant)
+            assertTrue(avant >= 440, "à la taille de départ, le texte a sa place : " .. avant)
         end)
     end)
 end)
