@@ -229,8 +229,7 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
         assertTrue(#quantites() > 0, "une case par objet du projet")
         for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
         HandshakeDB.commandes[p.id].reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
-        parcourir(deroulant(ComposantsFrame, function(c) return c:GetText() == "Projets" end),
-            function() return affichePas() == p end) -- le même projet choisi : redessiné
+        Composants.Rafraichir() -- le même projet, redessiné
         assertEquals(p, affichePas())
         assertTrue(#quantites() > 0, "toujours affichée")
         for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
