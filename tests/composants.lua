@@ -29,12 +29,7 @@ local function enfant(ok)
 end
 local function bouton(texte) return enfant(function(c) return c.GetText and c:GetText() == texte and c:GetObjectType() == "Button" end) end
 -- Le nom du projet affiché en haut de la fenêtre.
-local function affiche(nom)
-    for _, r in ipairs({ ComposantsFrame:GetRegions() }) do
-        if r.GetText and r:IsShown() and r:GetText() == nom then return true end
-    end
-    return false
-end
+local function affiche(nom) return ComposantsFrame.title:GetText() == nom end -- le titre du gabarit (Composants#30)
 -- Le projet affiché dans la fenêtre de Composants.
 local function affichePas() return ComposantsDB.projets[ComposantsDB.courant] end
 -- Les menus déroulants (contrats, projets) : chaque entrée choisie tour à tour jusqu'à ce que ok() soit vrai, ou celle
