@@ -23,21 +23,24 @@ INSTALLER (2 minutes)
 
 FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
   Composants est un addon à part (l'arbre de fabrication et tes projets) ; Handshake marche sans lui.
-  S'il est installé : /handshake (ou /composants) ouvre la fenêtre des projets. Tape l'objet voulu, « Ajouter »,
-  ou Ctrl+clic droit sur un objet n'importe où (sacs, lien du chat, recette…) ; mets le nom de l'artisan dans « Joueur ».
-  Dans l'arbre, Ctrl+clic sur un composant que tu fournis toi-même (il passe en bleu) ; « Commander » sur un bloc
-  le commande à part, à l'artisan de ce métier.
-  « Offre » : ce que tu proposes de payer (ou laisse vide : l'artisan chiffrera).
-  « Préparer la demande », relis-la dans /contrat, puis « Envoyer la proposition ».
+  S'il est installé : /composants ouvre la fenêtre des projets. Tape l'objet voulu, ou Ctrl+clic droit sur un objet
+  n'importe où (sacs, lien du chat, recette…).
+  « Commander » sur un bloc de l'arbre (ou « Commander tout » sur la ligne du projet) crée un contrat préparé : le bloc
+  devient une seule case « Contrat n°12 · artisan · état ». Clic sur la case : son panneau. Mets l'artisan, ton
+  « Offre » (ou laisse vide : l'artisan chiffrera), coche dans « Apports » ce que tu fournis toi-même,
+  puis « Vérifier et envoyer… » : le contrat s'ouvre dans /contrat ; relis-le, puis « Envoyer la proposition ».
+  « Plus » : voir dans /contrat, envoyer en clair, annoncer dans le Commerce, abandonner (tant qu'il n'est pas parti).
 
 COMMANDE À LA MAIN (sans arbre)
-  /handshake (sans Composants), /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
+  /handshake, /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
   j'apporte ». Tape un objet dans la recherche (ou glisse un objet de tes sacs sur la liste),
   mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
   Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre dans l'arbre » avec Composants).
+  « Importer une liste reçue » (menu « Plus » de cette fenêtre, avec « Envoyer en clair ») : une liste chuchotée ou collée ; avec Composants, elle devient un
+  projet commandé en entier.
 
 ANNONCER DANS LE COMMERCE, LIRE LES DEMANDES
-  « Annoncer » (commande à la main, ou menu « Plus » de Composants) publie « WTB [objet] xN, … · offre 5 po » dans le
+  « Annoncer » (commande à la main, ou menu « Plus » du panneau d'un contrat préparé) publie « WTB [objet] xN, … · offre 5 po » dans le
   canal Commerce (l'offre si la commande en a une), un clic = un message (en ville seulement, pas deux fois la même avant
   5 min). Avec Trade Board installé, c'est son dialogue qui s'ouvre : l'offre s'y saisit en prix à l'unité. Une annonce n'engage à rien : seul le contrat engage.
   Côté artisan : une demande du Commerce ou un cri (WTB, Buy, Search, LF, cherche) pour un objet que tes persos savent
@@ -49,7 +52,7 @@ ANNONCER DANS LE COMMERCE, LIRE LES DEMANDES
 
 COMMANDES
   /contrat            les contrats (lire, signer, refuser, contre-proposer)
-  /handshake          avec Composants : la fenêtre des projets et leurs commandes ; sans : la commande à la main
+  /handshake          la fenêtre de Handshake : la commande à la main, Importer une liste reçue
   /handshake liste    la commande à la main
   /handshake annonces les annonces lues dans le Commerce
   /handshake essai lue <texte>       lit <texte> comme une demande du Commerce (pour essayer, rien n'est envoyé)

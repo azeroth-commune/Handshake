@@ -31,8 +31,8 @@ local acns = {}
 for f in io.open("AzerothCommune/AzerothCommune.toc"):read("*a"):gmatch("([%w_]+)%.lua") do
   if f ~= "VendorData" and f ~= "RecettesReserve" and f ~= "CatalogueObjets" then assert(loadfile("AzerothCommune/" .. f .. ".lua"))("AzerothCommune", acns) end
 end
--- Handshake d'abord, puis Composants (il déclare Handshake en OptionalDeps), puis l'entrée en jeu (PLAYER_LOGIN) : Handshake
--- se branche sur Composants.
+-- Handshake, puis Composants, puis l'entrée en jeu (PLAYER_LOGIN) : Handshake se branche sur Composants (l'ordre de
+-- chargement n'y fait rien).
 local ns, cns = {}, {}
 local HSTOC = io.open("Handshake/Handshake.toc"):read("*a")
 for f in HSTOC:gmatch("([%w_]+)%.lua") do assert(loadfile("Handshake/" .. f .. ".lua"))("Handshake", ns) end
@@ -620,6 +620,16 @@ cns.openCraftWindow = noop -- pas d'interface hors jeu
 ns.importText(msgs[1] .. " " .. msgs[2]:gsub("^.-: ", ""), "Bob")
 local importe = C.Projets()[#C.Projets()]
 assert(cns.projetCourant() == importe and #importe.lines == 3 and ns.projetCommande(importe).player == "Bob", "commande importée en projet, affichée")
+assert(ns.contratDuBloc(importe, nil) == 1, "une liste reçue : un projet commandé en entier")
+-- Les commandes d'avant Composants#26 (sans numéro) : celles d'un bloc ou avec un contrat en prennent un, rien n'est effacé ;
+-- le projet entier jamais commandé reste sans.
+do
+  local db = { commandes = { [1] = { liste = { { id = 1 }, { id = 2, bloc = "Forge" }, { id = 3, contrat = "x#1" } }, seq = 3 },
+    [2] = { liste = { { id = 1, contrat = "y#2" } }, seq = 1 } } }
+  ns.numeroterAnciennes(db)
+  local l = db.commandes[1].liste
+  assert(not l[1].n and l[2].n and l[3].n and db.commandes[2].liste[1].n and #l == 3, "numérotées, rien d'effacé")
+end
 print("Handshake : reprise, purge et import OK")
 
 -- /handshake essai : la commande à la main revient comme un chuchotement de soi-même, sans réseau.
@@ -999,7 +1009,7 @@ do
   assert(ns.mainPreparer(cm) == ct, "envoyée : son contrat, inchangé")
   local ok, raison = ns.mainAjouter(cm, "lines", 3858, 1)
   assert(not ok and raison:find("envoyée", 1, true) and #cm.lines == 1, "envoyée : la commande est figée")
-  assert(ns.etatDemande(ct) == "demande envoyée", ns.etatDemande(ct))
+  assert(ns.etatDemande(ct) == "envoyé", ns.etatDemande(ct))
   local nouvelle = ns.mainNouvelle()
   assert(nouvelle ~= cm and #nouvelle.lines == 0 and ns.commandeMain() == nouvelle and HandshakeDB.contracts[ns.ctKey(ct)], "nouvelle commande ; le contrat reste")
 
@@ -1056,7 +1066,7 @@ do
   C.Choix(r, 3858, nil)
   local i = ns.projetCommander(r, C.Arbre(r, true).blocs[1])
   local sous = ns.projetCommande(r, i)
-  assert(i == 2 and #ns.projetCommandes(r) == 2 and sous.bloc and not sous.reponse and sous.etat == "pas envoyée",
+  assert(i == 2 and #ns.projetCommandes(r) == 2 and sous.bloc and not sous.reponse and sous.etat == "préparé",
     "le bloc commandé : une commande de la réponse")
   assert(ns.projetCommande(r).reponse and not ns.projetCommande(r).etat, "la 1re reste la réponse elle-même, sans état")
   ns.projetArtisan(r, "Cid", i)
@@ -1127,7 +1137,7 @@ ComposantsDB.options = { bags = true, unlearned = true }
 local ok, err = pcall(function()
   local p = C.NouveauProjet({ lines = { { id = 5541, qty = 2 }, { id = 2870, qty = 1 } } })
   C.Choix(p, 2841, "fabriquer")
-  local blocs = C.Arbre(p).blocDe -- l'arbre de la fenêtre, stock déduit
+  local blocs = C.Arbre(p, true).blocDe -- l'arbre de la fenêtre, stock déduit
   local forge, mine = ns.projetCommande(p, ns.projetCommander(p, blocs.Forge)), ns.projetCommande(p, ns.projetCommander(p, blocs.Minage))
   local livre, recu = mine.lines[1], ns.demandeApports(ns.arbreDemande(forge, forge.apports))
   assert(livre.id == 2841 and recu[1].id == 2841 and livre.qty == recu[1].qty and livre.qty == 40,
@@ -1157,14 +1167,14 @@ do
     table.sort(a)
     return table.concat(t, ",") .. " / " .. table.concat(a, ",") .. " / " .. tostring(v.tip) .. " / " .. tostring(v.player)
   end
-  assert(cmd().etat == "pas envoyée", "pas encore de contrat")
+  assert(cmd().etat == "préparé", "pas encore de contrat")
   local ct = assert(ns.projetEnvoyer(p, i))
-  assert(ct.status == "brouillon" and cmd().etat == "pas envoyée", "brouillon : pas envoyée")
+  assert(ct.status == "brouillon" and cmd().etat == "préparé", "brouillon : pas envoyée")
   ns.projetOffre(p, 9000, i)
   ct = assert(ns.projetEnvoyer(p, i))
   assert(ns.ctTotal(ct.o) - ns.ctTotal(ct.m) == 9000, "préparée de nouveau : le brouillon suit la commande")
   ns.ctPropose(ct)
-  assert(cmd().etat == "demande envoyée", "envoyée : son état vient du contrat")
+  assert(cmd().etat == "envoyé", "envoyée : son état vient du contrat")
   assert(ns.ctKey(ct) ~= key1 and bases[BEL].contracts[ns.ctKey(ct)].hash == ct.hash, "même seconde qu'une autre demande : une autre clé, arrivée chez Belegard")
   local envoyee = termes(cmd())
   assert(envoyee == "2870x1,5541x1 / 2841 / 9000 / " .. BELN, envoyee)
@@ -1180,10 +1190,10 @@ do
   local chez = HandshakeDB.contracts[ns.ctKey(ct)]
   ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000)
   as(BOB)
-  assert(cmd().etat == "contre-proposée", "contre-proposée")
+  assert(cmd().etat == "contre-proposé", "contre-proposée")
   local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
   assert(ns.ctAccept(v2, v2.hash))
-  assert(cmd().etat == "signée" and cmd().tip == 10000, "signée, au prix de la version signée")
+  assert(cmd().etat == "signé" and cmd().tip == 10000, "signée, au prix de la version signée")
   -- En clair (#7) : le texte part de la commande, avec ses lignes, ses apports et son offre ; envoyée, ce sont ceux de son
   -- contrat, même si la recette a changé depuis (la cuirasse prend maintenant 25 bronzes).
   for id, nom in pairs({ [5541] = "Marteau", [2870] = "Cuirasse", [2841] = "Barre de bronze" }) do
@@ -1202,7 +1212,7 @@ do
   -- Le bloc de la forge commandé de nouveau : sa commande est figée, une nouvelle commande vivante (son identité à elle) ;
   -- commandé encore une fois : la même, tant qu'elle n'est pas partie.
   local j = ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge)
-  assert(j ~= i and not ns.projetCommande(p, j).fige and ns.projetCommande(p, j).etat == "pas envoyée", "une nouvelle commande de la forge")
+  assert(j ~= i and not ns.projetCommande(p, j).fige and ns.projetCommande(p, j).etat == "préparé", "une nouvelle commande de la forge")
   assert(ns.projetCommande(p, j).id ~= cmd().id, "chaque commande a son identité")
   assert(ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge) == j, "la commande vivante est reprise")
   assert(termes(cmd()) ~= termes(ns.projetCommande(p, j)), "la nouvelle suit le projet, l'envoyée non")
@@ -1214,6 +1224,78 @@ do
   assert(HandshakeDB.commandes[p.id] == nil, "ses commandes pas encore parties disparaissent")
 end
 print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
+
+-- Commander un bloc (Composants#26) crée tout de suite un contrat préparé, numéroté (le numéro ne voyage pas) ; le bloc est
+-- confié (l'emplacement du bloc de Composants le réduit à une case) tant que son contrat vit ; « Vérifier et envoyer… »
+-- n'en fait que le brouillon de la v1, ouvert sur sa fiche dans Contrats, d'où il part (ns.ctPropose : « Envoyer la
+-- proposition ») ; refusé, retiré ou échu, le bloc revient, sans ses apports. Abandonner un contrat préparé efface son
+-- brouillon et ses apports. Supprimer le projet efface ses contrats préparés (et leurs brouillons), jamais un contrat parti.
+as(BOB)
+do
+  assert(cns.fournisseur == ns.emplacement, "Handshake branché sur l'emplacement du bloc de Composants")
+  local p = C.NouveauProjet({ lines = { { id = 5541, qty = 1 }, { id = 2870, qty = 1 } } })
+  C.Choix(p, 2841, "fabriquer")
+  local E = ns.emplacement
+  local blocs = C.Arbre(p, true).blocDe
+  assert(not E.confie(p, blocs.Forge) and not E.confie(p, nil) and E.apports(p) == nil, "rien de commandé")
+  assert(HandshakeDB.commandes[p.id] == nil, "lire un projet n'y range rien")
+  local avant = HandshakeDB.numero or 0
+  local f = ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge)
+  local m = ns.projetCommander(p, C.Arbre(p, true).blocDe.Minage)
+  local cf, cm = HandshakeDB.commandes[p.id].liste[f], HandshakeDB.commandes[p.id].liste[m]
+  assert(cf.n == avant + 1 and cm.n == avant + 2, "chaque contrat préparé a son numéro, tout de suite")
+  assert(ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge) == f and cf.n == avant + 1, "le même bloc : le même contrat, le même numéro")
+  assert(E.confie(p, blocs.Forge) and E.confie(p, blocs.Minage) and not E.confie(p, nil), "les deux blocs confiés, pas le projet entier")
+  assert(ns.projetCommande(p, f).etat == "préparé" and not HandshakeDB.contracts[cf.contrat or ""], "préparé : rien dans Contrats")
+  ns.projetApport(p, 5500, true)
+  assert(E.apports(p)[5500], "mes apports sortent de l'arbre")
+  -- Vérifier et envoyer… : sans artisan connu, pas de brouillon (la raison est dite) ; avec, le brouillon de la v1, rien
+  -- sur le fil ; il part de sa fiche (« Envoyer la proposition »).
+  ns.projetArtisan(p, "Cid", f)
+  local rien, pourquoi = ns.projetEnvoyer(p, f)
+  assert(not rien and pourquoi, "artisan inconnu : pas de brouillon")
+  ns.projetArtisan(p, BELN, f)
+  local ct = assert(ns.projetEnvoyer(p, f))
+  assert(ct.status == "brouillon" and not bases[BEL].contracts[ns.ctKey(ct)], "un brouillon, rien sur le fil")
+  assert(ns.ctPropose(ct) and ct.status == "envoye" and ct.v == "1" and bases[BEL].contracts[ns.ctKey(ct)], "parti de sa fiche, arrivé chez Belegard")
+  assert(ns.projetEnvoyer(p, f) == ct, "parti : pas refait")
+  -- Aucun autre chemin ne fait partir la v1 en sautant sa fiche : ni le panneau ni les contrats préparés n'appellent l'envoi.
+  for _, fichier in ipairs({ "Emplacement.lua", "Commande.lua", "CommandeMain.lua", "Annonce.lua" }) do
+    local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
+    assert(not code:find("ctPropose", 1, true), fichier .. " envoie un contrat sans sa fiche")
+  end
+  assert(not ns.abandonner(p, f), "un contrat parti ne s'abandonne pas")
+  -- Le minage : préparé (j'apporte le cuivre), son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc
+  -- revient sans son apport ; la perle de la forge, toujours commandée, reste apportée.
+  ns.projetApport(p, 2770, true)
+  assert(E.apports(p)[2770] and E.apports(p)[5500], "le cuivre du minage, la perle de la forge")
+  ns.projetArtisan(p, BELN, m)
+  local bm = assert(ns.projetEnvoyer(p, m))
+  assert(HandshakeDB.contracts[ns.ctKey(bm)].status == "brouillon", "un brouillon dans Contrats")
+  assert(ns.abandonner(p, m) and not HandshakeDB.contracts[ns.ctKey(bm)], "abandonné : son brouillon effacé")
+  assert(not E.confie(p, blocs.Minage) and E.confie(p, blocs.Forge), "le minage revient, la forge reste confiée")
+  assert(not ns.projetApports(p)[2770] and ns.projetApports(p)[5500], "le bloc rendu n'a plus d'apports ; la forge garde les siens")
+  -- Belegard refuse la forge : le bloc revient ; commandé de nouveau, un autre contrat, un autre numéro.
+  as(BEL)
+  ns.ctRefuse(HandshakeDB.contracts[ns.ctKey(ct)])
+  as(BOB)
+  assert(not E.confie(p, blocs.Forge), "refusé : le bloc revient")
+  assert(E.apports(p) == nil and ns.projetApports(p) == nil, "refusé : plus d'apports, ses cases reviennent dans l'arbre")
+  local f2 = ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge)
+  assert(f2 ~= f and HandshakeDB.commandes[p.id].liste[f2].n > cm.n and E.confie(p, blocs.Forge), "de nouveau : un autre contrat")
+  -- Supprimer le projet : le préparé (et son brouillon) s'efface, le contrat parti (refusé) reste.
+  ns.projetArtisan(p, BELN, f2)
+  local b2 = assert(ns.projetEnvoyer(p, f2))
+  C.Supprimer(p.id)
+  assert(HandshakeDB.commandes[p.id] == nil and not HandshakeDB.contracts[ns.ctKey(b2)], "ses contrats préparés effacés")
+  assert(HandshakeDB.contracts[ns.ctKey(ct)], "le contrat parti reste dans Contrats")
+  -- Le projet entier commandé : sa 1re place prend un numéro ; tout l'arbre est confié.
+  local q = C.NouveauProjet({ lines = { { id = 5541, qty = 1 } } })
+  assert(ns.projetCommander(q, {}) == 1 and HandshakeDB.commandes[q.id].liste[1].n and E.confie(q, nil), "tout le projet, confié")
+  assert(ns.abandonner(q, 1) and not E.confie(q, nil) and #HandshakeDB.commandes[q.id].liste == 1, "abandonné : la place reste, pas commandée")
+  C.Supprimer(q.id)
+end
+print("Handshake : commander un bloc crée un contrat préparé (numéro, envoyer, abandonner, supprimer) OK")
 
 -- Écart et nouvelle version (#8) : une commande envoyée ne bouge jamais d'elle-même ; quand la part du projet qu'elle vise
 -- change, l'écart est signalé (pas quand le changement est ailleurs) ; « Nouvelle version » la renvoie en contre-
@@ -1272,7 +1354,7 @@ do
   local brouillon = assert(ns.projetNouvelleVersion(p, f))
   assert(brouillon.status == "brouillon" and brouillon.v == "2" and ns.ctKey(brouillon) ~= ns.ctKey(cf)
     and HandshakeDB.contracts[ns.ctKey(brouillon)] == brouillon and HandshakeDB.contracts[ns.ctKey(cf)] == cf, "brouillon à côté de la v1")
-  assert(chez[ns.ctKey(cf)].v == "1" and cmd(f).etat == "demande envoyée" and cmd(f).ecart, "rien n'est parti, l'écart reste")
+  assert(chez[ns.ctKey(cf)].v == "1" and cmd(f).etat == "envoyé" and cmd(f).ecart, "rien n'est parti, l'écart reste")
   local apercu = ns.ctDescribe(brouillon, BOB)
   assert(apercu:find("BROUILLON") and apercu:find("Changé depuis la v1") and apercu:find("absent %-> 1"), "le différentiel avant l'envoi")
   local v2 = assert(ns.projetNouvelleVersion(p, f))
@@ -1292,12 +1374,12 @@ do
   local diff = ns.ctDescribe(recu, BEL)
   assert(diff:find("Changé depuis la v1") and diff:find("absent %-> 1"), "le différentiel montre la perle ajoutée")
   as(BOB)
-  assert(not cmd(f).ecart and cmd(f).etat == "contre-proposée", "nouvelle version partie : plus d'écart")
+  assert(not cmd(f).ecart and cmd(f).etat == "contre-proposé", "nouvelle version partie : plus d'écart")
   -- Sa contre-proposition qui ne change que le prix : rien à signaler (la part du projet n'a pas bougé).
   as(BEL)
   ns.ctCounter(recu, nil, ns.ctTotal(recu.o) + 1000)
   as(BOB)
-  assert(cmd(f).etat == "contre-proposée" and not cmd(f).ecart, "il change son prix : pas d'écart")
+  assert(cmd(f).etat == "contre-proposé" and not cmd(f).ecart, "il change son prix : pas d'écart")
   -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
   C.Quantite(p, 2, 2)
   assert(cmd(m).ecart == "ne correspond plus au contrat" and cmd(f).ecart == cmd(m).ecart, "quantité : les deux, même libellé")
@@ -1306,7 +1388,7 @@ do
   as(BEL)
   ns.ctRefuse(HandshakeDB.contracts[ns.ctKey(cm)])
   as(BOB)
-  assert(cmd(m).etat == "refusée" and not cmd(m).ecart and cmd(m).recommander, "refusée : à commander de nouveau")
+  assert(cmd(m).etat == "refusé" and not cmd(m).ecart and cmd(m).recommander, "refusée : à commander de nouveau")
   local _, err = ns.projetNouvelleVersion(p, m)
   assert(err, "refusée : pas de nouvelle version")
   local m2 = ns.projetRecommander(p, m)
@@ -1317,7 +1399,7 @@ do
   local t = envoyer(1)
   assert(ns.ctPropose(t))
   ns.ctWithdraw(t)
-  assert(cmd(1).etat == "retirée" and cmd(1).recommander)
+  assert(cmd(1).etat == "retiré" and cmd(1).recommander)
   local t2 = ns.projetRecommander(p, 1)
   assert(t2 and t2 ~= 1 and cmd(t2).part == "tout le projet" and not cmd(t2).fige and #cmd(t2).lines == 2, "tout le projet, de nouveau")
   -- Ce qui part reste dans les bornes que vérifie celui qui reçoit (n° 15) : 1001 cuirasses ne partent pas.
@@ -1456,20 +1538,12 @@ print("Handshake : royaume et faction par la lib OK")
 assert(ns.whisperTarget("Belegard Marteaudefer") == "Belegard Marteaudefer")
 print("Handshake : destinataire des chuchotements OK")
 
--- L'API publique de Handshake (README.md) : le global Handshake, celui dont Composants se sert ; rien d'autre.
+-- Plus d'API publique (Composants#26) : le global Handshake reste, vide ; c'est Handshake qui se branche sur Composants
+-- (l'emplacement du bloc), Composants ne connaît pas Handshake.
 do
-  local API = { "Commandes", "Commande", "Commander", "Artisan", "Offre", "Preparer", "Agir", "EnClair", "Importer", "Apports",
-    "Apporter", "EstReponse", "Annoncer" }
-  local n = 0
-  for _ in pairs(Handshake) do n = n + 1 end
-  local readme = assert(io.open("Handshake/README.md"), "README.md"):read("*a")
-  for _, f in ipairs(API) do
-    assert(type(Handshake[f]) == "function", "Handshake." .. f)
-    assert(readme:find("H." .. f .. "(", 1, true), "README : Handshake." .. f)
-  end
-  assert(n == #API, "l'API publique, rien de plus")
-  assert(HSTOC:find("\n## OptionalDeps: TradeBoard\n", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
-    "le socle requis ; Trade Board seul en option (#53) : Composants déclare Handshake, pas l'inverse, pas de cycle")
+  assert(type(Handshake) == "table" and next(Handshake) == nil, "le global, vide")
+  assert(HSTOC:find("\n## OptionalDeps: TradeBoard, Composants\n", 1, true) and HSTOC:find("\n## Dependencies: AzerothCommune\n", 1, true),
+    "le socle requis ; Trade Board et Composants en option : Handshake se branche sur Composants, pas l'inverse")
 end
 print("Handshake : API publique OK")
 

@@ -2,11 +2,11 @@
 ## Title: Handshake |cffa78ffc(bêta)|r
 ## Category: Professions
 ## Category-frFR: Métiers
-## Notes: Commandes et contrats d'artisanat entre joueurs : la commande à la main, l'échange de commandes par chuchotement, des contrats signés des deux côtés et un panneau qui vérifie chaque échange ; avec Composants, les commandes d'un projet bloc par bloc. /handshake, /contrat
+## Notes: Commandes et contrats d'artisanat entre joueurs : la commande à la main, l'échange de commandes par chuchotement, des contrats signés des deux côtés et un panneau qui vérifie chaque échange ; avec Composants, les contrats d'un projet bloc par bloc. /handshake, /contrat
 ## Version: 0.2.0-beta
 ## IconTexture: Interface\Icons\Trade_BlackSmithing
 ## Dependencies: AzerothCommune
-## OptionalDeps: TradeBoard
+## OptionalDeps: TradeBoard, Composants
 ## SavedVariables: HandshakeDB
 ## X-Curse-Project-ID: 1830061
 Donnees.lua
@@ -17,4 +17,5 @@ Contrat.lua
 ContratUI.lua
 Echange.lua
 Debug.lua
+Emplacement.lua
 API.lua

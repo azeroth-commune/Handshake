@@ -42,7 +42,7 @@ local function choisir(box, texte)
     box:GetScript("OnTextChanged")(box, true)
     local premier = AzerothCommune.ChercherObjets(texte, 8)[1]
     assertNotNil(premier, "la recherche du socle trouve « " .. texte .. " »")
-    local s = tous(HandshakeMainFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and c.text ~= nil and (c.text:GetText() or ""):find(premier.name, 1, true) == 1 end)
+    local s = tous(HandshakeMainFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and c.text ~= nil and c.text.GetText ~= nil and (c.text:GetText() or ""):find(premier.name, 1, true) == 1 end)
     assertTrue(#s > 0, "suggestion affichée")
     s[1]:Click()
     return premier.id
@@ -97,7 +97,7 @@ test("commande à la main → demande → contrat", function()
     HandshakeMainFrame:Show()
     local vu
     for _, r in ipairs({ HandshakeMainFrame:GetRegions() }) do
-        if r.GetText and (r:GetText() or ""):find("demande envoyée", 1, true) then vu = true end
+        if r.GetText and (r:GetText() or ""):find("Contrat envoyé", 1, true) then vu = true end
     end
     assertTrue(vu, "l'état de la demande s'affiche dans la liste")
     HandshakeMainFrame:Hide()

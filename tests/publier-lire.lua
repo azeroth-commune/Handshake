@@ -273,14 +273,26 @@ end)
 
 if not Composants then return end
 
-test("« Annoncer dans le Commerce » dans le menu « Plus » de Composants : regroupée, 255 octets, liens intacts", function()
+-- Une liste sans arbre se commande en entier (Composants#26) : « Commander tout », puis le menu « Plus » du panneau de son
+-- contrat préparé (une fenêtre de Handshake).
+test("« Annoncer dans le Commerce » dans le menu « Plus » du contrat préparé : regroupée, 255 octets, liens intacts", function()
     enVille(function(envoyes)
         local lines = {}
         for _, id in ipairs({ 2841, 2840, 2842, 3575, 3576, 3577, 3859, 3860, 6037, 12359 }) do lines[#lines + 1] = { id = id, qty = 20 } end
         local p = Composants.NouveauProjet({ name = "Annonce longue", lines = lines })
         Composants.Ouvrir(p.id)
-        local plus = deroulant(ComposantsFrame, function(c) return c.GetText and c:GetText() == "Plus" end)
-        assertNotNil(plus, "le menu « Plus »")
+        local tout
+        local function chercher(f)
+            for _, c in ipairs({ f:GetChildren() }) do
+                if c.GetText and c:IsVisible() and c:GetText() == "Commander tout" then tout = c end
+                chercher(c)
+            end
+        end
+        chercher(ComposantsFrame)
+        assertNotNil(tout, "« Commander tout » sur la ligne du projet")
+        tout:Click()
+        local plus = deroulant(HandshakeContratPanneau, function(c) return c.GetText and c:GetText() == "Plus" end)
+        assertNotNil(plus, "le menu « Plus » du panneau")
         assertTrue(choisir(plus, "Annoncer dans le Commerce"), "l'entrée du menu")
         assertEquals(1, #envoyes)
         annonceSaine(envoyes[1].msg)
@@ -288,4 +300,5 @@ test("« Annoncer dans le Commerce » dans le menu « Plus » de Composants : re
         Composants.Supprimer(p.id)
     end)
     ComposantsFrame:Hide()
+    if HandshakeContratPanneau then HandshakeContratPanneau:Hide() end
 end)

@@ -2,9 +2,10 @@
 -- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
 -- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
--- « Préparer la demande » dans la fenêtre des projets (Composants) crée un brouillon depuis la commande (ns.projetEnvoyer), ou dans la
--- commande à la main (ns.mainPreparer) ; « Nouvelle version » un brouillon de la version suivante
--- (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ». Une demande reçue se répond dans l'arbre ou en liste.
+-- « Envoyer » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants) l'envoie d'un clic ;
+-- « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un brouillon, relu ici ; « Nouvelle version »
+-- un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ». Une demande reçue se
+-- répond dans l'arbre ou en liste.
 local _, ns = ...
 
 local W, H = 620, 600
@@ -179,7 +180,7 @@ local function sorted()
 end
 
 local function refresh()
-  if Composants then Composants.Rafraichir() end -- l'état des commandes (dessinées par Composants) se lit dans leur contrat
+  if Composants then Composants.Rafraichir() end -- l'état des contrats d'un projet (son emplacement du bloc) se lit ici
   if ns.refreshCommandeMain then ns.refreshCommandeMain() end
   if not (frame and frame:IsShown()) then return end
   list = sorted()
@@ -193,7 +194,7 @@ local function refresh()
   for _, b in ipairs(frame.actions) do b:Hide() end
   frame.edit:SetShown(false)
   if not c then
-    frame.body:SetText("|cff999999Aucun contrat. Dans la fenêtre des commandes, « Préparer la demande » en fait un depuis la commande affichée.|r")
+    frame.body:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « Préparer la demande » dans la commande à la main.|r")
     frame.content:SetHeight(frame.body:GetStringHeight() + 10)
     return
   end

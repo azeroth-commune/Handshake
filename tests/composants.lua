@@ -1,6 +1,7 @@
 -- Tests d'intégration dans wow-ui-sim (tools/sim.sh test Handshake) : Handshake et Composants chargés avec le socle Azeroth
--- Commune dans l'interface Forever simulée. Les commandes vivent dans la fenêtre des projets de Composants, qui les dessine
--- par l'API publique de Handshake. Sans Composants dans les racines, seul le premier test tourne (Handshake seul).
+-- Commune dans l'interface Forever simulée. Handshake se branche sur l'emplacement du bloc de Composants (Emplacement.lua) :
+-- « Commander » un bloc, la case « Contrat n°… », son panneau. Sans Composants dans les racines, seuls les premiers tests
+-- tournent (Handshake seul).
 test("Handshake se charge : plus de projets à lui, plus de table globale des choix", function()
     assertType("table", HandshakeDB)
     assertNil(HandshakeDB.projets)
@@ -28,7 +29,12 @@ local function enfant(ok)
 end
 local function bouton(texte) return enfant(function(c) return c.GetText and c:GetText() == texte and c:GetObjectType() == "Button" end) end
 -- Le nom du projet affiché en haut de la fenêtre.
-local function affiche(nom) return enfant(function(c) return c:GetObjectType() == "EditBox" and c:GetText() == nom end) ~= nil end
+local function affiche(nom)
+    for _, r in ipairs({ ComposantsFrame:GetRegions() }) do
+        if r.GetText and r:IsShown() and r:GetText() == nom then return true end
+    end
+    return false
+end
 -- Le projet affiché dans la fenêtre de Composants.
 local function affichePas() return ComposantsDB.projets[ComposantsDB.courant] end
 -- Les menus déroulants (contrats, projets) : chaque entrée choisie tour à tour jusqu'à ce que ok() soit vrai, ou celle
@@ -50,20 +56,35 @@ local function parcourir(dd, jusque)
     end
 end
 
-test("avec Composants : /handshake ouvre la fenêtre des projets, sa barre des commandes", function()
-    SlashCmdList.COMPOSANTS("demo ceinture")
-    ComposantsFrame:Hide()
+test("avec Composants : /handshake ouvre la fenêtre de Handshake (Importer) ; plus de barre des commandes dans Composants", function()
     SlashCmdList.HANDSHAKE("")
-    assertTrue(ComposantsFrame:IsShown())
+    assertTrue(HandshakeMainFrame:IsShown(), "la fenêtre de Handshake")
+    -- Importer une liste reçue : rare, dans le menu « Plus » de la fenêtre de Handshake (au plus 4 boutons, ui-addon).
+    local plus = deroulant(HandshakeMainFrame, function(c) return c.GetText and c:GetText() == "Plus" end)
+    assertNotNil(plus, "le menu « Plus » de Handshake")
+    assertTrue(parcourir(plus, function(t) return t == "Importer une liste reçue" end), "Importer une liste reçue, dans Handshake")
+    assertTrue(HandshakeImport:IsShown(), "la fenêtre d'import")
+    for _, c in ipairs({ HandshakeMainFrame:GetChildren() }) do -- plus en boutons : dans « Plus »
+        local t = c.GetText and c.GenerateMenu == nil and c:IsShown() and c:GetText()
+        assertTrue(t ~= "Importer une liste reçue" and t ~= "En clair", tostring(t) .. " en bouton")
+    end
+    HandshakeImport:Hide()
+    HandshakeMainFrame:Hide()
+    SlashCmdList.COMPOSANTS("demo ceinture")
     assertTrue(affiche("Essai : ceintures multi-métiers"))
-    assertNotNil(bouton("Préparer la demande"), "la barre des commandes, dessinée par Composants")
+    for _, t in ipairs({ "Préparer la demande", "Joueur", "Offre", "Commandes :", "Nouvelle version", "Commander de nouveau", "Plus" }) do
+        assertNil(bouton(t), t .. " dans Composants")
+        for _, r in ipairs({ ComposantsFrame:GetRegions() }) do
+            assertTrue(not (r.GetText and r:IsShown() and r:GetText() == t), t .. " écrit dans Composants")
+        end
+    end
     ComposantsFrame:Hide()
 end)
 
--- Commandes (#6) : « Commander » sur un bloc ajoute une commande à la liste du projet, sans nouvelle page. Les blocs
--- viennent de la base des recettes du socle (sa réserve Classic, AzerothCommune/RecettesReserve.lua, générée, hors du repo :
--- à copier dans une branche en worktree),
--- recettes pas apprises comprises (« tout »).
+-- « Commander » sur un bloc (Composants#26) crée tout de suite un contrat préparé : le bloc se réduit à une case
+-- « Contrat n°… · métier », « artisan · état ». Les blocs viennent de la base des recettes du socle (sa réserve Classic,
+-- AzerothCommune/RecettesReserve.lua, générée, hors du repo : à copier dans une branche en worktree), recettes pas apprises
+-- comprises (« tout »).
 local function tous(f, ok, out)
     out = out or {}
     for _, c in ipairs({ f:GetChildren() }) do
@@ -72,9 +93,29 @@ local function tous(f, ok, out)
     end
     return out
 end
-local function boutons(ok) return tous(ComposantsFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and ok(c:GetText() or "") end) end
--- La liste des commandes : un bouton par commande, « part · artisan[ · offre] ».
-local function commandes() return boutons(function(t) return t:find(" · ", 1, true) ~= nil end) end
+local function boutons(ok) return tous(ComposantsFrame, function(c) return c:GetObjectType() == "Button" and c:IsVisible() and ok(c:GetText() or "") end) end
+
+-- Les cases des contrats (dessinées par Handshake dans l'emplacement du bloc), et la 1re ligne de chacune.
+local function casesContrat()
+    return tous(ComposantsFrame, function(c) return c.l1 ~= nil and c.l2 ~= nil and c:IsVisible() end)
+end
+local function cases() return tous(ComposantsFrame, function(c) return c.node ~= nil and c:IsVisible() end) end
+-- Le panneau d'un contrat : ses champs (artisan, offre), son bouton d'action, ses menus.
+local function panneau() return HandshakeContratPanneau end
+local function champs()
+    local e = tous(panneau(), function(c) return c:GetObjectType() == "EditBox" and c:IsVisible() end)
+    table.sort(e, function(a, b) return a:GetTop() > b:GetTop() end)
+    return e[1], e[2] -- artisan, offre
+end
+local function taper(e, texte) e:SetText(texte); e:GetScript("OnTextChanged")(e, true) end
+local function action() return tous(panneau(), function(c) return c:GetObjectType() == "Button" and c:IsVisible() and c:GetWidth() == 150 end)[1] end
+local function menu(nom) return deroulant(panneau(), function(c) return c:GetText() == nom end) end
+local function entrees(dd)
+    dd:GenerateMenu()
+    local t = {}
+    for _, e in dd:GetMenuDescription():EnumerateElementDescriptions() do t[#t + 1] = e end
+    return t
+end
 
 -- Personne n'a de recette ici : « recettes pas apprises » cochée, toutes comptent et les blocs se dessinent. L'option est
 -- rendue telle quelle, même si une vérification échoue.
@@ -84,22 +125,177 @@ local function sansRecettes(f)
     local ok, err = pcall(f)
     ComposantsDB.options.unlearned = avant
     ComposantsFrame:Hide()
+    if HandshakeContratPanneau then HandshakeContratPanneau:Hide() end
+    if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
     if not ok then error(err, 0) end
 end
 
-test("Commander un bloc ajoute une commande au projet, sur la même page", function() sansRecettes(function()
+-- Un contrat porte deux GUID (Handshake#29) : l'artisan d'une demande doit avoir un GUID donné par le serveur. Ici, son
+-- chuchotement : le jeu y joint le GUID de l'expéditeur (12e valeur de CHAT_MSG_WHISPER), Handshake le retient.
+local ARTISAN = "Bel Dupont"
+local function artisanConnu()
+    FireEvent("CHAT_MSG_WHISPER", "bonjour", ARTISAN, "", "", ARTISAN, "", 0, 0, "", 0, 1, "Player-1-0000BE11")
+end
+local function liste(p) return HandshakeDB.commandes[p.id].liste end
+-- « Vérifier et envoyer… » : le brouillon de la v1 s'ouvre sur sa fiche dans Contrats (rien sur le fil) ; « Envoyer la
+-- proposition », là, le fait partir.
+local function verifierEtEnvoyer(c)
+    assertEquals("Vérifier et envoyer…", action():GetText())
+    action():Click()
+    local ct = HandshakeDB.contracts[c.contrat]
+    assertNotNil(ct, "un brouillon")
+    assertEquals("brouillon", ct.status, "rien sur le fil depuis le panneau")
+    assertTrue(HandshakeContratsFrame:IsShown(), "la fiche s'ouvre dans Contrats")
+    assertTrue(HandshakeContratsFrame.body:GetText():find("BROUILLON", 1, true) ~= nil, "sur la fiche de ce brouillon")
+    local envoyer
+    for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer la proposition" and b:IsShown() end)) do envoyer = b end
+    assertNotNil(envoyer, "« Envoyer la proposition » sur la fiche")
+    envoyer:Click()
+    HandshakeContratsFrame:Hide()
+    return HandshakeDB.contracts[c.contrat]
+end
+
+test("Commander un bloc : un contrat préparé, le bloc réduit à la case « Contrat n°… », son panneau ouvert", function() sansRecettes(function()
     SlashCmdList.COMPOSANTS("demo ceinture")
-    local nb = #ComposantsDB.projets
-    assertEquals(1, #commandes()) -- tout le projet
+    local p, nb, avant = affichePas(), #ComposantsDB.projets, #cases()
+    assertEquals(0, #casesContrat(), "rien de commandé")
     local commander = boutons(function(t) return t == "Commander" end)
-    assertTrue(#commander > 0, "des blocs dessinés (AzerothCommune/RecettesReserve.lua présent ?)")
+    assertTrue(#commander > 1, "des blocs dessinés (AzerothCommune/RecettesReserve.lua présent ?)")
+    commander[#commander]:Click()
+    assertEquals(nb, #ComposantsDB.projets, "pas de nouveau projet")
+    local cs = casesContrat()
+    assertEquals(1, #cs)
+    local c = liste(p)[#liste(p)]
+    assertType("number", c.n)
+    assertEquals(("Contrat n°%d · %s"):format(c.n, c.bloc), cs[1].l1:GetText())
+    assertTrue(cs[1].l2:GetText():find("préparé", 1, true) ~= nil, cs[1].l2:GetText())
+    assertTrue(#cases() < avant, "ses cases sortent du dessin")
+    assertEquals(#commander - 1, #boutons(function(t) return t == "Commander" end), "un « Commander » de moins")
+    assertTrue(panneau():IsShown(), "son panneau s'ouvre")
+    assertEquals(("Contrat n°%d · %s"):format(c.n, c.bloc), panneau().title:GetText())
+    assertEquals("Vérifier et envoyer…", action():GetText())
+end) end)
+
+-- Envoyer (#7, Composants#26) : l'artisan, l'offre et les apports se règlent dans le panneau, « Envoyer » le fait partir ;
+-- son état, lu dans son contrat, s'affiche sur la case.
+test("Artisan, offre, apports et envoi depuis l'emplacement du bloc", function() sansRecettes(function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = affichePas()
+    local commander = boutons(function(t) return t == "Commander" end)
     commander[1]:Click()
-    assertEquals(nb, #ComposantsDB.projets)
-    assertTrue(affiche("Essai : ceintures multi-métiers"))
-    local liste = commandes()
-    assertEquals(2, #liste)
-    commander[1]:Click() -- le même bloc : la même commande
-    assertEquals(2, #commandes())
+    local c = liste(p)[#liste(p)]
+    artisanConnu()
+    local who, tip = champs()
+    taper(who, ARTISAN)
+    taper(tip, "2")
+    assertEquals(ARTISAN, c.player)
+    assertEquals(20000, c.tip)
+    assertTrue(casesContrat()[1].l2:GetText():find(ARTISAN, 1, true) ~= nil, "l'artisan sur la case")
+    -- Les apports : un menu de cases à cocher ; en cocher une la met dans les apports du contrat.
+    local cocher
+    for _, e in ipairs(entrees(menu("Apports"))) do
+        local t = MenuUtil.GetElementText(e) or ""
+        if t:find("× ", 1, true) and not t:find("d'un autre bloc", 1, true) then cocher = e break end
+    end
+    assertNotNil(cocher, "une case à cocher dans le menu des apports")
+    menu("Apports"):Pick(cocher, MenuInputContext.MouseButton, "LeftButton")
+    assertTrue(next(HandshakeDB.commandes[p.id].apports or {}) ~= nil, "un apport coché")
+    local ct = verifierEtEnvoyer(c)
+    assertEquals("envoye", ct.status)
+    assertEquals("1", ct.v)
+    local l2 = casesContrat()[1].l2:GetText()
+    assertTrue(l2:find("envoyé", 1, true) ~= nil, l2)
+    assertEquals("Voir dans Contrats", action():GetText())
+    assertTrue(not who:IsEnabled(), "parti : l'artisan est celui du contrat")
+end) end)
+
+-- Écart (#8) : la part d'un contrat parti change ; le panneau le dit et propose « Nouvelle version », qui prépare la v2 en
+-- brouillon et l'ouvre dans Contrats (#19) ; elle part de là. Refusé, le bloc revient et se commande de nouveau.
+test("Un contrat parti signale l'écart ; sa nouvelle version se relit avant l'envoi ; refusé, le bloc revient", function() sansRecettes(function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = affichePas()
+    boutons(function(t) return t == "Commander tout" end)[1]:Click()
+    assertEquals(1, #casesContrat(), "tout le projet : une seule case")
+    assertEquals(0, #cases(), "plus aucune autre case")
+    artisanConnu()
+    taper((champs()), ARTISAN)
+    local c = liste(p)[1]
+    local ct = verifierEtEnvoyer(c)
+    assertEquals("envoye", ct.status)
+    p.lines[1].qty = p.lines[1].qty + 1 -- une ligne de plus à fabriquer : la part de « tout le projet » change
+    Composants.Rafraichir()
+    assertTrue(panneau().etat:GetText():find("ne correspond plus au contrat", 1, true) ~= nil, panneau().etat:GetText())
+    assertEquals("1", ct.v, "rien ne part sans clic")
+    assertEquals("Nouvelle version", action():GetText())
+    action():Click()
+    local brouillon = HandshakeDB.contracts[c.contrat .. "+"]
+    assertEquals("brouillon", brouillon.status)
+    assertEquals("2", brouillon.v)
+    assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon de la v2 s'ouvre dans les contrats")
+    local fiche
+    for _, r in ipairs(tous(HandshakeContratsFrame, function() return true end)) do
+        for _, z in ipairs({ r:GetRegions() }) do
+            if z.GetText and (z:GetText() or ""):find("Changé depuis la v1", 1, true) then fiche = true end
+        end
+    end
+    assertTrue(fiche, "le différentiel est affiché avant l'envoi")
+    for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer la proposition" and b:IsShown() end)) do b:Click() end
+    HandshakeContratsFrame:Hide()
+    local v2 = HandshakeDB.contracts[c.contrat]
+    assertEquals("2", v2.v)
+    assertEquals("envoye", v2.status)
+    Composants.Rafraichir()
+    assertEquals("Voir dans Contrats", action():GetText(), "partie : plus d'écart")
+    v2.status = "refuse" -- (comme s'il l'avait refusée)
+    Composants.Rafraichir()
+    assertEquals(0, #casesContrat(), "refusé : le bloc revient")
+    assertTrue(#cases() > 0, "l'arbre revient")
+    assertNotNil(boutons(function(t) return t == "Commander tout" end)[1], "il se commande de nouveau")
+end) end)
+
+-- Supprimer le projet (Composants#26) : ses contrats préparés (et leurs brouillons) s'effacent, jamais un contrat parti.
+test("Supprimer le projet efface ses contrats préparés, jamais un contrat parti", function() sansRecettes(function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = affichePas()
+    local commander = boutons(function(t) return t == "Commander" end)
+    commander[1]:Click()
+    artisanConnu()
+    taper((champs()), ARTISAN)
+    verifierEtEnvoyer(liste(p)[#liste(p)])
+    local parti = liste(p)[#liste(p)].contrat
+    assertEquals("envoye", HandshakeDB.contracts[parti].status)
+    boutons(function(t) return t == "Commander" end)[1]:Click()
+    local prepare = liste(p)[#liste(p)]
+    assertNil(prepare.contrat, "préparé : rien dans Contrats")
+    Composants.Supprimer(p.id)
+    assertNil(HandshakeDB.commandes[p.id], "ses contrats préparés effacés")
+    assertNotNil(HandshakeDB.contracts[parti], "le contrat parti reste")
+    assertEquals("envoye", HandshakeDB.contracts[parti].status)
+end) end)
+
+-- Hors Préparer (Fabriquer, Fini), l'arbre est en lecture seule, l'emplacement aussi : la case et son état, « Voir dans
+-- Contrats » ; ni Commander, ni Commander tout, ni artisan, offre, apports ou « Plus ».
+test("Hors Préparer, l'emplacement est en lecture seule", function() sansRecettes(function()
+    SlashCmdList.COMPOSANTS("demo ceinture")
+    local p = affichePas()
+    boutons(function(t) return t == "Commander" end)[1]:Click()
+    panneau():Hide()
+    local ok, err = pcall(function()
+        p.phase = "fabriquer"
+        Composants.Rafraichir()
+        assertEquals(0, #boutons(function(t) return t == "Commander" or t == "Commander tout" end), "rien à commander")
+        assertEquals(1, #casesContrat(), "la case reste")
+        casesContrat()[1]:Click()
+        assertTrue(panneau():IsShown(), "son panneau, en lecture")
+        assertEquals("Voir dans Contrats", action():GetText())
+        assertTrue(not action():IsEnabled(), "préparé : rien encore dans Contrats")
+        local who, tip = champs()
+        assertTrue(not who or (not who:IsEnabled() and not tip:IsEnabled()), "artisan et offre figés")
+        assertNil(menu("Apports"), "pas de menu des apports")
+        assertNil(menu("Plus"), "pas de « Plus » (ni Abandonner)")
+    end)
+    p.phase = nil
+    if not ok then error(err, 0) end
 end) end)
 
 -- Recettes équivalentes (#46), avec la vraie réserve (extraite du client, transmutations d'essences en boucle) : dans la
@@ -115,106 +311,6 @@ test("Démo « set » : pas de boucle de transmutation, les essences s'achètent
     end
 end) end)
 
--- Un contrat porte deux GUID (Handshake#29) : l'artisan d'une demande doit avoir un GUID donné par le serveur. Ici, son
--- chuchotement : le jeu y joint le GUID de l'expéditeur (12e valeur de CHAT_MSG_WHISPER), Handshake le retient.
-local ARTISAN = "Bel Dupont"
-local function artisanConnu()
-    FireEvent("CHAT_MSG_WHISPER", "bonjour", ARTISAN, "", "", ARTISAN, "", 0, 0, "", 0, 1, "Player-1-0000BE11")
-end
-
--- La commande « tout le projet » de p, rangée à part, rattachée à son identité (#37).
-local function toutLeProjet(p) return HandshakeDB.commandes[p.id].liste[1] end
-
--- Envoyer une commande (#7) : son état, lu dans son contrat, s'affiche à côté d'elle dans la liste des commandes.
-test("L'état de chaque commande s'affiche à côté d'elle, lu dans son contrat", function() sansRecettes(function()
-    SlashCmdList.COMPOSANTS("demo ceinture")
-    boutons(function(t) return t == "Commander" end)[1]:Click()
-    for _, b in ipairs(commandes()) do assertTrue(b:GetText():find("pas envoyée", 1, true) ~= nil, b:GetText()) end
-    local p = ComposantsDB.projets[#ComposantsDB.projets]
-    artisanConnu()
-    toutLeProjet(p).player = ARTISAN -- la commande « tout le projet », à un autre joueur
-    commandes()[1]:Click()
-    bouton("Préparer la demande"):Click()
-    assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon s'ouvre dans les contrats")
-    assertTrue(commandes()[1]:GetText():find("pas envoyée", 1, true) ~= nil, "un brouillon n'est pas parti")
-    local envoyer
-    for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
-        if c.GetText and c:GetText() == "Envoyer la proposition" then envoyer = c end
-    end
-    envoyer:Click()
-    HandshakeContratsFrame:Hide()
-    local texte = commandes()[1]:GetText()
-    assertTrue(texte:find("demande envoyée", 1, true) ~= nil, texte)
-    assertTrue(commandes()[2]:GetText():find("pas envoyée", 1, true) ~= nil, "l'autre commande n'est pas partie")
-    assertTrue(bouton("Voir la demande") ~= nil, "envoyée : on la revoit, on ne la refait pas")
-end) end)
-
--- Écart (#8) : la part d'une commande envoyée change, l'écart s'affiche à côté d'elle avec « Nouvelle version », qui
--- prépare la v2 en brouillon et l'ouvre dans les contrats (#19) ; elle part de là, sur « Envoyer la proposition ».
--- Retirée, elle se commande de nouveau.
-test("Une commande envoyée signale l'écart, sa nouvelle version se relit avant l'envoi", function() sansRecettes(function()
-    SlashCmdList.COMPOSANTS("demo ceinture")
-    local p = ComposantsDB.projets[#ComposantsDB.projets]
-    artisanConnu()
-    toutLeProjet(p).player = ARTISAN
-    commandes()[1]:Click()
-    bouton("Préparer la demande"):Click()
-    for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
-        if c.GetText and c:GetText() == "Envoyer la proposition" then c:Click() end
-    end
-    HandshakeContratsFrame:Hide()
-    local ct = HandshakeDB.contracts[toutLeProjet(p).contrat]
-    assertEquals("envoye", ct.status)
-    -- Écart de prix (#18) : avec un apport, la caution contre mon estimation, en %, ou « estimation incomplète ».
-    local m = ct.m
-    ct.m = { { id = 2589, qty = 1, unit = 1 } } -- (comme si j'apportais un tissu, caution 1 pc)
-    commandes()[1]:Click()
-    local prix = commandes()[1]:GetText()
-    assertTrue(prix:find("caution |cff%x+[+-]%d+ %%") ~= nil or prix:find("estimation incomplète", 1, true) ~= nil, prix)
-    ct.m = m
-    commandes()[1]:Click()
-    assertTrue(commandes()[1]:GetText():find("caution |cff", 1, true) == nil, "rien d'apporté : pas de caution")
-    assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "rien n'a changé")
-    p.lines[1].qty = p.lines[1].qty + 1 -- une ligne de plus à fabriquer : la part de « tout le projet » change
-    commandes()[1]:Click()
-    local texte = commandes()[1]:GetText()
-    assertTrue(texte:find("ne correspond plus au contrat", 1, true) ~= nil, texte) -- constaté, sans cause supposée (#18)
-    assertEquals("1", ct.v, "rien ne part sans clic")
-    bouton("Nouvelle version"):Click()
-    local brouillon = HandshakeDB.contracts[toutLeProjet(p).contrat .. "+"]
-    assertEquals("brouillon", brouillon.status)
-    assertEquals("2", brouillon.v)
-    assertEquals("1", HandshakeDB.contracts[toutLeProjet(p).contrat].v, "rien n'est parti avant l'envoi")
-    assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon de la v2 s'ouvre dans les contrats")
-    local envoyer, fiche
-    for _, c in ipairs({ HandshakeContratsFrame:GetChildren() }) do
-        if c.GetText and c:GetText() == "Envoyer la proposition" and c:IsShown() then envoyer = c end
-    end
-    for _, r in ipairs(tous(HandshakeContratsFrame, function() return true end)) do
-        for _, z in ipairs({ r:GetRegions() }) do
-            if z.GetText and (z:GetText() or ""):find("Changé depuis la v1", 1, true) then fiche = true end
-        end
-    end
-    assertTrue(fiche, "le différentiel est affiché avant l'envoi")
-    envoyer:Click()
-    local v2 = HandshakeDB.contracts[toutLeProjet(p).contrat]
-    assertEquals("2", v2.v)
-    assertEquals("envoye", v2.status)
-    assertEquals("1", v2.prev.v)
-    assertNil(HandshakeDB.contracts[toutLeProjet(p).contrat .. "+"], "envoyé : plus de brouillon")
-    HandshakeContratsFrame:Hide()
-    assertTrue(commandes()[1]:GetText():find("ne correspond plus", 1, true) == nil, "partie : plus d'écart")
-    local nv = bouton("Nouvelle version")
-    assertTrue(nv == nil or not nv:IsShown(), "plus de « Nouvelle version »")
-    v2.status = "retire" -- (comme si je l'avais retirée dans les contrats)
-    commandes()[1]:Click()
-    local nb = #commandes()
-    bouton("Commander de nouveau"):Click()
-    assertEquals(nb + 1, #commandes())
-    assertTrue(commandes()[nb + 1]:GetText():find("tout le projet", 1, true) ~= nil, commandes()[nb + 1]:GetText())
-    assertTrue(commandes()[nb + 1]:GetText():find("pas envoyée", 1, true) ~= nil, "une commande vivante")
-end) end)
-
 -- Règles de la réponse (#10) : la fenêtre demande au projet ce qui se modifie. Dans une réponse (un projet tenu, #37), la
 -- quantité de ce qu'il veut est grisée ; dans un projet à moi, elle se tape. (Une réponse à un contrat qui n'existe pas :
 -- seul compte qu'elle en soit une.) Le projet redevient le mien même si une vérification échoue.
@@ -228,12 +324,17 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
     local ok, err = pcall(function()
         assertTrue(#quantites() > 0, "une case par objet du projet")
         for _, q in ipairs(quantites()) do assertTrue(q:IsEnabled(), "mon projet : la quantité se tape") end
+        HandshakeDB.commandes = HandshakeDB.commandes or {}
+        HandshakeDB.commandes[p.id] = HandshakeDB.commandes[p.id] or { liste = { { id = 1 } }, seq = 1 }
         HandshakeDB.commandes[p.id].reponse, p.tenu = "Bob-R#1", "c'est sa demande : ce qu'il veut ne change pas ici"
         Composants.Rafraichir() -- le même projet, redessiné
         assertEquals(p, affichePas())
         assertTrue(#quantites() > 0, "toujours affichée")
         for _, q in ipairs(quantites()) do assertTrue(not q:IsEnabled(), "réponse : la quantité est figée") end
-        assertTrue(bouton("Contre-proposer") ~= nil, "une réponse se contre-propose")
+        local rep = boutons(function(t) return t:find("^Réponse à ") ~= nil end)[1]
+        assertNotNil(rep, "la Réponse, sur la ligne du projet")
+        rep:Click()
+        assertEquals("Contre-proposer", action():GetText(), "une réponse se contre-propose, de son panneau")
     end)
     HandshakeDB.commandes[p.id].reponse, p.tenu = nil, nil
     ComposantsFrame:Hide()
@@ -293,17 +394,23 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
         assertType("string", p.tenu)
         local refus, raison = Composants.Ajouter(p, 2841, 1)
         assertTrue(refus == false and raison == p.tenu, "ses lignes sont tenues, avec la raison de Handshake")
-        assertTrue(Handshake.EstReponse(p))
-        assertNotNil(bouton("Contre-proposer"))
+        assertEquals(cle, HandshakeDB.commandes[p.id].reponse)
+        local rep = boutons(function(t) return t:find("^Réponse à Bob") ~= nil end)[1]
+        assertNotNil(rep, "la Réponse, sur la ligne du projet")
+        rep:Click()
+        assertEquals("Contre-proposer", action():GetText())
+        assertEquals("Réponse à Bob", panneau().title:GetText())
+        assertEquals(0, #boutons(function(t) return t == "Commander tout" end), "une Réponse ne se commande pas en entier")
         local commander = boutons(function(t) return t == "Commander" end)
         assertTrue(#commander > 0, "« Commander » sur les blocs de la Réponse")
         commander[1]:Click()
-        local cmds = Handshake.Commandes(p)
-        assertEquals(2, #cmds)
-        assertNotNil(cmds[1].reponse, "la 1re reste la Réponse")
-        assertNil(cmds[2].reponse, "le bloc commandé : une commande ordinaire (sous-traitance)")
-        assertEquals("pas envoyée", cmds[2].etat)
-        -- Supprimer la Réponse dans Composants : ses commandes pas encore parties s'effacent, le contrat reste.
+        local l = liste(p)
+        assertEquals(2, #l)
+        assertNil(l[1].n, "la 1re reste la Réponse, pas un contrat préparé")
+        assertType("number", l[2].n, "le bloc commandé : un contrat préparé (sous-traitance)")
+        assertEquals(1, #casesContrat())
+        assertTrue(casesContrat()[1].l2:GetText():find("préparé", 1, true) ~= nil)
+        -- Supprimer la Réponse dans Composants : ses contrats préparés s'effacent, le contrat reste.
         Composants.Supprimer(p.id)
         assertNil(HandshakeDB.commandes[p.id])
         assertNotNil(HandshakeDB.contracts[cle], "aucun contrat perdu")
