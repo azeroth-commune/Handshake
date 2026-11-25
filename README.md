@@ -30,7 +30,11 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   projet seulement (rien n'est envoyé, le contrat reste signé dans Contrats jusqu'à l'échéance, SECURITE.md P2/P5 n° 20) ;
   livré → rien. Une liste reçue (« Importer une liste reçue », menu
   « Plus » de la fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
-  de Composants (`Composants.Tenir`), son panneau sur la ligne du projet (mon prix, ses apports, contre-proposer).
+  de Composants (`Composants.Tenir`) ouvert en Préparer (« Répondre » dans Contrats), son panneau sur la ligne du projet
+  (mon prix, ses apports, « Contre-proposer… » en Préparer : un brouillon de la nouvelle version, relu sur sa fiche dans
+  Contrats, qui part de là ; toute contre-proposition aussi, SECURITE.md P8). Lancer y attend la signature (champ
+  `lancer` de l'emplacement : « Lancer (contrat à signer) ») ; elle est Finie quand son contrat est clos (champ `fini`),
+  et son propre contrat ne compte pas dans `clos` (ses sous-traitances seules).
   Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` : supprimer un projet efface
   ses contrats préparés (et leurs brouillons dans Contrats), jamais un contrat parti ; à l'entrée en jeu, ceux d'un
   projet qui n'existe plus sont oubliés.
