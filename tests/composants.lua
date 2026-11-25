@@ -334,7 +334,7 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
         local rep = boutons(function(t) return t:find("^Réponse à ") ~= nil end)[1]
         assertNotNil(rep, "la Réponse, sur la ligne du projet")
         rep:Click()
-        assertEquals("Contre-proposer", action():GetText(), "une réponse se contre-propose, de son panneau")
+        assertEquals("Contre-proposer…", action():GetText(), "une réponse se contre-propose, de son panneau")
     end)
     HandshakeDB.commandes[p.id].reponse, p.tenu = nil, nil
     ComposantsFrame:Hide()
@@ -362,7 +362,7 @@ test("la barre de recherche propose les objets de la recherche du socle", functi
     ComposantsFrame:Hide()
 end)
 
--- Réponse (#39) : une demande reçue, « Répondre dans l'arbre » dans Contrats, s'ouvre comme un projet tenu de Composants
+-- Réponse (#39) : une demande reçue, « Répondre » dans Contrats, s'ouvre comme un projet tenu de Composants
 -- (ce qu'il veut, avec la raison de Handshake) ; on y commande un bloc à un autre artisan (sous-traitance).
 local function boutonDe(f, texte)
     local function chercher(x)
@@ -383,8 +383,8 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
     local ok, err = pcall(function()
         SlashCmdList.HANDSHAKECONTRAT()
         parcourir(deroulant(HandshakeContratsFrame, function() return true end),
-            function() return boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre") ~= nil end)
-        boutonDe(HandshakeContratsFrame, "Répondre dans l'arbre"):Click()
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
         HandshakeContratsFrame:Hide()
         assertTrue(ComposantsFrame:IsShown(), "la Réponse s'ouvre dans la fenêtre de Composants")
         local p = affichePas()
@@ -398,7 +398,7 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
         local rep = boutons(function(t) return t:find("^Réponse à Bob") ~= nil end)[1]
         assertNotNil(rep, "la Réponse, sur la ligne du projet")
         rep:Click()
-        assertEquals("Contre-proposer", action():GetText())
+        assertEquals("Contre-proposer…", action():GetText())
         assertEquals("Réponse à Bob", panneau().title:GetText())
         assertEquals(0, #boutons(function(t) return t == "Commander tout" end), "une Réponse ne se commande pas en entier")
         local commander = boutons(function(t) return t == "Commander" end)
@@ -415,6 +415,146 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
         assertNil(HandshakeDB.commandes[p.id])
         assertNotNil(HandshakeDB.contracts[cle], "aucun contrat perdu")
     end)
+    HandshakeDB.contracts[cle] = nil
+    if not ok then error(err, 0) end
+end) end)
+
+-- La Réponse en phases (#60) : « Répondre » la crée et l'ouvre en Préparer ; une nouvelle version de sa demande l'y remet
+-- (Composants.Tenir avec ses lignes), même si elle était allée plus loin.
+test("« Répondre » ouvre la Réponse en Préparer ; une nouvelle version de sa demande l'y remet", function() sansRecettes(function()
+    local cle = "Player-1-0000B0B0#4344"
+    local c = { origin = "Player-1-0000B0B0", id = "4344", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
+        m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
+        hash = "00000000cafe0060", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
+    HandshakeDB.contracts[cle] = c
+    local function repondre()
+        SlashCmdList.HANDSHAKECONTRAT()
+        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
+        HandshakeContratsFrame:Hide()
+        return affichePas()
+    end
+    local p
+    local ok, err = pcall(function()
+        local n = #Composants.Projets()
+        p = repondre()
+        assertEquals(n + 1, #Composants.Projets(), "« Répondre » crée la Réponse")
+        assertEquals("Réponse à Bob", p.name)
+        assertNil(p.phase, "ouverte en Préparer")
+        assertTrue(ComposantsFrame:IsShown() and ComposantsFrame.lancerB:IsVisible(), "la vue Préparer, avec Lancer")
+        assertEquals(p, repondre(), "la même Réponse, rouverte")
+        assertNil(p.phase)
+        -- Passée plus loin (le fil), puis il envoie une nouvelle version : sa demande change, la Réponse revient en Préparer.
+        p.phase = "reunir"
+        c.v, c.hash, c.o = "3", "00000000beef0060", { { id = 10721, qty = 2, unit = 50000 } }
+        assertEquals(p, repondre(), "toujours la même Réponse")
+        assertNil(p.phase, "sa nouvelle demande : en Préparer")
+        assertEquals(2, p.lines[1].qty)
+    end)
+    if p then Composants.Supprimer(p.id) end
+    HandshakeDB.contracts[cle] = nil
+    if not ok then error(err, 0) end
+end) end)
+
+-- La contre-proposition de l'artisan part de sa fiche (SECURITE.md, P8, n° 11, 13, 26, 57) : « Contre-proposer… » dans le
+-- panneau de la Réponse prépare un brouillon de la nouvelle version et ouvre Contrats dessus (caution, perte maximale,
+-- échéance, nom et GUID) ; rien ne part avant « Envoyer la proposition ».
+test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fiche ; il part de Contrats", function() sansRecettes(function()
+    local cle = "Player-1-0000B0B0#4346"
+    local c = { origin = "Player-1-0000B0B0", id = "4346", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
+        m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
+        hash = "00000000cafe0062", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
+    HandshakeDB.contracts[cle] = c
+    local p
+    local ok, err = pcall(function()
+        SlashCmdList.HANDSHAKECONTRAT()
+        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
+        HandshakeContratsFrame:Hide()
+        p = affichePas()
+        boutons(function(t) return t:find("^Réponse à Bob") ~= nil end)[1]:Click()
+        local _, prix = champs()
+        taper(prix, "7")
+        assertEquals("Contre-proposer…", action():GetText())
+        action():Click()
+        local b = HandshakeDB.contracts[cle .. "+"]
+        assertNotNil(b, "un brouillon de la v2, à côté de la v1")
+        assertEquals("brouillon", b.status)
+        assertEquals("2", b.v)
+        assertTrue(c.status == "a_signer" and c.v == "1" and HandshakeDB.contracts[cle] == c, "rien n'est parti : sa v1, toujours à signer")
+        assertTrue(HandshakeContratsFrame:IsShown(), "Contrats s'ouvre")
+        local fiche = HandshakeContratsFrame.body:GetText()
+        assertTrue(fiche:find("BROUILLON", 1, true) ~= nil, "sur la fiche du brouillon")
+        assertTrue(fiche:find("Player-1-0000B0B0", 1, true) ~= nil and fiche:find("échéance", 1, true) ~= nil, "nom, GUID, échéance")
+        boutonDe(HandshakeContratsFrame, "Envoyer la proposition"):Click()
+        assertNil(HandshakeDB.contracts[cle .. "+"], "envoyée : plus de brouillon")
+        local v2 = HandshakeDB.contracts[cle]
+        assertTrue(v2.v == "2" and v2.status == "envoye", "la v2 part de sa fiche")
+    end)
+    if p then Composants.Supprimer(p.id) end
+    HandshakeDB.contracts[cle] = nil
+    HandshakeDB.contracts[cle .. "+"] = nil
+    if not ok then error(err, 0) end
+end) end)
+
+-- Lancer attend la signature (#60) : « Lancer (contrat à signer) », grisé, et le fil ne le contourne pas ; signé, Réunir.
+-- Son propre contrat ne compte pas dans ce que la Réponse attend (clos) : l'objet déjà dans les sacs, elle passe en
+-- Fabriquer ; l'arbre plein mais le contrat pas clos, pas Finie ; clos (les objets livrés ont quitté les sacs), Finie.
+test("Réponse : Lancer attend la signature ; Finie quand le contrat est clos, pas quand l'arbre est plein", function() sansRecettes(function()
+    local cle = "Player-1-0000B0B0#4345"
+    local c = { origin = "Player-1-0000B0B0", id = "4345", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
+        m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
+        hash = "00000000cafe0061", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
+    HandshakeDB.contracts[cle] = c
+    -- Les sacs du test (le socle les lit par AzerothCommune.Conteneurs), rendus à la fin.
+    local sacs, G = {}, { Conteneurs = AzerothCommune.Conteneurs, GetItemCount = C_Item.GetItemCount }
+    AzerothCommune.Conteneurs = function(garder)
+        local items = {}
+        for id, n in pairs(sacs) do items[#items + 1] = { id = id, count = n } end
+        return garder("Backpack") and { b = { items = items } } or {}
+    end
+    C_Item.GetItemCount = function(id) return sacs[id] or 0 end
+    local p
+    local ok, err = pcall(function()
+        SlashCmdList.HANDSHAKECONTRAT()
+        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
+        HandshakeContratsFrame:Hide()
+        p = affichePas()
+        assertEquals("Réponse à Bob", p.name)
+        local lancer = ComposantsFrame.lancerB
+        assertEquals("Lancer (contrat à signer)", lancer:GetText())
+        assertTrue(not lancer:IsEnabled(), "pas signé : grisé")
+        lancer:Click()
+        assertNil(p.phase, "pas signé : Lancer ne fait rien")
+        tous(ComposantsFrame, function(b)
+            return b:GetObjectType() == "Button" and b:IsVisible() and (b:GetText() or ""):find("Réunir", 1, true) ~= nil
+        end)[1]:Click()
+        assertNil(p.phase, "le fil ne contourne pas la signature")
+        -- Signé (le geste « Signer » de Contrats) : Lancer, Réunir.
+        c.status, c.signed = "signe", GetServerTime()
+        Composants.Rafraichir()
+        assertEquals("Lancer", lancer:GetText())
+        lancer:Click()
+        assertEquals("reunir", p.phase, "signé : Réunir")
+        -- L'objet fait, dans les sacs : rien à réunir, son propre contrat ne retient pas en Réunir ; l'arbre est plein mais
+        -- le contrat n'est pas clos : Fabriquer, pas Finie.
+        sacs = { [10721] = 1 }
+        Composants.Rafraichir()
+        assertEquals("fabriquer", p.phase, "son contrat ne compte pas dans clos : Fabriquer")
+        Composants.Rafraichir()
+        assertEquals("fabriquer", p.phase, "l'arbre plein, le contrat pas clos : pas Finie")
+        -- Livré par l'échange vérifié : l'objet a quitté les sacs, le contrat est clos ; Finie.
+        sacs = {}
+        c.status = "clos"
+        Composants.Rafraichir()
+        assertEquals("fini", p.phase, "clos : Finie, même l'objet parti")
+    end)
+    AzerothCommune.Conteneurs, C_Item.GetItemCount = G.Conteneurs, G.GetItemCount
+    if p then Composants.Supprimer(p.id) end
     HandshakeDB.contracts[cle] = nil
     if not ok then error(err, 0) end
 end) end)

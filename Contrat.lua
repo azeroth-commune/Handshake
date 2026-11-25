@@ -351,7 +351,18 @@ local function nextVersion(c, m, o, d)
   return { origin = c.origin, id = c.id, v = tostring(tonumber(c.v) + 1), parent = c.hash, client = c.client, artisan = c.artisan,
     peer = c.peer, m = m, o = o, d = d, prev = snapshot(c) }
 end
-local function newVersion(c, m, o, d) return ns.ctPropose(nextVersion(c, m, o, d)) end
+-- Toute nouvelle version (contre-proposition, réponse de l'artisan, nouvelle version d'une demande) est préparée en
+-- brouillon (#19), à côté de la version en cours : rien ne part avant que son auteur ait relu SA fiche dans Contrats
+-- (caution, perte maximale, objets sans prix, échéance, nom et GUID : P8, n° 11, 13, 26, 57) et cliqué « Envoyer la
+-- proposition » (ns.ctPropose). Préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
+local function newVersion(c, m, o, d)
+  local n = nextVersion(c, m, o, d)
+  local err = horsBornes(n)
+  if err then return nil, err end
+  n.status = "brouillon"
+  store()[key(n)] = n
+  return n
+end
 function ns.ctCounter(c, caution, delivery, days)
   return newVersion(c, caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
     days and (now() + math.floor(days * 86400)) or c.d)
@@ -441,8 +452,8 @@ function ns.ctFromDemande(order, days)
     peer = { guid = artisan, name = name, verified = true }, d = now() + math.floor((days or 3) * 86400) }
 end
 
--- « Je réponds » (l'artisan, depuis l'arbre de sa réponse ; order = sa 1re commande) : ses apports et son prix, envoyés
--- en nouvelle version.
+-- « Je réponds » (l'artisan, depuis l'arbre de sa réponse ; order = sa 1re commande) : ses apports et son prix, en
+-- brouillon de nouvelle version, qui part de sa fiche dans Contrats.
 -- Les cautions déjà au contrat restent ; un apport qu'il ajoute est estimé à son prix de marché.
 function ns.ctReplyFromOrder(order)
   local c = order.reponse and store()[order.reponse]
@@ -458,8 +469,7 @@ end
 
 -- « Nouvelle version » de ma demande c (#8, moi client) : ce que la commande order demande maintenant (ses lignes, ses
 -- apports, son offre), en contre-proposition. Les cautions déjà au contrat restent ; un apport ajouté est estimé à mon
--- prix de marché. Elle est préparée en brouillon (#19), relue dans Contrats avec le différentiel, et part de là
--- (« Envoyer la proposition ») ; préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
+-- prix de marché. Elle est préparée en brouillon (newVersion), relue dans Contrats avec le différentiel.
 function ns.ctVersionDemande(c, order)
   if c.client ~= ns.me() or (c.status ~= "envoye" and c.status ~= "a_signer") then return nil, "ce contrat ne prend plus de nouvelle version" end
   if #order.lines == 0 then return nil, "la commande est vide : retire (ou refuse) la demande dans Contrats" end
@@ -467,12 +477,7 @@ function ns.ctVersionDemande(c, order)
   for _, l in ipairs(c.m) do keep[l.id] = l.unit end
   local m, o = demandeTerms(order, keep)
   if not m then return nil, o end
-  local n = nextVersion(c, m, o, c.d)
-  local err = horsBornes(n)
-  if err then return nil, err end
-  n.status = "brouillon"
-  store()[key(n)] = n
-  return n
+  return newVersion(c, m, o, c.d)
 end
 
 ---------------------------------------------------------------------------------------------------

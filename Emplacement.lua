@@ -18,6 +18,8 @@
 --   à recevoir », verte « reçu » quand il est livré, son état, « Abandonner » (même hors Préparer : la
 --   lecture seule ne vaut que pour l'emplacement du bloc) ; clic = son panneau. Le projet ne passe en
 --   Fabriquer (puis Fini) que ses contrats livrés ; mes apports sont des lignes des Besoins comme les autres.
+-- - La Réponse en phases (#60) : Lancer attend la signature de son contrat (« Lancer (contrat à signer) ») ; Finie quand il
+--   est clos.
 local _, ns = ...
 
 local W8 = "Interface\\Buttons\\WHITE8x8"
@@ -183,7 +185,7 @@ local function construire()
     local p, i, v = ici()
     if not p then return end
     if enLecture(p) then return ns.openContracts(aVoir(v)) end
-    if v.reponse then -- la contre-proposition de l'artisan (règles de la Réponse : Handshake#60)
+    if v.reponse then -- la contre-proposition de l'artisan : son brouillon, relu sur sa fiche dans Contrats, part de là
       local ct, err = ns.ctReplyFromOrder(v)
       if not ct then return dire(err) end
       ns.openContracts(ns.ctKey(ct))
@@ -266,7 +268,7 @@ function sync()
     P.go:SetText("Voir dans Contrats")
     P.go:SetEnabled(aVoir(v) ~= nil)
   else
-    P.go:SetText(rep and "Contre-proposer" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
+    P.go:SetText(rep and "Contre-proposer…" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
     P.go:SetEnabled((rep or v.fige or not v.vide) and true or false)
   end
 end
@@ -487,6 +489,14 @@ local function aDonner(p)
   return out
 end
 
+-- Le contrat d'une Réponse (dans Contrats) ; false si elle n'en a plus ; nil si p n'est pas une Réponse.
+local function contratReponse(p)
+  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  if not (r and r.reponse) then return nil end
+  return ns.ctStore()[r.reponse] or false
+end
+local POURQUOI = { echu = "contrat échu", refuse = "contrat refusé", retire = "contrat retiré" }
+
 -- Le fournisseur de l'emplacement du bloc et des Besoins (Composants.Emplacements, branché à l'entrée en jeu :
 -- ns.brancherComposants).
 ns.emplacement = {
@@ -501,7 +511,24 @@ ns.emplacement = {
   end,
   aDonner = aDonner,
   besoins = besoins,
-  -- Tous les contrats vivants du projet livrés (aucun : vrai). Un contrat préparé, envoyé ou signé retient en Réunir.
+  -- La Réponse (CONTEXT.md, Réponse) : Lancer attend la signature de son contrat ; elle est Finie quand il est clos (livré
+  -- par l'échange vérifié), pas quand l'arbre est plein (les objets livrés ont quitté les sacs). Un autre projet : nil, les
+  -- règles de Composants. Signé puis échu : refusé aussi (on ne lance plus pour un contrat qui ne tient plus).
+  lancer = function(p)
+    local ct = contratReponse(p)
+    if ct == nil then return nil end
+    if not ct then return "contrat introuvable" end
+    local s = ns.ctStatus(ct)
+    if s == "signe" or s == "clos" then return nil end
+    return POURQUOI[s] or "contrat à signer"
+  end,
+  fini = function(p)
+    local ct = contratReponse(p)
+    if ct == nil then return nil end
+    return ct ~= false and ct.status == "clos"
+  end,
+  -- Tous les contrats vivants du projet livrés (aucun : vrai). Un contrat préparé, envoyé ou signé retient en Réunir. Dans
+  -- une Réponse, son propre contrat n'en est pas (la 1re place, jamais numérotée) : seules ses sous-traitances comptent.
   clos = function(p)
     local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
     for _, i in ipairs(ns.contratsVivants(p)) do if not ns.contratClos(r.liste[i]) then return false end end
