@@ -228,6 +228,11 @@ local function open()
   frame.refresh()
 end
 
+-- Sa ligne dans le menu du bouton commun, sous Handshake.
+if ns.regroupe then
+  table.insert(ns.regroupe.outils, { libelle = "Debug (bac à sable)", ouvrir = open, fenetre = "HandshakeDebug" })
+end
+
 -- /handshake debug (branché sur la commande existante)
 local previous = SlashCmdList.HANDSHAKE
 SlashCmdList.HANDSHAKE = function(args)

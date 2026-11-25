@@ -750,6 +750,13 @@ SlashCmdList.HANDSHAKE = function(args)
   ns.ouvrir()
 end
 
--- Bouton de minicarte et entrée des options communs d'Azeroth Commune : clic ou ligne du menu = /handshake.
-AzerothCommune.Regrouper({ nom = "Handshake", dossier = "Handshake", icone = "Interface\\Icons\\Trade_BlackSmithing",
-  ouvrir = function() ns.ouvrir() end, store = function() return HandshakeDB end })
+-- Bouton de minicarte et entrée des options communs d'Azeroth Commune : clic ou ligne du menu = /handshake ; une ligne
+-- par fenêtre (aucune ne s'ouvre seulement par une commande). Debug.lua y ajoute la sienne (ns.regroupe).
+ns.regroupe = { nom = "Handshake", dossier = "Handshake", icone = "Interface\\Icons\\Trade_BlackSmithing",
+  ouvrir = function() ns.ouvrir() end, store = function() return HandshakeDB end,
+  outils = {
+    { libelle = "Commande à la main", ouvrir = function() ns.openCommandeMain() end, fenetre = "HandshakeMainFrame" },
+    { libelle = "Contrats", ouvrir = function() ns.openContracts() end, fenetre = "HandshakeContratsFrame" },
+    { libelle = "Annonces lues", ouvrir = function() ns.openDemandes() end, fenetre = "HandshakeDemandesFrame" },
+  } }
+AzerothCommune.Regrouper(ns.regroupe)
