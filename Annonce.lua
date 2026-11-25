@@ -410,50 +410,58 @@ local function construire()
   fenetre = ns.newWindow("HandshakeDemandesFrame", "Annonces lues", W, 64 + ROWS * ROW)
   fenetre.vide = fenetre:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
   fenetre.vide:SetPoint("TOPLEFT", 16, -48)
-  fenetre.vide:SetWidth(W - 32)
+  fenetre.vide:SetPoint("RIGHT", -16, 0)
   fenetre.vide:SetJustifyH("LEFT")
   fenetre.vide:SetText("Aucune annonce lue : le chat vient d'être relu. Les annonces du Commerce et des cris (WTB, Buy, Search, LF, cherche) pour ce que tes persos savent fabriquer, ou pour un métier qu'ils ont, s'affichent ici, quelques minutes.")
   fenetre.rows = {}
-  for i = 1, ROWS do
-    local r = CreateFrame("Frame", nil, fenetre)
-    r:SetSize(W - 28, ROW)
-    r:SetPoint("TOPLEFT", 14, -44 - (i - 1) * ROW)
-    r.objet = CreateFrame("Button", nil, r)
-    r.objet:SetSize(28, 28)
-    r.objet:SetPoint("LEFT", 0, 0)
-    r.objet.icon = r.objet:CreateTexture(nil, "ARTWORK")
-    r.objet.icon:SetAllPoints()
-    r.objet:SetScript("OnEnter", function(self)
-      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-      if r.d.id then GameTooltip:SetItemByID(r.d.id) elseif r.d.sort then GameTooltip:SetSpellByID(r.d.sort) else return end
-      GameTooltip:Show()
-    end)
-    r.objet:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    r.qui = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    r.qui:SetPoint("TOPLEFT", 36, -3)
-    r.qui:SetWidth(W - 160)
-    r.qui:SetJustifyH("LEFT")
-    r.texte = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    r.texte:SetPoint("TOPLEFT", r.qui, "BOTTOMLEFT", 0, -3)
-    r.texte:SetWidth(W - 160)
-    r.texte:SetJustifyH("LEFT")
-    r.texte:SetWordWrap(false)
-    r.repondre = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
-    r.repondre:SetSize(96, 22)
-    r.repondre:SetPoint("RIGHT", 0, 0)
-    r.repondre:SetScript("OnClick", function() ns.repondreDemande(r.d); ns.refreshDemandes() end)
-    fenetre.rows[i] = r
-  end
   ns.onglets(fenetre, 2)
   fenetre:SetScript("OnShow", function() ns.refreshDemandes() end)
+  fenetre:SetScript("OnSizeChanged", function() ns.refreshDemandes() end) -- agrandie : plus de lignes
+end
+
+-- La ligne i, faite à la première fois qu'elle tient dans la fenêtre ; elle suit sa largeur.
+local function ligne(i)
+  if fenetre.rows[i] then return fenetre.rows[i] end
+  local r = CreateFrame("Frame", nil, fenetre)
+  r:SetHeight(ROW)
+  r:SetPoint("TOPLEFT", 14, -44 - (i - 1) * ROW)
+  r:SetPoint("RIGHT", -14, 0)
+  r.objet = CreateFrame("Button", nil, r)
+  r.objet:SetSize(28, 28)
+  r.objet:SetPoint("LEFT", 0, 0)
+  r.objet.icon = r.objet:CreateTexture(nil, "ARTWORK")
+  r.objet.icon:SetAllPoints()
+  r.objet:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if r.d.id then GameTooltip:SetItemByID(r.d.id) elseif r.d.sort then GameTooltip:SetSpellByID(r.d.sort) else return end
+    GameTooltip:Show()
+  end)
+  r.objet:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  r.qui = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  r.qui:SetPoint("TOPLEFT", 36, -3)
+  r.qui:SetPoint("RIGHT", -110, 0)
+  r.qui:SetJustifyH("LEFT")
+  r.texte = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  r.texte:SetPoint("TOPLEFT", r.qui, "BOTTOMLEFT", 0, -3)
+  r.texte:SetPoint("RIGHT", -110, 0)
+  r.texte:SetJustifyH("LEFT")
+  r.texte:SetWordWrap(false)
+  r.repondre = CreateFrame("Button", nil, r, "UIPanelButtonTemplate")
+  r.repondre:SetSize(96, 22)
+  r.repondre:SetPoint("RIGHT", 0, 0)
+  r.repondre:SetScript("OnClick", function() ns.repondreDemande(r.d); ns.refreshDemandes() end)
+  fenetre.rows[i] = r
+  return r
 end
 
 function ns.refreshDemandes()
   if not (fenetre and fenetre:IsShown()) then return end
   local liste = ns.demandesLues()
   fenetre.vide:SetShown(#liste == 0)
-  for i, r in ipairs(fenetre.rows) do
-    local d = liste[i]
+  local tient = math.floor((fenetre:GetHeight() - 64) / ROW) -- les lignes qui tiennent dans la hauteur du moment
+  for i = 1, math.max(#fenetre.rows, math.min(#liste, tient)) do
+    local d = i <= tient and liste[i] or nil
+    local r = ligne(i)
     r:SetShown(d ~= nil)
     if d then
       r.d = d

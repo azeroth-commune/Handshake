@@ -135,16 +135,16 @@ local function build()
   text("GameFontHighlightSmall", "LEFT", frame.tip, "RIGHT", 4, 0):SetText("po")
 
   -- Les deux listes : un titre, une recherche (quantité, « Ajouter »), puis une ligne par objet (quantité, « × » retire).
+  -- Chaque colonne prend la moitié de la largeur ; agrandie, la fenêtre montre plus de lignes (refresh, OnSizeChanged).
   frame.cols = {}
   for k, liste in ipairs({ "lines", "apporte" }) do
-    local x = 14 + (k - 1) * (W / 2)
     local col = { liste = liste, rows = {} }
     -- La colonne entière reçoit un objet déposé (sous la recherche et les lignes, qui restent cliquables).
     col.depot = CreateFrame("Frame", nil, frame)
-    col.depot:SetPoint("TOPLEFT", x - 4, -80)
-    col.depot:SetSize(W / 2 - 16, 64 + ROWS * ROW)
+    col.depot:SetPoint("TOPLEFT", frame, k == 1 and "TOPLEFT" or "TOP", k == 1 and 10 or 4, -80)
+    col.depot:SetPoint("BOTTOMRIGHT", frame, k == 1 and "BOTTOM" or "BOTTOMRIGHT", -12, 70)
     col.depot:SetFrameLevel(frame:GetFrameLevel() + 1)
-    col.title = text("GameFontNormal", "TOPLEFT", x, -86)
+    col.title = text("GameFontNormal", "TOPLEFT", col.depot, "TOPLEFT", 4, -6)
     col.qty = input(32, true)
     col.qty:SetText("1")
     col.search = AzerothCommune.RechercheObjets(frame, col.qty, function(id, q)
@@ -152,7 +152,7 @@ local function build()
       if not ok then say(err) end
       refresh()
     end, 150)
-    col.search:SetPoint("TOPLEFT", x + 6, -106)
+    col.search:SetPoint("TOPLEFT", col.depot, "TOPLEFT", 10, -26)
     col.qty:SetPoint("LEFT", col.search, "RIGHT", 8, 0)
     col.add = button(frame, "Ajouter", 60, function() col.search:GetScript("OnEnterPressed")(col.search) end)
     col.add:SetPoint("LEFT", col.qty, "RIGHT", 6, 0)
@@ -162,19 +162,17 @@ local function build()
       refresh()
     end)
     for _, f in ipairs({ col.search, col.qty, col.add }) do f:SetFrameLevel(col.depot:GetFrameLevel() + 2) end
-    for i = 1, ROWS do
+    -- La ligne i, faite la première fois qu'elle tient dans la colonne ; elle suit sa largeur.
+    function col.ligne(i)
+      if col.rows[i] then return col.rows[i] end
       local r = CreateFrame("Frame", nil, frame)
-      r:SetSize(W / 2 - 24, ROW)
-      r:SetPoint("TOPLEFT", x, -136 - (i - 1) * ROW)
+      r:SetHeight(ROW)
+      r:SetPoint("TOPLEFT", col.depot, "TOPLEFT", 4, -56 - (i - 1) * ROW)
+      r:SetPoint("RIGHT", col.depot, "RIGHT", -4, 0)
       r:SetFrameLevel(col.depot:GetFrameLevel() + 2)
       r.icon = r:CreateTexture(nil, "ARTWORK")
       r.icon:SetSize(18, 18)
       r.icon:SetPoint("LEFT", 0, 0)
-      r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      r.name:SetPoint("LEFT", 24, 0)
-      r.name:SetWidth(W / 2 - 110)
-      r.name:SetJustifyH("LEFT")
-      r.name:SetWordWrap(false)
       r.qty = CreateFrame("EditBox", nil, r, "InputBoxTemplate")
       r.qty:SetSize(36, 20)
       r.qty:SetPoint("RIGHT", -28, 0)
@@ -186,14 +184,20 @@ local function build()
         local n = tonumber(self:GetText())
         if user and n and n >= 1 then say(select(2, ns.mainQuantite(order(), liste, r.i, n))) end
       end)
+      r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      r.name:SetPoint("LEFT", 24, 0)
+      r.name:SetPoint("RIGHT", r.qty, "LEFT", -10, 0)
+      r.name:SetJustifyH("LEFT")
+      r.name:SetWordWrap(false)
       r.del = button(r, "×", 22, function()
         say(select(2, ns.mainQuantite(order(), liste, r.i, 0)))
         refresh()
       end)
       r.del:SetPoint("RIGHT", 0, 0)
       col.rows[i] = r
+      return r
     end
-    col.more = text("GameFontDisableSmall", "TOPLEFT", x, -136 - ROWS * ROW)
+    col.more = col.depot:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall") -- sous la dernière ligne qui tient (refresh)
     frame.cols[k] = col
   end
 
@@ -241,6 +245,7 @@ local function build()
   end)
   ns.onglets(frame, 1) -- et l'onglet « Annonces lues » (Annonce.lua)
   frame:SetScript("OnShow", function() refresh() end)
+  frame:SetScript("OnSizeChanged", function() refresh() end) -- agrandie : plus de lignes
   frame:RegisterEvent("ITEM_DATA_LOAD_RESULT") -- un nom d'objet arrive du serveur
   frame:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE") -- un canal rejoint ou quitté : le Commerce, pour « Annoncer »
   frame:SetScript("OnEvent", function() refresh() end)
@@ -265,8 +270,11 @@ function refresh()
     col.title:SetText(titres[k])
     col.search:SetShown(peut); col.qty:SetShown(peut); col.add:SetShown(peut)
     local list = o[col.liste]
-    for i, r in ipairs(col.rows) do
-      local l = list[i]
+    local tient = math.floor((col.depot:GetHeight() - 56 - 14) / ROW) -- les lignes qui tiennent, « … et N autre(s) » dessous
+    col.more:SetPoint("TOPLEFT", col.depot, "TOPLEFT", 4, -56 - tient * ROW)
+    for i = 1, math.max(#col.rows, math.min(#list, tient)) do
+      local l = i <= tient and list[i] or nil
+      local r = col.ligne(i)
       r:SetShown(l ~= nil)
       if l then
         r.i = i
@@ -278,8 +286,8 @@ function refresh()
         r.del:SetShown(peut)
       end
     end
-    -- ponytail: 10 lignes affichées (le contrat en prend 30) ; un défilement le jour où une commande les dépasse
-    col.more:SetText(#list > ROWS and ("… et %d autre(s)"):format(#list - ROWS) or (#list == 0 and "(vide)" or ""))
+    -- ponytail: les lignes qui tiennent (10 à la taille de départ ; le contrat en prend 30) ; un défilement si ça gêne
+    col.more:SetText(#list > tient and ("… et %d autre(s)"):format(#list - tient) or (#list == 0 and "(vide)" or ""))
   end
   if c then
     frame.status:SetText(ns.ctStatus(c) == "a_signer" and ("Sa demande, v%s : ajoute ou retire des apports, fixe ton prix, puis contre-propose."):format(c.v)

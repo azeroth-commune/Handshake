@@ -22,7 +22,6 @@
 --   est clos.
 local _, ns = ...
 
-local W8 = "Interface\\Buttons\\WHITE8x8"
 local function liste(p)
   local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
   return r and r.liste or {}
@@ -35,8 +34,8 @@ local function dire(err) if err then print("|cffe64d4dContrats :|r " .. err .. "
 -- ponytail: à chaque touche tapée dans l'artisan ou l'offre (l'arbre recalculé, quelques ms) ; à la perte du focus si ça rame
 local function redessiner() ns.refreshContracts() end
 
--- L'état en couleur : préparé (gris), parti (orange), signé ou livré (vert), fini sans accord (rouge).
-local COULEUR = { ["préparé"] = "999999", ["envoyé"] = "e6994d", ["contre-proposé"] = "a98fff", ["signé"] = "59cc73",
+-- L'état en couleur : préparé (gris), parti (orange), contre-proposé (doré), signé ou livré (vert), fini sans accord (rouge).
+local COULEUR = { ["préparé"] = "999999", ["envoyé"] = "e6994d", ["contre-proposé"] = "ffd100", ["signé"] = "59cc73",
   ["livré"] = "59cc73", ["échu"] = "e64d4d", ["refusé"] = "e64d4d", ["retiré"] = "e64d4d" }
 local function etatEnCouleur(v)
   if not v.etat then return "" end
@@ -110,7 +109,7 @@ local function candidats(p, v)
 end
 
 local function construire()
-  local P = ns.newWindow("HandshakeContratPanneau", "", 340, 214)
+  local P = ns.newWindow("HandshakeContratPanneau", "", 340, 214, { redimensionnable = false }) -- sa hauteur suit ce qui est livré (sync)
   P:SetFrameStrata("DIALOG")
   local function texte(font, ...)
     local t = P:CreateFontString(nil, "OVERLAY", font)
@@ -293,13 +292,12 @@ end
 local function boutonBande(zone)
   local b = zone.hsBouton
   if not b then
-    b = CreateFrame("Button", nil, zone, "BackdropTemplate")
-    b:SetBackdrop({ bgFile = W8, edgeFile = W8, edgeSize = 1 })
-    b:SetBackdropColor(0.16, 0.15, 0.25, 0.95)
-    b:SetBackdropBorderColor(0.66, 0.56, 1.00, 0.6)
-    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.text:SetPoint("CENTER")
-    b:SetFontString(b.text) -- (GetText, pour les tests du simulateur)
+    b = CreateFrame("Button", nil, zone, "UIPanelButtonTemplate") -- un bouton du jeu, à la hauteur de la bande (16)
+    b:SetNormalFontObject(GameFontNormalSmall)
+    b:SetHighlightFontObject(GameFontHighlightSmall)
+    b:SetDisabledFontObject(GameFontDisableSmall)
+    b:SetText(" ")
+    b.text = b:GetFontString()
     b:SetPoint("LEFT")
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     zone.hsBouton = b
@@ -308,7 +306,7 @@ local function boutonBande(zone)
 end
 local function poser(zone, b, texte, survol, clic)
   b:SetText(texte)
-  b:SetSize(b.text:GetStringWidth() + 14, 16)
+  b:SetSize(b.text:GetStringWidth() + 20, 16)
   b:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     survol()
@@ -338,7 +336,7 @@ local function bande(zone, p, bloc)
       local entre = {}
       for id in pairs(bloc.inputs) do entre[#entre + 1] = ns.itemLabel(id) end
       if #entre > 0 then GameTooltip:AddLine("Tu apportes : " .. table.concat(entre, ", "), 0.3, 0.8, 0.85, true) end
-      GameTooltip:AddLine("Clic : un contrat préparé ; l'artisan, l'offre et les apports se règlent, puis on l'envoie", 0.66, 0.56, 1, true)
+      GameTooltip:AddLine("Clic : un contrat préparé ; l'artisan, l'offre et les apports se règlent, puis on l'envoie", 1, 0.82, 0, true)
     end, function() commander(p, bloc) end)
   end
   if r and r.reponse then -- la Réponse : son panneau (mon prix, les apports, contre-proposer)
@@ -348,7 +346,7 @@ local function bande(zone, p, bloc)
     return poser(zone, b, ("Réponse à %s · mon prix %s · travail %s"):format((v.player or "?"):match("^%S+") or "?",
       ns.moneyShort(v.tip or 0), ns.moneySigned((v.tip or 0) - total)), function()
       GameTooltip:AddLine("Ma réponse à sa demande")
-      GameTooltip:AddLine("Clic : mon prix, ses apports, contre-proposer", 0.66, 0.56, 1)
+      GameTooltip:AddLine("Clic : mon prix, ses apports, contre-proposer", 1, 0.82, 0)
     end, function() ns.ouvrirPanneau(p, r.liste[1].id) end)
   end
   for _, c in ipairs(r and r.liste or {}) do -- un bloc déjà commandé : pas le projet entier en plus
@@ -356,7 +354,7 @@ local function bande(zone, p, bloc)
   end
   poser(zone, b, "Commander tout", function()
     GameTooltip:AddLine("Commander tout le projet à un seul artisan")
-    GameTooltip:AddLine("Clic : un contrat préparé pour tout le projet (une liste sans arbre se commande ainsi)", 0.66, 0.56, 1, true)
+    GameTooltip:AddLine("Clic : un contrat préparé pour tout le projet (une liste sans arbre se commande ainsi)", 1, 0.82, 0, true)
   end, function() commander(p, nil) end)
 end
 
@@ -387,7 +385,7 @@ local function caseContrat(zone, p, i)
       GameTooltip:AddLine(("%s · %s"):format(x.player or "artisan à choisir", etatEnCouleur(x)), 1, 1, 1)
       for _, l in ipairs(x.lines) do GameTooltip:AddLine(("%d× %s"):format(l.qty, ns.itemLabel(l.id)), 0.8, 0.8, 0.8) end
       if x.ecart then GameTooltip:AddLine(x.ecart, 0.9, 0.6, 0.3) end
-      GameTooltip:AddLine(enLecture(q) and "Clic : son état, le voir dans Contrats" or "Clic : artisan, offre, apports, vérifier et envoyer", 0.66, 0.56, 1)
+      GameTooltip:AddLine(enLecture(q) and "Clic : son état, le voir dans Contrats" or "Clic : artisan, offre, apports, vérifier et envoyer", 1, 0.82, 0)
       GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -443,7 +441,7 @@ local function ligneContrat(zone, k)
     GameTooltip:AddLine(("Contrat n°%d · %s"):format(liste(q)[i].n or 0, v.part))
     GameTooltip:AddLine(("%s · %s"):format(v.player or "artisan à choisir", etatEnCouleur(v)), 1, 1, 1)
     for _, l in ipairs(v.lines) do GameTooltip:AddLine(("%d× %s"):format(l.qty, ns.itemLabel(l.id)), 0.8, 0.8, 0.8) end
-    GameTooltip:AddLine("Clic : son panneau (artisan, offre, apports, envoyer)", 0.66, 0.56, 1)
+    GameTooltip:AddLine("Clic : son panneau (artisan, offre, apports, envoyer)", 1, 0.82, 0)
     GameTooltip:Show()
   end)
   b:SetScript("OnLeave", function() GameTooltip:Hide() end)

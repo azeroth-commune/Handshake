@@ -59,8 +59,9 @@ end
 local function money(c) return ns.moneyShort(c) end
 
 local function build()
-  panel = ns.newWindow("HandshakeEchangePanel", "Contrat", W, 300)
-  table.remove(UISpecialFrames) -- Échap ferme l'échange, pas seulement le panneau
+  -- Un texte à signer : pas de poignée, sa hauteur suit son texte (tout ce qui est vérifié reste visible).
+  panel = ns.newWindow("HandshakeEchangePanel", "Contrat", W, 300, { redimensionnable = false })
+  table.remove(UISpecialFrames) -- Échap ferme l'échange, pas seulement le panneau (la fenêtre du socle s'y est mise en dernier)
   panel:SetFrameStrata("DIALOG")
   panel.lines = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   panel.lines:SetPoint("TOPLEFT", 14, -38)
@@ -87,7 +88,7 @@ local function build()
   -- plus de > qui les fait défiler). Tous sont avec la même personne : chacun se reconnaît à son premier objet.
   panel.switch = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
   panel.switch:SetWidth(200)
-  panel.switch:SetPoint("TOPRIGHT", -34, -6)
+  panel.switch:SetPoint("TOPLEFT", 10, -30) -- sous la barre de titre ; montré, le texte descend (ns.refreshTradePanel)
   panel.switch:SetupMenu(function(_, root)
     for i, c in ipairs(contracts) do
       local l = c.o[1] or c.m[1]
@@ -102,7 +103,7 @@ local function lineText(c, me, s, r)
   local inList, outList = artisan and c.m or c.o, artisan and c.o or c.m
   local got, gave = c.got or {}, c.gave or {}
   local peer = c.peer or {}
-  local t = { ("|cffa98fff%s|r"):format(ns.identity(peer.name, peer.guid)),
+  local t = { ("|cffffd100%s|r"):format(ns.identity(peer.name, peer.guid)),
     ("v%s · empreinte %s"):format(c.v, c.hash:sub(1, 8)) }
   local function block(title, list, here, done, word)
     if #list == 0 then return end
@@ -131,6 +132,8 @@ function ns.refreshTradePanel()
   for id in pairs(s.give.items) do last.counts[id] = GetItemCount(id) end
   for id in pairs(s.get.items) do last.counts[id] = GetItemCount(id) end
   panel.switch:SetShown(#contracts > 1)
+  local menu = #contracts > 1 and 28 or 0 -- la place du menu des contrats, au-dessus du texte
+  panel.lines:SetPoint("TOPLEFT", 14, -38 - menu)
   if #contracts > 1 then panel.switch:GenerateMenu() end -- la liste a pu changer depuis la dernière ouverture
   panel.lines:SetText(lineText(c, me, s, r))
   local notes = {}
@@ -143,7 +146,7 @@ function ns.refreshTradePanel()
   panel.force:SetShown(not r.ok and not r.empty and override ~= last.sig)
   panel.force:SetText("Accepter quand même")
   panel.force.armed = nil
-  panel:SetHeight(panel.lines:GetStringHeight() + panel.notes:GetStringHeight() + 120)
+  panel:SetHeight(panel.lines:GetStringHeight() + panel.notes:GetStringHeight() + 120 + menu)
   -- Accepter : grisé si non conforme ; après tout changement, réarmé au bout d'une seconde (P7).
   armToken = armToken + 1
   local token = armToken

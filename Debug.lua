@@ -95,7 +95,11 @@ local function parseSide(s)
 end
 
 local function build()
-  frame = ns.newWindow("HandshakeDebug", "Handshake — debug (bac à sable)", 620, 560)
+  local H = 560
+  frame = ns.newWindow("HandshakeDebug", "Handshake — debug (bac à sable)", 620, H)
+  -- Sous le journal, tout est posé depuis le bas (y compté depuis le haut à la taille de départ) : agrandie, la fenêtre
+  -- donne sa hauteur au journal.
+  local function bas(y) return H + y end
   local function button(text, w, onClick)
     local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     b:SetSize(w, 22)
@@ -116,7 +120,7 @@ local function build()
   end
   local function input(w, x, y, label)
     local t = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    t:SetPoint("TOPLEFT", x, y - 4)
+    t:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", x, bas(y - 4))
     t:SetText(label)
     local e = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
     e:SetSize(w, 22)
@@ -143,12 +147,12 @@ local function build()
   logTitle:SetText("Journal (ce qui serait parti) — Ctrl+A puis Ctrl+C pour copier")
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 14, -116)
-  scroll:SetPoint("TOPRIGHT", -32, -116)
-  scroll:SetHeight(200)
+  scroll:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -32, H - 316)
   local log = CreateFrame("EditBox", nil, scroll)
   log:SetMultiLine(true)
   log:SetFontObject("GameFontHighlightSmall")
   log:SetWidth(560)
+  scroll:SetScript("OnSizeChanged", function(_, w) log:SetWidth(w) end)
   log:SetAutoFocus(false)
   log:SetMaxLetters(0)
   log:SetScript("OnEscapePressed", log.ClearFocus)
@@ -173,11 +177,11 @@ local function build()
     local l = dbg.log[#dbg.log]
     if l then inbox:SetText((l:match(" : (.*)$") or ""):gsub("^%d+/%d+|", "")) end
   end)
-  last:SetPoint("TOPLEFT", 14, -388)
+  last:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 14, bas(-388))
 
   -- Faux échange
   local trTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  trTitle:SetPoint("TOPLEFT", 14, -424)
+  trTitle:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 14, bas(-424))
   trTitle:SetText("Faux échange avec l'autre (« 3858x20 7963x1 5.5po 30pa »)")
   local give = input(220, 14, -446, "Tu donnes")
   local get = input(220, 320, -446, "Il donne")
@@ -185,7 +189,7 @@ local function build()
     local guid = dbg.as and realGUID() or TESTER.guid
     ns.tradeDebug({ partner = other(), guid = guid, give = parseSide(give:GetText()), get = parseSide(get:GetText()) })
   end)
-  evalB:SetPoint("TOPLEFT", 14, -480)
+  evalB:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 14, bas(-480))
   local finish = button("Terminer l'échange", 150, function() ns.tradeDebugFinish() end)
   finish:SetPoint("LEFT", evalB, "RIGHT", 6, 0)
   local reset = button("Effacer les contrats de test", 200, function()
@@ -197,14 +201,14 @@ local function build()
   end)
   reset:SetPoint("BOTTOMLEFT", 14, 12)
   local contracts = button("Contrats", 90, function() ns.openContracts() end)
-  contracts:SetPoint("BOTTOMRIGHT", -14, 12)
+  contracts:SetPoint("BOTTOMRIGHT", -26, 12) -- à gauche de la poignée
   local orders = button("Commandes", 100, function() ns.ouvrir() end)
   orders:SetPoint("RIGHT", contracts, "LEFT", -6, 0)
 
   frame.refresh = function()
     sandbox:SetChecked(dbg.on)
     auto:SetChecked(dbg.auto)
-    frame.who:SetText(("Tu es : |cffa98fff%s|r%s"):format(ns.myIdentity(),
+    frame.who:SetText(("Tu es : |cffffffff%s|r%s"):format(ns.myIdentity(),
       dbg.on and "" or "  |cffe64d4d(bac à sable coupé : les envois partent vraiment)|r"))
     swap:SetText(dbg.as and "Redevenir moi" or "Jouer Testeur")
     if from:GetText() == "" or from:GetText() == realName() or from:GetText() == testerName() then from:SetText(other()) end

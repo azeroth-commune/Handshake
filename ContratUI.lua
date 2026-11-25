@@ -12,7 +12,7 @@ local W, H = 620, 600
 local frame, list, pos, shownHash = nil, {}, 1, nil
 local firstShown = {} -- empreinte -> moment où cette version a été affichée pour la première fois (réarmement)
 local STATUS = { brouillon = "|cff999999BROUILLON (pas envoyé)|r", envoye = "|cffe6994dEN ATTENTE DE SA RÉPONSE|r",
-  a_signer = "|cffa98fffÀ SIGNER PAR TOI|r", signe = "|cff59cc73SIGNÉ|r", clos = "|cff59cc73CLOS|r", echu = "|cffe64d4dÉCHU|r",
+  a_signer = "|cffffd100À SIGNER PAR TOI|r", signe = "|cff59cc73SIGNÉ|r", clos = "|cff59cc73CLOS|r", echu = "|cffe64d4dÉCHU|r",
   refuse = "|cffe64d4dREFUSÉ|r", retire = "|cff999999RETIRÉ|r" }
 -- Dans le menu des contrats : l'état en un mot.
 local COURT = { brouillon = "brouillon", envoye = "en attente", a_signer = "à signer", signe = "signé", clos = "clos",
@@ -269,7 +269,7 @@ local function build()
   -- Le contrat affiché : un menu déroulant de tous les contrats, avec qui et dans quel état (skill ui-addon : pas de < >).
   frame.choix = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
   frame.choix:SetWidth(260)
-  frame.choix:SetPoint("TOPLEFT", 120, -8)
+  frame.choix:SetPoint("TOPLEFT", 14, -32) -- sous la barre de titre du gabarit
   frame.choix:SetupMenu(function(_, root)
     for i, c in ipairs(list) do
       local s = ns.ctStatus(c)
@@ -279,7 +279,7 @@ local function build()
   end)
 
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", 14, -40)
+  scroll:SetPoint("TOPLEFT", 14, -66)
   scroll:SetPoint("BOTTOMRIGHT", -32, 96)
   frame.content = CreateFrame("Frame", nil, scroll)
   frame.content:SetSize(W - 50, 1)
@@ -287,6 +287,11 @@ local function build()
   frame.body = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   frame.body:SetPoint("TOPLEFT")
   frame.body:SetWidth(W - 56)
+  scroll:SetScript("OnSizeChanged", function(_, w) -- le texte suit la largeur de la fenêtre agrandie
+    frame.content:SetWidth(w)
+    frame.body:SetWidth(w - 6)
+    frame.content:SetHeight(frame.body:GetStringHeight() + 10)
+  end)
   frame.body:SetJustifyH("LEFT")
   frame.body:SetSpacing(3)
 
@@ -315,7 +320,7 @@ local function build()
   frame.replyList:SetPoint("LEFT", frame.reply, "RIGHT", 6, 0)
   local main = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") -- une commande sans arbre ni projet (#38)
   main:SetSize(150, 22)
-  main:SetPoint("TOPRIGHT", -70, -10)
+  main:SetPoint("TOPRIGHT", -14, -32)
   main:SetText("Commande à la main")
   main:SetScript("OnClick", function() ns.openCommandeMain() end)
   frame.send:SetPoint("BOTTOMLEFT", 14, 12)
@@ -323,7 +328,7 @@ local function build()
   frame.manual:SetPoint("LEFT", frame.withdraw, "RIGHT", 6, 0)
   frame.save = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   frame.save:SetSize(110, 22)
-  frame.save:SetPoint("BOTTOMRIGHT", -14, 12)
+  frame.save:SetPoint("BOTTOMRIGHT", -26, 12) -- à gauche de la poignée
   frame.save:SetText("Sauvegarder")
   frame.save:SetScript("OnClick", ReloadUI)
 
