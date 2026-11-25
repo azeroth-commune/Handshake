@@ -172,7 +172,33 @@ function ns.abandonner(p, i)
   ns.retirerTB(c)
   effacerBrouillons(c)
   if i == 1 then c.n, c.contrat = nil, nil else table.remove(r.liste, i) end
+  ns.elaguerApports(p)
   return true
+end
+
+-- Les apports qui vivent encore (rangés, puis rendus) : ceux d'un contrat vivant. Le projet entier commandé, ou la
+-- Réponse : tous ; un bloc : les cases qui entrent dans ses cases (lues sur l'arbre de la demande). Un bloc rendu
+-- (abandonné, refusé, retiré, échu) n'a plus d'apports : ils quittent le rangement, ses cases reviennent dans l'arbre et
+-- les Besoins. Appelé à chaque dessin (le fournisseur de l'emplacement, Emplacement.lua) : un refus reçu entre-temps y
+-- est vu.
+function ns.elaguerApports(p)
+  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  if not (r and r.apports) then return nil end
+  if r.reponse or ns.contratDuBloc(p, nil) then return r.apports end
+  local garder, dem = {}, nil
+  for _, c in ipairs(r.liste) do
+    if c.bloc and ns.contratDuBloc(p, c.bloc) then
+      dem = dem or ns.arbreDemande(p, r.apports)
+      local bloc = dem.blocDe[c.bloc]
+      local dedans = {}
+      for _, n in ipairs(bloc and bloc.cases or {}) do dedans[n] = true end
+      for _, n in ipairs(bloc and bloc.cases or {}) do
+        for _, k in ipairs(n.children) do if not dedans[k] and r.apports[k.id] then garder[k.id] = true end end
+      end
+    end
+  end
+  r.apports = next(garder) and garder or nil
+  return r.apports
 end
 
 -- La part du projet que vise la commande c, telle que le projet la fait maintenant : ses lignes et ses apports, rangés dans
@@ -299,16 +325,6 @@ function ns.projetEnvoyer(p, i)
   ct.status, c.contrat = "brouillon", ns.ctKey(ct)
   ns.ctStore()[c.contrat] = ct
   return ct
-end
-
--- « Envoyer » (le panneau du contrat, Emplacement.lua) : le contrat préparé i part d'un clic, en v1 (son brouillon fait
--- d'après le projet, puis proposé : mêmes bornes, même message que depuis Contrats). Déjà parti : son contrat. Renvoie le
--- contrat, ou nil et la raison (le brouillon reste alors dans Contrats).
-function ns.projetEnvoyerContrat(p, i)
-  local ct, err = ns.projetEnvoyer(p, i)
-  if not ct then return nil, err end
-  if ct.status ~= "brouillon" then return ct end
-  return ns.ctPropose(ct)
 end
 
 -- « Nouvelle version » (#8) : la commande envoyée i, dont la part du projet a changé, prépare sa contre-proposition

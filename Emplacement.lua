@@ -7,8 +7,13 @@
 -- - Le projet entier (sa ligne d'en-tête) : « Commander tout » (une liste sans arbre se commande ainsi), ou dans une
 --   Réponse « Réponse à Bob · mon prix · travail » ; commandé en entier, tout l'arbre est une seule case.
 -- - Le panneau (une petite fenêtre de Handshake, à côté de la case) : ce qui est livré et apporté, l'artisan, l'offre, le
---   menu des apports, un bouton d'action (Envoyer, Nouvelle version, Contre-proposer, Voir dans Contrats) et « Plus »
---   (Voir dans Contrats, Envoyer en clair, Annoncer dans le Commerce, Abandonner).
+--   menu des apports, un bouton d'action (Vérifier et envoyer…, Nouvelle version, Contre-proposer, Voir dans Contrats) et
+--   « Plus » (Voir dans Contrats, Envoyer en clair, Annoncer dans le Commerce, Abandonner). Rien n'y part sur le fil :
+--   « Vérifier et envoyer… » prépare le brouillon de la v1 et l'ouvre sur sa fiche dans Contrats (caution, perte maximale,
+--   objets sans prix, échéance, objets liés, nom et GUID : SECURITE.md, P8, n° 11, 13, 26, 57), d'où « Envoyer la
+--   proposition » le fait partir ; envoyer la v1 vaut signature dès que l'artisan accepte.
+-- - Hors Préparer (Réunir, Fabriquer, Fini : p.phase, l'arbre en lecture seule), seulement la case et son état : ni
+--   Commander, ni Commander tout, et le panneau en lecture (son état, « Voir dans Contrats »).
 local _, ns = ...
 
 local W8 = "Interface\\Buttons\\WHITE8x8"
@@ -32,6 +37,10 @@ local function etatEnCouleur(v)
   return ("|cff%s%s|r"):format(COULEUR[v.etat] or "ffffff", v.etat)
 end
 local function poTexte(c) return c and c > 0 and (("%.2f"):format(c / 10000):gsub("%.?0+$", "")) or "" end
+-- Hors Préparer (p.phase de Composants : nil = Préparer), l'emplacement est en lecture seule.
+local function enLecture(p) return p.phase ~= nil and p.phase ~= "preparer" end
+-- La clé du contrat à voir dans Contrats (la Réponse, ou le contrat de ce contrat préparé, brouillon compris), nil sinon.
+local function aVoir(v) return v.reponse or (v.contrat and ns.ctStore()[v.contrat] and v.contrat) end
 
 -- Les zones où chaque contrat est dessiné (pour y ancrer son panneau) : zones["<projet>:<contrat>"] = la zone.
 local zones = {}
@@ -142,14 +151,15 @@ local function construire()
   P.go:SetScript("OnClick", function()
     local p, i, v = ici()
     if not p then return end
+    if enLecture(p) then return ns.openContracts(aVoir(v)) end
     if v.reponse then -- la contre-proposition de l'artisan (règles de la Réponse : Handshake#60)
       local ct, err = ns.ctReplyFromOrder(v)
       if not ct then return dire(err) end
       ns.openContracts(ns.ctKey(ct))
-    elseif not v.fige then
-      local ct, err = ns.projetEnvoyerContrat(p, i)
+    elseif not v.fige then -- le brouillon de la v1, sur sa fiche dans Contrats ; il part de là (SECURITE.md, en tête)
+      local ct, err = ns.projetEnvoyer(p, i)
       if not ct then return dire(err) end
-      print(("|cffa98fffContrats :|r contrat n°%d envoyé à %s."):format(liste(p)[i].n or 0, ct.peer.name))
+      ns.openContracts(ns.ctKey(ct))
     elseif v.ecart then -- sa part a changé : la nouvelle version, relue dans Contrats avec le différentiel (#19)
       local n, err = ns.projetNouvelleVersion(p, i)
       if not n then return dire(err) end
@@ -167,9 +177,9 @@ local function construire()
   P.plus:SetupMenu(function(_, root)
     local p, i, v = ici()
     if not p then return end
-    local voir = v.reponse or (v.fige and v.contrat)
+    local voir = aVoir(v)
     if voir then root:CreateButton("Voir dans Contrats", function() ns.openContracts(voir) end) end
-    if v.reponse then return end
+    if v.reponse or enLecture(p) then return end
     root:CreateButton("Envoyer en clair", function() ns.sendOrder(ns.projetCommande(p, i)) end)
     if v.fige then return end
     root:CreateButton("Annoncer dans le Commerce", function() dire(select(2, ns.projetAnnoncer(p, i))); redessiner() end)
@@ -211,16 +221,25 @@ function sync()
   P.tipL:SetText(rep and "Mon prix" or "Offre")
   if not P.who:HasFocus() then P.who:SetText(v.player or "") end
   if not P.tip:HasFocus() then P.tip:SetText(poTexte(v.tip)) end
-  P.who:SetEnabled(not v.fige and not rep)
-  P.tip:SetEnabled(not v.fige)
+  local lecture = enLecture(p)
+  P.who:SetEnabled(not v.fige and not rep and not lecture)
+  P.tip:SetEnabled(not v.fige and not lecture)
+  P.apports:SetShown(not lecture)
+  P.plus:SetShown(not lecture)
   local etat = rep and "Sa demande : tes apports et ton prix, puis contre-propose." or ("État : " .. etatEnCouleur(v))
+  if lecture then etat = ("État : %s · lecture seule : « Préparer » dans le fil pour le changer"):format(rep and "réponse" or etatEnCouleur(v)) end
   if v.ecart then etat = etat .. " · |cffe6994d" .. v.ecart .. "|r" end
   if v.incomplet then etat = etat .. " · |cffe6994destimation incomplète|r"
   elseif v.ecartPrix then etat = etat .. (" · caution %s%+.0f %%|r"):format(v.alertePrix and "|cffe64d4d" or "|cff59cc73", v.ecartPrix) end
   P.etat:SetText(etat)
   P:SetHeight(38 + P.quoi:GetStringHeight() + 16 + 3 * 20 + 3 * 12 + 36) -- la hauteur suit ce qui est livré et apporté
-  P.go:SetText(rep and "Contre-proposer" or not v.fige and "Envoyer" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
-  P.go:SetEnabled((rep or v.fige or not v.vide) and true or false)
+  if lecture then
+    P.go:SetText("Voir dans Contrats")
+    P.go:SetEnabled(aVoir(v) ~= nil)
+  else
+    P.go:SetText(rep and "Contre-proposer" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
+    P.go:SetEnabled((rep or v.fige or not v.vide) and true or false)
+  end
 end
 ns.syncPanneau = sync
 
@@ -279,6 +298,8 @@ end
 
 local function bande(zone, p, bloc)
   local b = boutonBande(zone)
+  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
+  if enLecture(p) and not (bloc == nil and r and r.reponse) then b:Hide(); return zone:SetWidth(1) end -- rien à commander
   if bloc then
     return poser(zone, b, "Commander", function()
       GameTooltip:AddLine(("Commander le bloc %s%s"):format(bloc.key, bloc.best and (" à " .. bloc.best) or ""))
@@ -289,7 +310,6 @@ local function bande(zone, p, bloc)
       GameTooltip:AddLine("Clic : un contrat préparé ; l'artisan, l'offre et les apports se règlent, puis on l'envoie", 0.66, 0.56, 1, true)
     end, function() commander(p, bloc) end)
   end
-  local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
   if r and r.reponse then -- la Réponse : son panneau (mon prix, les apports, contre-proposer)
     local v = ns.projetCommande(p, 1)
     local total = Composants.Arbre(p, false, r.apports).total
@@ -336,7 +356,7 @@ local function caseContrat(zone, p, i)
       GameTooltip:AddLine(("%s · %s"):format(x.player or "artisan à choisir", etatEnCouleur(x)), 1, 1, 1)
       for _, l in ipairs(x.lines) do GameTooltip:AddLine(("%d× %s"):format(l.qty, ns.itemLabel(l.id)), 0.8, 0.8, 0.8) end
       if x.ecart then GameTooltip:AddLine(x.ecart, 0.9, 0.6, 0.3) end
-      GameTooltip:AddLine("Clic : artisan, offre, apports, envoyer", 0.66, 0.56, 1)
+      GameTooltip:AddLine(enLecture(q) and "Clic : son état, le voir dans Contrats" or "Clic : artisan, offre, apports, vérifier et envoyer", 0.66, 0.56, 1)
       GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -353,10 +373,9 @@ end
 -- Le fournisseur de l'emplacement du bloc (Composants.Emplacements, branché à l'entrée en jeu : ns.brancherComposants).
 ns.emplacement = {
   confie = function(p, bloc) return ns.contratDuBloc(p, bloc and bloc.key) ~= nil end,
-  apports = function(p) -- mes apports (dans une Réponse : les siens) sortent de l'arbre ; rien rangé pour un projet lu
-    local r = HandshakeDB.commandes and HandshakeDB.commandes[p.id]
-    return r and r.apports
-  end,
+  -- Mes apports (dans une Réponse : les siens) sortent de l'arbre, seulement ceux d'un contrat vivant (un bloc rendu n'en
+  -- a plus) ; rien n'est rangé pour un projet qu'on ne fait que lire.
+  apports = function(p) return ns.elaguerApports(p) end,
   bloc = function(zone, p, bloc, confie)
     zone.hsCle = nil
     if confie then

@@ -16,10 +16,12 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   Composants ne connaît ni Handshake ni les contrats. « Commander » sur un bloc (ou « Commander tout » sur la ligne du
   projet) crée tout de suite un contrat préparé, numéroté, rattaché au projet et au bloc
   (`HandshakeDB.commandes[p.id]`) ; le bloc se réduit à une case « Contrat n°12 · artisan · état » ; son panneau (une
-  fenêtre de Handshake) règle l'artisan, l'offre et les apports, et l'envoie (« Envoyer » : la v1 part d'un clic, mêmes
-  bornes et même message que depuis Contrats) ; « Plus » : voir dans Contrats, envoyer en clair, annoncer dans le
-  Commerce, abandonner. Refusé, retiré ou échu, le bloc revient. Une liste reçue (« Importer une liste reçue », dans la
-  fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
+  fenêtre de Handshake) règle l'artisan, l'offre et les apports ; « Vérifier et envoyer… » prépare le brouillon de la v1
+  et l'ouvre sur sa fiche dans Contrats (caution, perte maximale, objets sans prix, échéance, objets liés, nom et GUID),
+  d'où « Envoyer la proposition » le fait partir : rien ne part du panneau ; « Plus » : voir dans Contrats, envoyer en
+  clair, annoncer dans le Commerce, abandonner. Hors Préparer (`p.phase`), le panneau est en lecture seule. Refusé,
+  retiré, échu ou abandonné, le bloc revient, sans ses apports. Une liste reçue (« Importer une liste reçue », menu
+  « Plus » de la fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
   de Composants (`Composants.Tenir`), son panneau sur la ligne du projet (mon prix, ses apports, contre-proposer).
   Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` : supprimer un projet efface
   ses contrats préparés (et leurs brouillons dans Contrats), jamais un contrat parti ; à l'entrée en jeu, ceux d'un

@@ -214,14 +214,8 @@ local function build()
     ns.openContracts(ns.ctKey(ct))
   end)
   frame.go:SetPoint("BOTTOMLEFT", 14, 12)
-  frame.clair = button(frame, "En clair", 90, function()
-    local o = order()
-    if #o.lines == 0 then return say("rien à envoyer") end
-    ns.sendOrder(o)
-  end)
-  frame.clair:SetPoint("LEFT", frame.go, "RIGHT", 6, 0)
   frame.nouvelle = button(frame, "Nouvelle", 90, function() ns.mainNouvelle(); refresh() end)
-  frame.nouvelle:SetPoint("LEFT", frame.clair, "RIGHT", 6, 0)
+  frame.nouvelle:SetPoint("LEFT", frame.go, "RIGHT", 6, 0)
   -- « Annoncer » : l'Annonce dans le Commerce (Annonce.lua) ; le bouton dit s'il peut partir, et sinon pourquoi ou quand.
   frame.annonce = button(frame, "Annoncer", 170, function()
     local o = order()
@@ -229,10 +223,22 @@ local function build()
     refresh()
   end)
   frame.annonce:SetPoint("LEFT", frame.nouvelle, "RIGHT", 6, 0)
-  -- Importer une liste reçue (en chuchotement, ou collée) : un projet de Composants commandé en entier, ou, sans lui, cette
-  -- commande à la main.
-  local importer = button(frame, "Importer une liste reçue", 170, function() ns.openImport() end)
-  importer:SetPoint("TOPRIGHT", -14, -46)
+  -- Ce qui sert rarement (skill ui-addon : 3 ou 4 boutons au plus) : dans « Plus ». Importer une liste reçue (en
+  -- chuchotement, ou collée) : un projet de Composants commandé en entier, ou, sans lui, cette commande à la main ; la
+  -- demande en clair, chuchotée à l'artisan (pas dans une réponse).
+  frame.plus = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
+  frame.plus:SetWidth(90)
+  frame.plus:OverrideText("Plus")
+  frame.plus:SetPoint("LEFT", frame.annonce, "RIGHT", 6, 0)
+  frame.plus:SetupMenu(function(_, root)
+    root:CreateButton("Importer une liste reçue", function() ns.openImport() end)
+    if order().reponse then return end
+    root:CreateButton("Envoyer en clair", function()
+      local o = order()
+      if #o.lines == 0 then return say("rien à envoyer") end
+      ns.sendOrder(o)
+    end)
+  end)
   ns.onglets(frame, 1) -- et l'onglet « Annonces lues » (Annonce.lua)
   frame:SetScript("OnShow", function() refresh() end)
   frame:RegisterEvent("ITEM_DATA_LOAD_RESULT") -- un nom d'objet arrive du serveur
@@ -285,9 +291,10 @@ function refresh()
       or ("Contrat %s. « Nouvelle » pour une autre commande."):format(ns.etatDemande(ct)))
   end
   frame.go:SetText(c and "Contre-proposer" or ns.commandeEnvoyee(o) and "Voir la demande" or "Préparer la demande")
-  frame.clair:SetShown(not c)
   frame.nouvelle:SetShown(not c)
   frame.annonce:SetShown(not c)
+  frame.plus:ClearAllPoints()
+  frame.plus:SetPoint("LEFT", c and frame.go or frame.annonce, "RIGHT", 6, 0)
   local texte, peut, quand = ns.annonceEtiquette(o)
   frame.annonce:SetText(texte)
   frame.annonce:SetEnabled(peut)

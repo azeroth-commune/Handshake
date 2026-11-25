@@ -1226,9 +1226,10 @@ end
 print("Handshake : envoyer une commande (demande figée, état lu dans le contrat) OK")
 
 -- Commander un bloc (Composants#26) crée tout de suite un contrat préparé, numéroté (le numéro ne voyage pas) ; le bloc est
--- confié (l'emplacement du bloc de Composants le réduit à une case) tant que son contrat vit ; « Envoyer » le fait partir
--- d'un clic ; refusé, retiré ou échu, le bloc revient. Abandonner un contrat préparé efface son brouillon. Supprimer le
--- projet efface ses contrats préparés (et leurs brouillons dans Contrats), jamais un contrat parti.
+-- confié (l'emplacement du bloc de Composants le réduit à une case) tant que son contrat vit ; « Vérifier et envoyer… »
+-- n'en fait que le brouillon de la v1, ouvert sur sa fiche dans Contrats, d'où il part (ns.ctPropose : « Envoyer la
+-- proposition ») ; refusé, retiré ou échu, le bloc revient, sans ses apports. Abandonner un contrat préparé efface son
+-- brouillon et ses apports. Supprimer le projet efface ses contrats préparés (et leurs brouillons), jamais un contrat parti.
 as(BOB)
 do
   assert(cns.fournisseur == ns.emplacement, "Handshake branché sur l'emplacement du bloc de Composants")
@@ -1248,26 +1249,38 @@ do
   assert(ns.projetCommande(p, f).etat == "préparé" and not HandshakeDB.contracts[cf.contrat or ""], "préparé : rien dans Contrats")
   ns.projetApport(p, 5500, true)
   assert(E.apports(p)[5500], "mes apports sortent de l'arbre")
-  -- Envoyer : sans artisan connu, rien ne part (la raison est dite) ; avec, il part en v1.
+  -- Vérifier et envoyer… : sans artisan connu, pas de brouillon (la raison est dite) ; avec, le brouillon de la v1, rien
+  -- sur le fil ; il part de sa fiche (« Envoyer la proposition »).
   ns.projetArtisan(p, "Cid", f)
-  local rien, pourquoi = ns.projetEnvoyerContrat(p, f)
-  assert(not rien and pourquoi, "artisan inconnu : rien ne part")
+  local rien, pourquoi = ns.projetEnvoyer(p, f)
+  assert(not rien and pourquoi, "artisan inconnu : pas de brouillon")
   ns.projetArtisan(p, BELN, f)
-  local ct = assert(ns.projetEnvoyerContrat(p, f))
-  assert(ct.status == "envoye" and ct.v == "1" and bases[BEL].contracts[ns.ctKey(ct)], "envoyé d'un clic, arrivé chez Belegard")
-  assert(ns.projetEnvoyerContrat(p, f) == ct, "parti : pas renvoyé")
+  local ct = assert(ns.projetEnvoyer(p, f))
+  assert(ct.status == "brouillon" and not bases[BEL].contracts[ns.ctKey(ct)], "un brouillon, rien sur le fil")
+  assert(ns.ctPropose(ct) and ct.status == "envoye" and ct.v == "1" and bases[BEL].contracts[ns.ctKey(ct)], "parti de sa fiche, arrivé chez Belegard")
+  assert(ns.projetEnvoyer(p, f) == ct, "parti : pas refait")
+  -- Aucun autre chemin ne fait partir la v1 en sautant sa fiche : ni le panneau ni les contrats préparés n'appellent l'envoi.
+  for _, fichier in ipairs({ "Emplacement.lua", "Commande.lua" }) do
+    local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
+    assert(not code:find("ctPropose", 1, true), fichier .. " envoie un contrat sans sa fiche")
+  end
   assert(not ns.abandonner(p, f), "un contrat parti ne s'abandonne pas")
-  -- Le minage : préparé, son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc revient.
+  -- Le minage : préparé (j'apporte le cuivre), son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc
+  -- revient sans son apport ; la perle de la forge, toujours commandée, reste apportée.
+  ns.projetApport(p, 2770, true)
+  assert(E.apports(p)[2770] and E.apports(p)[5500], "le cuivre du minage, la perle de la forge")
   ns.projetArtisan(p, BELN, m)
   local bm = assert(ns.projetEnvoyer(p, m))
   assert(HandshakeDB.contracts[ns.ctKey(bm)].status == "brouillon", "un brouillon dans Contrats")
   assert(ns.abandonner(p, m) and not HandshakeDB.contracts[ns.ctKey(bm)], "abandonné : son brouillon effacé")
   assert(not E.confie(p, blocs.Minage) and E.confie(p, blocs.Forge), "le minage revient, la forge reste confiée")
+  assert(not ns.projetApports(p)[2770] and ns.projetApports(p)[5500], "le bloc rendu n'a plus d'apports ; la forge garde les siens")
   -- Belegard refuse la forge : le bloc revient ; commandé de nouveau, un autre contrat, un autre numéro.
   as(BEL)
   ns.ctRefuse(HandshakeDB.contracts[ns.ctKey(ct)])
   as(BOB)
   assert(not E.confie(p, blocs.Forge), "refusé : le bloc revient")
+  assert(E.apports(p) == nil and ns.projetApports(p) == nil, "refusé : plus d'apports, ses cases reviennent dans l'arbre")
   local f2 = ns.projetCommander(p, C.Arbre(p, true).blocDe.Forge)
   assert(f2 ~= f and HandshakeDB.commandes[p.id].liste[f2].n > cm.n and E.confie(p, blocs.Forge), "de nouveau : un autre contrat")
   -- Supprimer le projet : le préparé (et son brouillon) s'efface, le contrat parti (refusé) reste.

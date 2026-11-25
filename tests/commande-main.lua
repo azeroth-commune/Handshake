@@ -42,7 +42,7 @@ local function choisir(box, texte)
     box:GetScript("OnTextChanged")(box, true)
     local premier = AzerothCommune.ChercherObjets(texte, 8)[1]
     assertNotNil(premier, "la recherche du socle trouve « " .. texte .. " »")
-    local s = tous(HandshakeMainFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and c.text ~= nil and (c.text:GetText() or ""):find(premier.name, 1, true) == 1 end)
+    local s = tous(HandshakeMainFrame, function(c) return c:GetObjectType() == "Button" and c:IsShown() and c.text ~= nil and c.text.GetText ~= nil and (c.text:GetText() or ""):find(premier.name, 1, true) == 1 end)
     assertTrue(#s > 0, "suggestion affichée")
     s[1]:Click()
     return premier.id
