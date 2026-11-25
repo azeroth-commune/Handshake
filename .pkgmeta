@@ -1,0 +1,11 @@
+package-as: Handshake
+ignore:
+  - tests
+  - check.lua
+  - docs
+  - CLAUDE.md
+  - CONTEXT.md
+  - CONCEPTION.md
+  - SECURITE.md
+# ponytail: required-dependencies azeroth-commune à remettre quand le socle est validé (CurseForge refuse un slug non validé, erreur 1018)
+
