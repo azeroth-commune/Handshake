@@ -457,6 +457,66 @@ test("« Répondre » ouvre la Réponse en Préparer ; une nouvelle version de s
     if not ok then error(err, 0) end
 end) end)
 
+-- Lancer attend la signature (#60) : « Lancer (contrat à signer) », grisé, et le fil ne le contourne pas ; signé, Réunir.
+-- Son propre contrat ne compte pas dans ce que la Réponse attend (clos) : l'objet déjà dans les sacs, elle passe en
+-- Fabriquer ; l'arbre plein mais le contrat pas clos, pas Finie ; clos (les objets livrés ont quitté les sacs), Finie.
+test("Réponse : Lancer attend la signature ; Finie quand le contrat est clos, pas quand l'arbre est plein", function() sansRecettes(function()
+    local cle = "Player-1-0000B0B0#4345"
+    local c = { origin = "Player-1-0000B0B0", id = "4345", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
+        m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
+        hash = "00000000cafe0061", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
+    HandshakeDB.contracts[cle] = c
+    -- Les sacs du test (le socle les lit par AzerothCommune.Conteneurs), rendus à la fin.
+    local sacs, G = {}, { Conteneurs = AzerothCommune.Conteneurs, GetItemCount = C_Item.GetItemCount }
+    AzerothCommune.Conteneurs = function(garder)
+        local items = {}
+        for id, n in pairs(sacs) do items[#items + 1] = { id = id, count = n } end
+        return garder("Backpack") and { b = { items = items } } or {}
+    end
+    C_Item.GetItemCount = function(id) return sacs[id] or 0 end
+    local p
+    local ok, err = pcall(function()
+        SlashCmdList.HANDSHAKECONTRAT()
+        parcourir(deroulant(HandshakeContratsFrame, function() return true end),
+            function() return boutonDe(HandshakeContratsFrame, "Répondre") ~= nil end)
+        boutonDe(HandshakeContratsFrame, "Répondre"):Click()
+        HandshakeContratsFrame:Hide()
+        p = affichePas()
+        assertEquals("Réponse à Bob", p.name)
+        local lancer = ComposantsFrame.lancerB
+        assertEquals("Lancer (contrat à signer)", lancer:GetText())
+        assertTrue(not lancer:IsEnabled(), "pas signé : grisé")
+        lancer:Click()
+        assertNil(p.phase, "pas signé : Lancer ne fait rien")
+        tous(ComposantsFrame, function(b)
+            return b:GetObjectType() == "Button" and b:IsVisible() and (b:GetText() or ""):find("Réunir", 1, true) ~= nil
+        end)[1]:Click()
+        assertNil(p.phase, "le fil ne contourne pas la signature")
+        -- Signé (le geste « Signer » de Contrats) : Lancer, Réunir.
+        c.status, c.signed = "signe", GetServerTime()
+        Composants.Rafraichir()
+        assertEquals("Lancer", lancer:GetText())
+        lancer:Click()
+        assertEquals("reunir", p.phase, "signé : Réunir")
+        -- L'objet fait, dans les sacs : rien à réunir, son propre contrat ne retient pas en Réunir ; l'arbre est plein mais
+        -- le contrat n'est pas clos : Fabriquer, pas Finie.
+        sacs = { [10721] = 1 }
+        Composants.Rafraichir()
+        assertEquals("fabriquer", p.phase, "son contrat ne compte pas dans clos : Fabriquer")
+        Composants.Rafraichir()
+        assertEquals("fabriquer", p.phase, "l'arbre plein, le contrat pas clos : pas Finie")
+        -- Livré par l'échange vérifié : l'objet a quitté les sacs, le contrat est clos ; Finie.
+        sacs = {}
+        c.status = "clos"
+        Composants.Rafraichir()
+        assertEquals("fini", p.phase, "clos : Finie, même l'objet parti")
+    end)
+    AzerothCommune.Conteneurs, C_Item.GetItemCount = G.Conteneurs, G.GetItemCount
+    if p then Composants.Supprimer(p.id) end
+    HandshakeDB.contracts[cle] = nil
+    if not ok then error(err, 0) end
+end) end)
+
 -- Les contrats dans les Besoins (Composants#27) : une ligne par contrat du projet, « Contrat n°… · à recevoir », verte
 -- « reçu » à la livraison ; Lancer marche avec un contrat pas signé ; tout réuni mais un contrat ouvert, on reste en
 -- Réunir, livré : Fabriquer ; mes apports sont des lignes des Besoins ; abandonné (ou retiré), le bloc revient dans
