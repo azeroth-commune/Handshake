@@ -20,7 +20,15 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   et l'ouvre sur sa fiche dans Contrats (caution, perte maximale, objets sans prix, échéance, objets liés, nom et GUID),
   d'où « Envoyer la proposition » le fait partir : rien ne part du panneau ; « Plus » : voir dans Contrats, envoyer en
   clair, annoncer dans le Commerce, abandonner. Hors Préparer (`p.phase`), le panneau est en lecture seule. Refusé,
-  retiré, échu ou abandonné, le bloc revient, sans ses apports. Une liste reçue (« Importer une liste reçue », menu
+  retiré, échu ou abandonné, le bloc revient, sans ses apports. Dans les **Besoins** (l'emplacement des Besoins, même
+  fournisseur, phase Réunir) : une ligne par contrat vivant, « Contrat n°12 · à recevoir », verte « reçu » une fois livré,
+  son état et « Abandonner » (la lecture seule hors Préparer ne vaut que pour l'arbre) ; `clos` = tous les contrats
+  vivants du projet livrés (Réunir → Fabriquer et Fini l'attendent) ; mes apports vivants (`ns.elaguerApports`) et les
+  termes de mes contrats partis sont `aDonner` (des lignes des Besoins), ceux du demandeur dans une Réponse restent
+  `apports` (hors de mon arbre). Abandonner selon l'état (`ns.abandonner`) : préparé → effacé ; envoyé → retiré
+  (`ns.ctWithdraw`, comme « Retirer ») ; à signer → refusé (`ns.ctRefuse`, comme « Refuser ») ; signé → lâché par le
+  projet seulement (rien n'est envoyé, le contrat reste signé dans Contrats jusqu'à l'échéance, SECURITE.md P2/P5 n° 20) ;
+  livré → rien. Une liste reçue (« Importer une liste reçue », menu
   « Plus » de la fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
   de Composants (`Composants.Tenir`), son panneau sur la ligne du projet (mon prix, ses apports, contre-proposer).
   Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` : supprimer un projet efface
