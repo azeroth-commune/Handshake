@@ -7,5 +7,7 @@ ignore:
   - CONTEXT.md
   - CONCEPTION.md
   - SECURITE.md
-# ponytail: required-dependencies azeroth-commune à remettre quand le socle est validé (CurseForge refuse un slug non validé, erreur 1018)
 
+required-dependencies:
+  - azeroth-commune
+# ponytail: composants (optionnel) à ajouter quand le projet Composants est validé (erreur 1018 avant)
