@@ -10,4 +10,5 @@ ignore:
 
 required-dependencies:
   - azeroth-commune
-# ponytail: composants (optionnel) à ajouter quand le projet Composants est validé (erreur 1018 avant)
+optional-dependencies:
+  - composants
