@@ -1,6 +1,7 @@
--- Handshake, la fenêtre des contrats (/contrat). Un contrat à la fois : qui donne quoi à chaque étape,
--- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
--- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
+-- Handshake, la fenêtre des contrats (/contrat). Un contrat à la fois, sa fiche lue comme la fenêtre d'échange du jeu
+-- (#73) : l'en-tête (la bulle du nom : GUID, empreinte, identité), les alertes quand il y en a (identité pas vérifiée,
+-- nom proche, ce qui a changé depuis la version d'avant, vérifications), qui donne quoi à chaque étape en deux colonnes
+-- avec l'avancement une fois signé, TON estimation de la caution et ta perte maximale (P8).
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
 -- « Vérifier et envoyer… » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants)
 -- en ouvre le brouillon, relu ici ; « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un
@@ -71,21 +72,35 @@ end
 
 local function plain(name) return name:lower():gsub("[\128-\255]", "") end
 
-function ns.ctDescribe(c, me)
-  local t, status = {}, ns.ctStatus(c)
+-- La fiche d'un contrat vue depuis ma place (me) : ce que la fenêtre dessine (#73), et rien d'autre. Rien n'y manque de
+-- ce qui sert la sécurité, c'est seulement rangé : GUID, empreinte et identité dans la bulle du nom ; ce qui doit arrêter
+-- l'œil (identité pas vérifiée, nom proche n° 26, différentiel n° 4, vérifications n° 11-12, échange à vérifier n° 37)
+-- en alertes, en haut, seulement quand elles s'appliquent ; TON estimation et ta perte maximale en bas (P8).
+--   titre, echeance, role ; bulle = { lignes } ; alertes = { textes } ;
+--   etapes = { { titre, gauche = { titre, lignes }, droite = { titre, lignes } } }, la gauche toujours « Tu … » ; une
+--   ligne : { id, qty, detail, fait, mot } (un objet ; detail = son prix au contrat ; fait = l'avancement, une fois
+--   signé) ou { texte } (un montant) ;
+--   apres = { notes sous les étapes } ; estimation = { textes }.
+function ns.ctFiche(c, me)
+  local status = ns.ctStatus(c)
   local peer, artisan = c.peer or {}, me == c.artisan
   local other = peer.name or "?" -- le nom donné par le serveur, jamais déduit du GUID
-  local add = function(s) t[#t + 1] = s end
+  local otherShort = other:match("^%S+") or other
   local caution, delivery = ns.ctTotal(c.m), ns.ctTotal(c.o)
-  add(("|cffffd100Contrat avec %s|r"):format(ns.identity(other, peer.guid)))
-  add(("Toi : %s   ·   v%s   ·   empreinte %s"):format(ns.myIdentity(), c.v, (c.hash or "—"):sub(1, 8)))
-  add((STATUS[status] or status) .. ("   ·   tu es %s   ·   échéance %s"):format(artisan and "l'ARTISAN" or "le CLIENT", rel(c.d - GetServerTime())))
-  if c.enClair then add(("|cffe6994dParti en clair : %s n'a pas répondu par Handshake ; s'il dit oui, « Il a dit oui ».|r"):format(other)) end
-  add(peer.verified and ("Identité de %s : |cff59cc73confirmée par le serveur|r (GUID %s)"):format(other, tostring(peer.guid))
-    or ("Identité de %s : |cffe6994dGUID annoncé, vérifié au premier échange|r (GUID %s)"):format(other, tostring(peer.guid)))
+  local f = { alertes = {}, etapes = {}, apres = {}, estimation = {} }
+  local function alerte(s, rouge) f.alertes[#f.alertes + 1] = (rouge and "|cffe64d4d! " or "|cffe6994d! ") .. s .. "|r" end
+  f.titre = ("%s · v%s · %s"):format(other:gsub("|", "||"), c.v, STATUS[status] or status)
+  f.echeance = "échéance " .. rel(c.d - GetServerTime())
+  f.role = artisan and "Tu es l'artisan." or "Tu es le client."
+  f.bulle = { ns.identity(other, peer.guid),
+    peer.verified and "|cff59cc73Identité confirmée par le serveur|r" or "|cffe6994dGUID annoncé, vérifié au premier échange|r",
+    "Toi : " .. ns.myIdentity(), ("v%s · empreinte %s"):format(c.v, (c.hash or "—"):sub(1, 8)) }
+
+  if c.enClair then alerte(("Parti en clair : %s n'a pas répondu par Handshake ; s'il dit oui, « Il a dit oui »."):format(other)) end
+  if not peer.verified then alerte(("Identité de %s pas encore vérifiée : GUID annoncé, vérifié au premier échange"):format(otherShort)) end
   for _, x in pairs(ns.ctStore()) do -- n° 26 : nom presque identique à un autre partenaire
     local o2 = x.peer and x.peer.name or other
-    if o2 ~= other and plain(o2) == plain(other) then add(("|cffe64d4d! Nom très proche de %s : vérifie que c'est bien la bonne personne.|r"):format(o2)) break end
+    if o2 ~= other and plain(o2) == plain(other) then alerte(("Nom très proche de %s : vérifie que c'est bien la bonne personne."):format(o2), true) break end
   end
   if c.prev then -- n° 4 : ce qui a changé
     local ch = {}
@@ -102,78 +117,99 @@ function ns.ctDescribe(c, me)
       end
       for id in pairs(old) do ch[#ch + 1] = ns.itemLabel(id) .. " retiré" end
     end
-    add(("|cffe6994dChangé depuis la v%s : %s|r"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
+    alerte(("Changé depuis la v%s : %s"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
   end
-  -- « tu donnes » / « Bob donne » : le client et l'artisan vus depuis ma place, prénom seul.
-  local otherShort = other:match("^%S+")
-  local function verb(isMe, tu, il) return isMe and ("Tu " .. tu) or (otherShort .. " " .. il) end
-  add(" ")
-  if #c.m > 0 then
-    add("|cffffd100Étape 1 — l'artisan achète les composants|r")
-    for _, l in ipairs(c.m) do add(("   %s %d × %s   (caution %s l'unité)"):format(verb(not artisan, "donnes", "donne"), l.qty, ns.itemLabel(l.id), ns.money(l.unit))) end
-    add(("   %s la caution : %s"):format(verb(artisan, "verses", "verse"), ns.money(caution)))
-  end
-  add("|cffffd100Étape " .. (#c.m > 0 and "2" or "unique") .. " — le client achète les objets|r")
-  for _, l in ipairs(c.o) do add(("   %s %d × %s   (%s l'objet)"):format(verb(artisan, "livres", "livre"), l.qty, ns.itemLabel(l.id), ns.money(l.unit))) end
-  add(("   %s : %s%s"):format(verb(not artisan, "paies", "paie"), ns.money(delivery), #c.m > 0 and (" (caution rendue %s + prix %s)"):format(ns.money(caution), ns.moneySigned(delivery - caution)) or ""))
   if delivery - caution <= 0 then
-    add(artisan and "   |cffe6994d! Aucun prix pour ton travail : « Répondre » ou « Répondre en liste » pour chiffrer ta part.|r"
-      or "   |cffe6994dPrix laissé à l'artisan : il le chiffrera en contre-proposant.|r")
+    alerte(artisan and "Aucun prix pour ton travail : « Répondre » ou « Répondre en liste » pour chiffrer ta part."
+      or "Prix laissé à l'artisan : il le chiffrera en contre-proposant.")
   end
-  if #c.m == 0 then add("   |cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r") end
-  add(" ")
-
-  -- P8 : ton estimation, ta perte maximale (ns.ctEstimation, la même que sur la page du projet).
-  local e = ns.ctEstimation(c, me)
-  add(("|cffffd100Ton estimation|r (scan de l'HV : %s)"):format(e.scanned or "jamais"))
-  if #c.m > 0 then
-    add(("   composants ~%s · caution %s%+.0f %%|r"):format(money(e.composants), e.alerte and "|cffe64d4d" or "|cff59cc73", e.ecart))
-    if e.manquants > 0 then add(("   |cffe6994d! %d composant(s) sans prix connu : estimation incomplète|r"):format(e.manquants)) end
-    if artisan then
-      add(("   Si le client disparaît après l'étape 1 : tu perds au plus %s + ton travail"):format(money(e.perte)))
-    else
-      add(("   Si l'artisan disparaît après l'étape 1 : tu perds au plus %s"):format(money(e.perte)))
-    end
-  end
-  if e.valeur > 0 then add(("   les objets livrés valent ~%s à l'HV (tu %s %s)"):format(money(e.valeur), artisan and "reçois" or "paies", money(delivery))) end
-
-  -- Vérifications
-  local checks = {}
+  -- Vérifications (n° 11, 12)
   for _, l in ipairs(c.o) do
-    if select(14, C_Item.GetItemInfo(l.id)) == 1 then checks[#checks + 1] = ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à livrer" end
+    if select(14, C_Item.GetItemInfo(l.id)) == 1 then alerte(ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à livrer", true) end
   end
   for _, l in ipairs(c.m) do
-    if select(14, C_Item.GetItemInfo(l.id)) == 1 then checks[#checks + 1] = ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à fournir" end
+    if select(14, C_Item.GetItemInfo(l.id)) == 1 then alerte(ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à fournir", true) end
   end
   if #c.m > 0 then
     local need, anc, unknown = expansion(c.o)
-    if #unknown > 0 then checks[#checks + 1] = "recette inconnue pour " .. ns.itemLabel(unknown[1]) .. " : quantités de composants non vérifiables" end
+    if #unknown > 0 then alerte("recette inconnue pour " .. ns.itemLabel(unknown[1]) .. " : quantités de composants non vérifiables", true) end
     if #unknown == 0 then
       for _, l in ipairs(c.m) do
-        if not need[l.id] then checks[#checks + 1] = ns.itemLabel(l.id) .. " n'entre pas dans les recettes"
-        elseif l.qty > need[l.id] then checks[#checks + 1] = ("%s : %d demandés, la recette en consomme %d"):format(ns.itemLabel(l.id), l.qty, need[l.id]) end
+        if not need[l.id] then alerte(ns.itemLabel(l.id) .. " n'entre pas dans les recettes", true)
+        elseif l.qty > need[l.id] then alerte(("%s : %d demandés, la recette en consomme %d"):format(ns.itemLabel(l.id), l.qty, need[l.id]), true) end
         for _, l2 in ipairs(c.m) do
-          if anc[l2.id] and anc[l2.id][l.id] then checks[#checks + 1] = ns.itemLabel(l.id) .. " ET son composant " .. ns.itemLabel(l2.id) .. " sont demandés" end
+          if anc[l2.id] and anc[l2.id][l.id] then alerte(ns.itemLabel(l.id) .. " ET son composant " .. ns.itemLabel(l2.id) .. " sont demandés", true) end
         end
       end
     end
   end
-  if #checks > 0 then
-    add(" ")
-    add("|cffe64d4dÀ vérifier|r")
-    for _, s in ipairs(checks) do add("   |cffe64d4d! " .. s .. "|r") end
-  end
+  if c.unconfirmed then alerte(("%d échange(s) à vérifier : terminés, mais ton or ou tes sacs n'ont pas bougé comme prévu"):format(#c.unconfirmed)) end
 
-  -- Avancement
-  if c.ledger or c.unconfirmed then
-    add(" ")
-    add("|cffffd100Avancement (ce que ton addon a vu passer)|r")
-    local inList, outList = artisan and c.m or c.o, artisan and c.o or c.m
-    for _, l in ipairs(inList) do add(("   reçu %d/%d %s"):format((c.got or {})[l.id] or 0, l.qty, ns.itemLabel(l.id))) end
-    for _, l in ipairs(outList) do add(("   donné %d/%d %s"):format((c.gave or {})[l.id] or 0, l.qty, ns.itemLabel(l.id))) end
-    add(("   solde (reçu − donné, en valeurs du contrat) : %s"):format(ns.moneySigned(c.net or 0)))
-    if c.unconfirmed then add(("   |cffe6994d! %d échange(s) à vérifier : terminés, mais ton or ou tes sacs n'ont pas bougé comme prévu|r"):format(#c.unconfirmed)) end
+  -- Les étapes en deux colonnes, la mienne à gauche ; l'avancement (ce que ton addon a vu passer) une fois signé.
+  local suivi = c.signed or c.ledger
+  local function objets(list, recu, detail)
+    local t = {}
+    for _, l in ipairs(list) do
+      t[#t + 1] = { id = l.id, qty = l.qty, detail = detail:format(ns.money(l.unit)), mot = recu and "reçu" or "donné",
+        fait = suivi and ((recu and (c.got or {}) or (c.gave or {}))[l.id] or 0) or nil }
+    end
+    return t
   end
+  local function etape(titre, jeTitre, ilTitre, mes, siens)
+    f.etapes[#f.etapes + 1] = { titre = titre, gauche = { titre = "Tu " .. jeTitre, lignes = mes },
+      droite = { titre = otherShort .. " " .. ilTitre, lignes = siens } }
+  end
+  local unique = #c.m == 0
+  if not unique then
+    local apports, cautionL = objets(c.m, artisan, "caution %s l'unité"), { { texte = ns.money(caution) .. " de caution" } }
+    if artisan then etape("1. Composants", "donnes", "donne", cautionL, apports)
+    else etape("1. Composants", "donnes", "donne", apports, cautionL) end
+  end
+  local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery) } }
+  if not unique then paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s)|r"):format(ns.money(caution), ns.moneySigned(delivery - caution)) } end
+  local titre = unique and "Livraison" or "2. Livraison"
+  if artisan then etape(titre, "livres", "paie", livre, paie) else etape(titre, "paies", "livre", paie, livre) end
+  if unique then f.apres[#f.apres + 1] = "|cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r" end
+  if c.ledger then f.apres[#f.apres + 1] = ("Solde des échanges (reçu − donné, en valeurs du contrat) : %s"):format(ns.moneySigned(c.net or 0)) end
+
+  -- P8 : ton estimation, ta perte maximale (ns.ctEstimation, la même que sur la page du projet), en une ligne.
+  local e, parts = ns.ctEstimation(c, me), {}
+  if not unique then
+    parts[#parts + 1] = "composants ~" .. money(e.composants)
+    parts[#parts + 1] = ("caution %s%+.0f %%|r"):format(e.alerte and "|cffe64d4d" or "|cff59cc73", e.ecart)
+    parts[#parts + 1] = "perte max " .. money(e.perte) .. (artisan and " + ton travail" or "")
+  end
+  if e.valeur > 0 then parts[#parts + 1] = "objets livrés ~" .. money(e.valeur) end
+  f.estimation[1] = ("|cffffd100Ton estimation|r (scan : %s) : %s"):format(e.scanned or "jamais", #parts > 0 and table.concat(parts, " · ") or "aucun prix connu")
+  if e.manquants > 0 then f.estimation[2] = ("|cffe6994d! %d composant(s) sans prix connu : estimation incomplète|r"):format(e.manquants) end
+  return f
+end
+
+-- Une ligne d'étape en texte : « 20 Cuivre  donné 3/20 », ou le montant.
+local function ligneTexte(l)
+  if not l.id then return l.texte end
+  local s = ("%d %s"):format(l.qty, ns.itemLabel(l.id))
+  if l.fait then s = s .. ("  %s%s %d/%d|r"):format(l.fait >= l.qty and "|cff59cc73" or "|cff999999", l.mot, l.fait, l.qty) end
+  return s
+end
+
+-- La fiche en texte (vérification hors jeu, débogage) : tout ce que la fenêtre montre, bulle du nom comprise.
+function ns.ctDescribe(c, me)
+  local f, t = ns.ctFiche(c, me), {}
+  local function add(s) t[#t + 1] = s end
+  add(f.titre .. "   ·   " .. f.echeance)
+  add(f.role)
+  for _, s in ipairs(f.bulle) do add("   " .. s) end
+  for _, s in ipairs(f.alertes) do add(s) end
+  for _, e in ipairs(f.etapes) do
+    add(e.titre)
+    for _, col in ipairs({ e.gauche, e.droite }) do
+      add("   " .. col.titre)
+      for _, l in ipairs(col.lignes) do add("      " .. ligneTexte(l) .. (l.detail and ("   (" .. l.detail .. ")") or "")) end
+    end
+  end
+  for _, s in ipairs(f.apres) do add(s) end
+  for _, s in ipairs(f.estimation) do add(s) end
   return table.concat(t, "\n")
 end
 
@@ -196,6 +232,103 @@ end
 -- Ce qui est affiché d'un contrat (un brouillon n'a pas encore d'empreinte : on la calcule) : ses termes et son état.
 local function empreinte(c) return ns.ctHash(ns.ctCanonical(c)) .. c.status end
 
+-- Un objet de la fiche se comporte comme un objet du jeu (skill ui-addon, modèle : la frise de Maîtrise) : la vraie bulle
+-- puis son prix au contrat ; Maj+clic = lien dans le chat, Ctrl+clic = cabine d'essayage (HandleModifiedItemClick).
+local function lien(id)
+  local l = ns.lienObjet(id)
+  return l:find("|H", 1, true) and l or ("|cffffffff|Hitem:%d::::::::::::::::|h%s|h|r"):format(id, l) -- pas encore chargé : fait main
+end
+local function bulleObjet(self)
+  local l = self.l
+  if not (l and l.id) then return end
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:SetItemByID(l.id)
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine(("%d au contrat, %s"):format(l.qty, l.detail), 1, 0.82, 0)
+  GameTooltip:AddLine("Maj+clic : le lien dans le chat", 0.6, 0.6, 0.6)
+  GameTooltip:Show()
+end
+local function clicObjet(self)
+  if self.l and self.l.id then HandleModifiedItemClick(lien(self.l.id)) end
+end
+
+-- La fiche du contrat affiché (frame.ficheDe), dessinée de haut en bas dans le contenu qui défile, à sa largeur :
+-- en-tête, alertes, étapes en deux colonnes (la mienne à gauche), estimation (#73). Redessinée quand la largeur change.
+local ETAPE_W, ICONE = 92, 16
+local function dessiner()
+  local C, c = frame.content, frame.ficheDe
+  local w = C:GetWidth()
+  for _, r in ipairs(frame.fiche) do r:Hide() end
+  for _, b in ipairs(frame.cellules) do b:Hide() end
+  if not c then
+    frame.vide:Show()
+    frame.vide:SetWidth(w - 6)
+    C:SetHeight(frame.vide:GetStringHeight() + 10)
+    return
+  end
+  frame.vide:Hide()
+  local f, y, n = ns.ctFiche(c, ns.me()), 0, 0
+  local function place(r, x, dy, largeur)
+    r:ClearAllPoints()
+    r:SetPoint("TOPLEFT", C, "TOPLEFT", x, -(y + (dy or 0)))
+    if largeur then r:SetWidth(largeur) end
+    r:Show()
+  end
+  local function texte(r, s, x, largeur, apres)
+    r:SetText(s)
+    place(r, x, 0, largeur)
+    y = y + r:GetStringHeight() + (apres or 6)
+  end
+  local function trait(r) place(r, 0, 2, w - 6); y = y + 10 end
+  -- En-tête : le titre est le bouton de la bulle du nom ; l'échéance à droite.
+  frame.titre:SetText(f.titre)
+  frame.titre.bulle = f.bulle
+  place(frame.titre, 0, 0, w - 6)
+  frame.echeance:SetText(f.echeance)
+  frame.echeance:Show()
+  y = y + 20
+  texte(frame.role, f.role, 0, w - 6)
+  if #f.alertes > 0 then texte(frame.alertes, table.concat(f.alertes, "\n"), 0, w - 6) end
+  trait(frame.traits[1])
+  -- Les étapes : titre de l'étape et des deux colonnes sur une rangée, puis une rangée par ligne.
+  local col = (w - 6 - ETAPE_W) / 2
+  local function cellule(l, x)
+    n = n + 1
+    local b = frame.cellules[n] or frame.nouvelleCellule()
+    b.l = l
+    b.icone:SetShown(l.id ~= nil)
+    if l.id then b.icone:SetTexture(C_Item.GetItemIconByID(l.id)) end
+    b.texte:ClearAllPoints()
+    b.texte:SetPoint("TOPLEFT", l.id and ICONE + 4 or 0, -3)
+    b.texte:SetWidth(col - (l.id and ICONE + 8 or 4))
+    b.texte:SetText(l.id and ligneTexte(l) or l.texte)
+    local h = math.max(ICONE, b.texte:GetStringHeight() + 3)
+    b:SetSize(col - 4, h)
+    place(b, x)
+    return h
+  end
+  for i, e in ipairs(f.etapes) do
+    local t = frame.etapes[i]
+    t[1]:SetText(e.titre); place(t[1], 0)
+    t[2]:SetText(e.gauche.titre); place(t[2], ETAPE_W, 0, col - 4)
+    t[3]:SetText(e.droite.titre); place(t[3], ETAPE_W + col, 0, col - 4)
+    y = y + 16
+    for k = 1, math.max(#e.gauche.lignes, #e.droite.lignes) do
+      local h = 0
+      if e.gauche.lignes[k] then h = math.max(h, cellule(e.gauche.lignes[k], ETAPE_W)) end
+      if e.droite.lignes[k] then h = math.max(h, cellule(e.droite.lignes[k], ETAPE_W + col)) end
+      y = y + h + 3
+    end
+    y = y + 6
+  end
+  if #f.apres > 0 then texte(frame.apres, table.concat(f.apres, "\n"), 0, w - 6) end
+  trait(frame.traits[2])
+  texte(frame.estimation, table.concat(f.estimation, "\n"), 0, w - 6, 4)
+  C:SetHeight(y + 6)
+  local barre = frame.scroll.ScrollBar
+  if barre then barre:SetShown(C:GetHeight() > frame.scroll:GetHeight()) end -- la barre seulement si ça déborde, comme la colonne
+end
+
 local function refresh()
   if Composants then Composants.Rafraichir() end -- l'état des contrats d'un projet (son emplacement du bloc) se lit ici
   if ns.refreshCommandeMain then ns.refreshCommandeMain() end
@@ -212,13 +345,9 @@ local function refresh()
   frame.syncColonne() -- la liste et le contrat affiché ont pu changer
   for _, b in ipairs(frame.actions) do b:Hide() end
   frame.edit:SetShown(false)
-  if not c then
-    frame.body:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « + Nouvelle commande » puis « Préparer la demande ».|r")
-    frame.content:SetHeight(frame.body:GetStringHeight() + 10)
-    return
-  end
-  frame.body:SetText(ns.ctDescribe(c, me))
-  frame.content:SetHeight(frame.body:GetStringHeight() + 10)
+  frame.ficheDe = c
+  dessiner()
+  if not c then return end
   local status = ns.ctStatus(c)
   local function show(b) b:Show() end
   if status == "a_signer" then
@@ -394,19 +523,69 @@ local function build()
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", X0, -34) -- sous la barre de titre
   scroll:SetPoint("BOTTOMRIGHT", -32, 96)
-  frame.content = CreateFrame("Frame", nil, scroll)
-  frame.content:SetSize(W - X0 - 36, 1)
-  scroll:SetScrollChild(frame.content)
-  frame.body = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  frame.body:SetPoint("TOPLEFT")
-  frame.body:SetWidth(W - X0 - 42)
-  scroll:SetScript("OnSizeChanged", function(_, w) -- le texte suit la largeur de la fenêtre agrandie
-    frame.content:SetWidth(w)
-    frame.body:SetWidth(w - 6)
-    frame.content:SetHeight(frame.body:GetStringHeight() + 10)
+  local C = CreateFrame("Frame", nil, scroll)
+  frame.content, frame.scroll = C, scroll
+  C:SetSize(W - X0 - 36, 1)
+  scroll:SetScrollChild(C)
+  scroll:SetScript("OnSizeChanged", function(_, w) -- la fiche suit la largeur de la fenêtre agrandie
+    C:SetWidth(w)
+    if frame.cellules then dessiner() end
   end)
-  frame.body:SetJustifyH("LEFT")
-  frame.body:SetSpacing(3)
+  -- Les morceaux de la fiche (dessiner les place) : frame.fiche les liste pour tout cacher d'un coup.
+  frame.fiche, frame.cellules, frame.traits, frame.etapes = {}, {}, {}, {}
+  local function fs(police)
+    local t = C:CreateFontString(nil, "OVERLAY", police or "GameFontHighlightSmall")
+    t:SetJustifyH("LEFT")
+    t:SetSpacing(2)
+    frame.fiche[#frame.fiche + 1] = t
+    return t
+  end
+  frame.vide = C:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  frame.vide:SetPoint("TOPLEFT")
+  frame.vide:SetJustifyH("LEFT")
+  frame.vide:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « + Nouvelle commande » puis « Préparer la demande ».|r")
+  frame.titre = CreateFrame("Button", nil, C)
+  frame.titre:SetHeight(16)
+  frame.titre:SetFontString(frame.titre:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
+  frame.titre:GetFontString():SetPoint("LEFT")
+  frame.titre:GetFontString():SetJustifyH("LEFT")
+  frame.titre:GetFontString():SetWordWrap(false)
+  frame.titre:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    for i, l in ipairs(self.bulle) do
+      if i == 1 then GameTooltip:AddLine(l) else GameTooltip:AddLine(l, 1, 1, 1) end
+    end
+    GameTooltip:Show()
+  end)
+  frame.titre:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.fiche[#frame.fiche + 1] = frame.titre
+  frame.echeance = fs()
+  frame.echeance:SetPoint("TOPRIGHT", C, "TOPRIGHT", -6, -2)
+  frame.echeance:SetJustifyH("RIGHT")
+  frame.titre:GetFontString():SetPoint("RIGHT", frame.echeance, "LEFT", -8, 0)
+  frame.role, frame.alertes, frame.apres, frame.estimation = fs(), fs(), fs(), fs()
+  for i = 1, 2 do
+    local t = C:CreateTexture(nil, "ARTWORK")
+    t:SetHeight(1)
+    t:SetColorTexture(1, 0.82, 0, 0.25)
+    frame.traits[i] = t
+    frame.fiche[#frame.fiche + 1] = t
+  end
+  for i = 1, 2 do frame.etapes[i] = { fs("GameFontNormalSmall"), fs("GameFontNormalSmall"), fs("GameFontNormalSmall") } end
+  frame.nouvelleCellule = function()
+    local b = CreateFrame("Button", nil, C)
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b.icone = b:CreateTexture(nil, "ARTWORK")
+    b.icone:SetSize(ICONE, ICONE)
+    b.icone:SetPoint("TOPLEFT")
+    b.texte = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    b.texte:SetJustifyH("LEFT")
+    b:SetScript("OnEnter", bulleObjet)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnClick", clicObjet)
+    frame.cellules[#frame.cellules + 1] = b
+    return b
+  end
 
   -- Actions (bas de la fenêtre)
   frame.accept = button("Signer", 90, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)

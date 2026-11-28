@@ -1548,10 +1548,84 @@ AzerothCommuneDB.recipes = { [1] = { name = "Claymore", output = 7963, reagents 
 as(BOB)
 local fiche = ns.ctDescribe(signed, BOB)
 assert(fiche:find("36 demandés, la recette en consomme 30"), "minerai gonflé signalé")
-assert(fiche:find("Si l'artisan disparaît après l'étape 1 : tu perds au plus 1188pc"), "perte max du client : 36×200 − 6012")
+assert(fiche:find("perte max 1188pc", 1, true), "perte max du client : 36×200 − 6012")
 as(BEL)
-assert(ns.ctDescribe(bases[BEL].contracts[k], BEL):find("tu es l'ARTISAN"), "rôle affiché depuis mon côté")
+assert(ns.ctDescribe(bases[BEL].contracts[k], BEL):find("Tu es l'artisan.", 1, true), "rôle affiché depuis mon côté")
+assert(ns.ctDescribe(bases[BEL].contracts[k], BEL):find(" + ton travail", 1, true), "perte max de l'artisan : plus son travail")
 print("Handshake : fiche du contrat OK")
+
+-- La fiche lisible (#73) : chaque alerte seulement quand elle s'applique ; deux colonnes par étape, la mienne à gauche,
+-- avec les verbes de ma place ; une vente simple en une étape ; l'avancement à côté des quantités une fois signé.
+do
+  as(BOB)
+  local base = { origin = GBOB, id = "73", v = "1", parent = "0", client = BOB, artisan = BEL, status = "envoye",
+    m = { { id = 3858, qty = 30, unit = 200 } }, o = { { id = 7963, qty = 1, unit = 9000 } }, d = GetServerTime() + 86400,
+    hash = "0123456789abcdef", peer = { guid = GBEL, name = BELN, verified = true } }
+  local function ct(champs)
+    local c = {}
+    for x, v in pairs(base) do c[x] = v end
+    for x, v in pairs(champs or {}) do c[x] = v end
+    return c
+  end
+  local function a(f, motif) for _, s in ipairs(f.alertes) do if s:find(motif, 1, true) then return s end end end
+  local f = ns.ctFiche(ct(), BOB)
+  assert(#f.alertes == 0, "rien à signaler : aucune alerte (" .. tostring(f.alertes[1]) .. ")")
+  assert(f.titre:find(BELN, 1, true) == 1 and f.titre:find("v1", 1, true) and f.titre:find("EN ATTENTE", 1, true), f.titre)
+  assert(f.echeance:find("échéance dans", 1, true) and f.role == "Tu es le client.", "échéance et rôle dans l'en-tête")
+  local bulle = table.concat(f.bulle, "\n")
+  assert(bulle:find(GBEL, 1, true) and bulle:find("empreinte 01234567", 1, true) and bulle:find("confirmée", 1, true)
+    and bulle:find("Toi : Bob Dupont", 1, true), "GUID, empreinte, identité dans la bulle du nom : " .. bulle)
+  -- Une alerte par cas.
+  assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = BELN } }), BOB), "Identité de Belegard pas encore vérifiée"), "identité pas vérifiée")
+  HandshakeDB.contracts.proche = { peer = { name = "Bèlegard Marteaudefer" } }
+  assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = "Bélegard Marteaudefer", verified = true } }), BOB), "Nom très proche de Bèlegard"), "nom proche (n° 26)")
+  HandshakeDB.contracts.proche = nil
+  local prev = { v = "1", m = base.m, o = { { id = 7963, qty = 1, unit = 8000 } }, d = base.d }
+  assert(a(ns.ctFiche(ct({ v = "2", prev = prev }), BOB), "Changé depuis la v1 : livraison"), "différentiel (n° 4)")
+  assert(a(ns.ctFiche(ct({ o = { { id = 7963, qty = 1, unit = 6000 } } }), BOB), "Prix laissé à l'artisan"), "pas de prix, côté client")
+  assert(a(ns.ctFiche(ct({ o = { { id = 7963, qty = 1, unit = 6000 } } }), BEL), "Aucun prix pour ton travail"), "pas de prix, côté artisan")
+  C_Item.GetItemInfo = function(id) if id == 7963 then return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, 1 end end
+  assert(a(ns.ctFiche(ct(), BOB), "est lié quand ramassé : impossible à livrer"), "objet lié (n° 11)")
+  C_Item.GetItemInfo = noop
+  assert(a(ns.ctFiche(ct({ m = { { id = 3858, qty = 36, unit = 200 } } }), BOB), "36 demandés, la recette en consomme 30"), "besoins gonflés (n° 12)")
+  assert(a(ns.ctFiche(ct({ m = { { id = 2770, qty = 1, unit = 10 }, { id = 3858, qty = 30, unit = 200 } } }), BOB), "n'entre pas dans les recettes"), "composant hors recette")
+  assert(a(ns.ctFiche(ct({ o = { { id = 9999, qty = 1, unit = 9000 } } }), BOB), "recette inconnue"), "recette inconnue")
+  local recettes = AzerothCommuneDB.recipes
+  AzerothCommuneDB.recipes = { [1] = { output = 7963, reagents = { { id = 3859, qty = 10 } } }, [2] = { output = 3859, reagents = { { id = 3858, qty = 2 } } } }
+  assert(a(ns.ctFiche(ct({ m = { { id = 3858, qty = 20, unit = 200 }, { id = 3859, qty = 10, unit = 500 } } }), BOB), "ET son composant"), "composant et son ancêtre")
+  AzerothCommuneDB.recipes = recettes
+  assert(a(ns.ctFiche(ct({ unconfirmed = { {} } }), BOB), "1 échange(s) à vérifier"), "échange à vérifier (n° 37)")
+  assert(a(ns.ctFiche(ct({ enClair = true }), BOB), "Parti en clair"), "parti en clair (#71)")
+  assert(not f.estimation[2], "prix connus : pas d'alerte de prix")
+  local prix = AzerothCommuneMarket["6942-Alliance"].items[3858]
+  AzerothCommuneMarket["6942-Alliance"].items[3858] = nil
+  assert((ns.ctFiche(ct(), BOB).estimation[2] or ""):find("1 composant(s) sans prix connu", 1, true), "prix manquant, sous l'estimation")
+  AzerothCommuneMarket["6942-Alliance"].items[3858] = prix
+  assert(f.estimation[1]:find("composants ~", 1, true) and f.estimation[1]:find("perte max", 1, true), "l'estimation en une ligne : " .. f.estimation[1])
+  -- Deux colonnes, la mienne à gauche, les verbes de ma place.
+  local e1, e2 = f.etapes[1], f.etapes[2]
+  assert(#f.etapes == 2 and e1.titre == "1. Composants" and e2.titre == "2. Livraison", "composants, puis livraison")
+  assert(e1.gauche.titre == "Tu donnes" and e1.gauche.lignes[1].id == 3858 and e1.gauche.lignes[1].qty == 30, "client : tu donnes les composants")
+  assert(e1.droite.titre == "Belegard donne" and e1.droite.lignes[1].texte:find("de caution", 1, true), "il donne la caution")
+  assert(e2.gauche.titre == "Tu paies" and e2.gauche.lignes[2].texte:find("caution rendue", 1, true), "tu paies : caution rendue + prix")
+  assert(e2.droite.titre == "Belegard livre" and e2.droite.lignes[1].id == 7963, "il livre")
+  assert(e1.gauche.lignes[1].fait == nil and e2.droite.lignes[1].fait == nil, "pas signé : pas d'avancement")
+  local art = ns.ctFiche(ct({ peer = { guid = GBOB, name = BOBN, verified = true } }), BEL)
+  assert(art.role == "Tu es l'artisan." and art.etapes[1].gauche.lignes[1].texte:find("de caution", 1, true)
+    and art.etapes[1].droite.titre == "Bob donne" and art.etapes[1].droite.lignes[1].id == 3858, "artisan : tu donnes la caution, Bob les composants")
+  assert(art.etapes[2].gauche.titre == "Tu livres" and art.etapes[2].gauche.lignes[1].id == 7963 and art.etapes[2].droite.titre == "Bob paie", "artisan : tu livres, Bob paie")
+  local vente = ns.ctFiche(ct({ m = {} }), BOB)
+  assert(#vente.etapes == 1 and vente.etapes[1].titre == "Livraison" and #vente.etapes[1].gauche.lignes == 1, "vente simple : une étape, sans caution")
+  assert(vente.apres[1]:find("Vente simple", 1, true) and not vente.estimation[1]:find("perte max", 1, true), "vente simple : ni caution ni perte")
+  -- Signé : l'avancement à côté de chaque quantité, et le solde.
+  local s = ct({ status = "signe", signed = GetServerTime(), gave = { [3858] = 20 }, got = {}, ledger = { {} }, net = -100 })
+  local fs = ns.ctFiche(s, BOB)
+  assert(fs.etapes[1].gauche.lignes[1].fait == 20 and fs.etapes[1].gauche.lignes[1].mot == "donné", "donné 20/30")
+  assert(fs.etapes[2].droite.lignes[1].fait == 0 and fs.etapes[2].droite.lignes[1].mot == "reçu", "reçu 0/1")
+  assert(fs.apres[1]:find("Solde des échanges", 1, true), "le solde")
+  assert(ns.ctDescribe(s, BOB):find("donné 20/30", 1, true), "en texte aussi")
+end
+print("Handshake : fiche lisible (#73) OK")
 
 -- Noms à la Forever (LibCommune#35, Handshake#29) : « Prénom Nom », la forme du serveur, pour afficher et chuchoter ;
 -- un personnage s'identifie par son GUID. Plus d'adresse « Prénom-Royaume » : lib.Adresse est retirée du socle.
@@ -1611,7 +1685,8 @@ for _, f in ipairs({ "Calcul", "Projet", "Fenetre", "Besoins" }) do
 end
 for f in hstoc:gmatch("([%w_]+)%.lua") do
   local code = io.open("Handshake/" .. f .. ".lua"):read("*a"):gsub("%-%-[^\n]*", "")
-  for _, m in ipairs({ "ComposantsDB", "ComposantsFrame", "craftPlan", "projetArbre", "dessinArbre", "HandleModifiedItemClick" }) do
+  -- (HandleModifiedItemClick revient pour les objets de la fiche du contrat, #73 ; la commande à la main ne le prend pas, plus haut.)
+  for _, m in ipairs({ "ComposantsDB", "ComposantsFrame", "craftPlan", "projetArbre", "dessinArbre" }) do
     assert(not code:find(m, 1, true), f .. ".lua : " .. m)
   end
 end

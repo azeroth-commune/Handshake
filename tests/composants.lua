@@ -151,7 +151,7 @@ local function verifierEtEnvoyer(c)
     assertNotNil(ct, "un brouillon")
     assertEquals("brouillon", ct.status, "rien sur le fil depuis le panneau")
     assertTrue(HandshakeContratsFrame:IsShown(), "la fiche s'ouvre dans Contrats")
-    assertTrue(HandshakeContratsFrame.body:GetText():find("BROUILLON", 1, true) ~= nil, "sur la fiche de ce brouillon")
+    assertTrue(HandshakeContratsFrame.titre:GetText():find("BROUILLON", 1, true) ~= nil, "sur la fiche de ce brouillon")
     local envoyer
     for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer la proposition" and b:IsShown() end)) do envoyer = b end
     assertNotNil(envoyer, "« Envoyer la proposition » sur la fiche")
@@ -487,9 +487,10 @@ test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fic
         assertEquals("2", b.v)
         assertTrue(c.status == "a_signer" and c.v == "1" and HandshakeDB.contracts[cle] == c, "rien n'est parti : sa v1, toujours à signer")
         assertTrue(HandshakeContratsFrame:IsShown(), "Contrats s'ouvre")
-        local fiche = HandshakeContratsFrame.body:GetText()
-        assertTrue(fiche:find("BROUILLON", 1, true) ~= nil, "sur la fiche du brouillon")
-        assertTrue(fiche:find("Player-1-0000B0B0", 1, true) ~= nil and fiche:find("échéance", 1, true) ~= nil, "nom, GUID, échéance")
+        local f = HandshakeContratsFrame
+        assertTrue(f.titre:GetText():find("BROUILLON", 1, true) ~= nil, "sur la fiche du brouillon")
+        assertTrue(table.concat(f.titre.bulle, " "):find("Player-1-0000B0B0", 1, true) ~= nil, "le GUID dans la bulle du nom")
+        assertTrue(f.echeance:GetText():find("échéance", 1, true) ~= nil, "l'échéance dans l'en-tête")
         FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|Player-1-0000B0B0", "WHISPER", "Bob Dupont") -- il a Handshake (#71)
         boutonDe(HandshakeContratsFrame, "Envoyer la proposition"):Click()
         assertNil(HandshakeDB.contracts[cle .. "+"], "envoyée : plus de brouillon")
