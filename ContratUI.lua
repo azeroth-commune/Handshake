@@ -2,10 +2,12 @@
 -- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
 -- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
--- « Envoyer » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants) l'envoie d'un clic ;
--- « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un brouillon, relu ici ; « Nouvelle version »
+-- « Vérifier et envoyer… » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants)
+-- en ouvre le brouillon, relu ici ; « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un
+-- brouillon, relu ici ; « Nouvelle version »
 -- un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ». Une demande reçue se
--- répond dans l'arbre ou en liste.
+-- répond dans l'arbre ou en liste. La fenêtre retient la clé du contrat affiché, et chaque clic de sa fiche part avec ce
+-- contrat-là, tel qu'affiché (empreinte), ou rien (#69).
 local _, ns = ...
 
 -- La colonne des contrats à gauche (COL_W), le contrat affiché à droite de X0. W × H : taille de départ et minimum, ce
@@ -14,6 +16,8 @@ local COL_W, X0 = 150, 166
 local W, H = 680, 400
 local ENTREE_H = 34
 local frame, list, pos, shownHash = nil, {}, 1, nil
+-- Le contrat affiché, retenu par sa clé à travers les rafraîchissements (#69), et l'empreinte de ce qui en est affiché.
+local shownKey, shownEmpreinte
 local firstShown = {} -- empreinte -> moment où cette version a été affichée pour la première fois (réarmement)
 local STATUS = { brouillon = "|cff999999BROUILLON (pas envoyé)|r", envoye = "|cffe6994dEN ATTENTE DE SA RÉPONSE|r",
   a_signer = "|cffffd100À SIGNER PAR TOI|r", signe = "|cff59cc73SIGNÉ|r", clos = "|cff59cc73CLOS|r", echu = "|cffe64d4dÉCHU|r",
@@ -183,13 +187,21 @@ local function sorted()
   return l
 end
 
+-- Ce qui est affiché d'un contrat (un brouillon n'a pas encore d'empreinte : on la calcule) : ses termes et son état.
+local function empreinte(c) return ns.ctHash(ns.ctCanonical(c)) .. c.status end
+
 local function refresh()
   if Composants then Composants.Rafraichir() end -- l'état des contrats d'un projet (son emplacement du bloc) se lit ici
   if ns.refreshCommandeMain then ns.refreshCommandeMain() end
   if not (frame and frame:IsShown()) then return end
   list = sorted()
+  -- Le contrat affiché se retrouve par sa clé, pas par sa place : une proposition arrivée en tête ou un brouillon périmé
+  -- effacé ne font rien glisser sous les yeux (#69). Son brouillon parti ou effacé : sa version en cours.
+  local function trouve(k) for i, x in ipairs(list) do if ns.ctKey(x) == k then return i end end end
+  pos = shownKey and (trouve(shownKey) or trouve((shownKey:gsub("%+$", "")))) or pos
   pos = math.min(math.max(1, pos), math.max(1, #list))
   local c, me = list[pos], ns.me()
+  shownKey, shownEmpreinte = c and ns.ctKey(c), c and empreinte(c)
   frame.syncColonne() -- la liste et le contrat affiché ont pu changer
   local unsaved = false
   for _, x in ipairs(list) do if x.unsaved then unsaved = true end end
@@ -266,7 +278,18 @@ local function build()
     local b = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     b:SetSize(w, 22)
     b:SetText(text)
-    b:SetScript("OnClick", function() local c = list[pos]; if c then onClick(c) end; refresh() end)
+    -- Un clic agit sur le contrat AFFICHÉ (#69, P3) : relu dans la base par sa clé, et seulement s'il n'a pas changé depuis
+    -- l'affichage (même empreinte) ; sinon rien ne part, et le contrat redessiné est à relire.
+    b:SetScript("OnClick", function()
+      local c = shownKey and ns.ctStore()[shownKey]
+      if c and empreinte(c) == shownEmpreinte then
+        onClick(c)
+        shownKey = ns.ctKey(c) -- un brouillon parti change de clé (« origine#id+ » -> « origine#id »)
+      else
+        print("|cffe64d4dContrats :|r le contrat affiché a changé : relis-le, rien n'est parti.")
+      end
+      refresh()
+    end)
     return b
   end
   -- Le contrat affiché : une colonne de tous les contrats, comme celle des projets de Composants (skill ui-addon : pas de
@@ -302,7 +325,7 @@ local function build()
     b.etat = b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     b.etat:SetPoint("TOPLEFT", 8, -18); b.etat:SetPoint("RIGHT", -4, 0)
     b.etat:SetJustifyH("LEFT")
-    b:SetScript("OnClick", function() pos = i; refresh() end)
+    b:SetScript("OnClick", function() shownKey = ns.ctKey(b.c); refresh() end)
     frame.entrees[i] = b
     return b
   end
@@ -424,10 +447,7 @@ end
 function ns.openContracts(key)
   if not frame then build() end
   frame:Show()
-  if key then
-    list = sorted()
-    for i, c in ipairs(list) do if ns.ctKey(c) == key then pos = i end end
-  end
+  if key then shownKey = key end
   refresh()
 end
 

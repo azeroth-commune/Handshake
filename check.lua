@@ -964,6 +964,36 @@ as(BOB)
 local back = HandshakeDB.contracts[key1]
 assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob reçoit la contre-proposition")
 assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
+-- Un brouillon de nouvelle version dépassé (l'autre a envoyé la sienne entre-temps) ne part pas : il est effacé, comme
+-- celui d'une nouvelle version de demande (ctVersionDemande, plus bas). Contre-proposition d'abord (ctCounter)…
+do
+  local function relance(qui) -- qui envoie une nouvelle version de sa copie (+10 pa à la livraison)
+    as(qui)
+    local c = HandshakeDB.contracts[key1]
+    assert(ns.ctPropose(assert(ns.ctCounter(c, nil, ns.ctTotal(c.o) + 1000))))
+  end
+  local function perime(b, quoi)
+    local envoyes = #wire
+    local rien, err = ns.ctPropose(b)
+    assert(not rien and err:find("a changé") and not HandshakeDB.contracts[ns.ctKey(b)] and #wire == envoyes, quoi .. " périmé : effacé, rien n'est parti")
+  end
+  local contre = assert(ns.ctCounter(back, nil, ns.ctTotal(back.o) + 500)) -- Bob, sur la v2 reçue
+  relance(BEL) -- Belegard envoie sa v3 avant
+  as(BOB)
+  perime(contre, "la contre-proposition (ctCounter)")
+  assert(HandshakeDB.contracts[key1].v == "3" and HandshakeDB.contracts[key1].status == "a_signer", "la v3 de Belegard reste à signer")
+  -- … puis la réponse de l'artisan (ctReplyFromOrder) : Belegard prépare la sienne sur la v4 de Bob, Bob envoie sa v5 avant.
+  relance(BOB)
+  as(BEL)
+  local rep4 = assert(ns.ctReplyFromOrder(reponse1()))
+  assert(rep4.status == "brouillon" and rep4.v == "5", "la réponse de Belegard : un brouillon de la v5")
+  relance(BOB)
+  as(BEL)
+  perime(rep4, "la réponse de l'artisan (ctReplyFromOrder)")
+  assert(HandshakeDB.contracts[key1].v == "5" and HandshakeDB.contracts[key1].author == BOB, "la v5 de Bob reste")
+  ns.ctRefuse(HandshakeDB.contracts[key1]) -- clos : il ne compte plus dans les 3 propositions en attente de Bob (n° 12)
+  as(BOB)
+end
 print("Handshake : je réponds (ma part, mes apports, mon prix ; un brouillon relu sur sa fiche) OK")
 
 -- Commande à la main (#38) : sans arbre, une liste « ce que je veux » et une liste « ce que j'apporte » (objets ×
@@ -1271,11 +1301,14 @@ do
   assert(ns.ctPropose(ct) and ct.status == "envoye" and ct.v == "1" and bases[BEL].contracts[ns.ctKey(ct)], "parti de sa fiche, arrivé chez Belegard")
   assert(ns.projetEnvoyer(p, f) == ct, "parti : pas refait")
   -- Aucun autre chemin ne fait partir un contrat en sautant sa fiche, ni la v1 ni une nouvelle version (contre-proposition,
-  -- réponse de l'artisan : des brouillons, Contrat.lua newVersion) : seul « Envoyer la proposition » de Contrats appelle
-  -- l'envoi ; Contrat.lua ne fait que le définir.
-  for _, fichier in ipairs({ "Contrat.lua", "Emplacement.lua", "Commande.lua", "CommandeMain.lua", "Annonce.lua" }) do
-    local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", ""):gsub("function ns%.ctPropose%(", "")
-    assert(not code:find("ctPropose", 1, true), fichier .. " envoie un contrat sans sa fiche")
+  -- réponse de l'artisan : des brouillons, Contrat.lua newVersion) : l'envoi ne s'appelle que de la fenêtre Contrats
+  -- (« Envoyer la proposition », lié au contrat affiché) et du module des contrats ; tout autre fichier du TOC, présent ou
+  -- à venir, n'y touche pas.
+  for fichier in HSTOC:gmatch("([%w_]+%.lua)") do
+    if fichier ~= "Contrat.lua" and fichier ~= "ContratUI.lua" then
+      local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
+      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true), fichier .. " envoie un contrat sans sa fiche")
+    end
   end
   -- Le minage : préparé (j'apporte le cuivre), son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc
   -- revient sans son apport ; la perle de la forge, toujours commandée, reste apportée.
