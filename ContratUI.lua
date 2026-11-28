@@ -16,8 +16,10 @@ local _, ns = ...
 
 -- La colonne des contrats à gauche (COL_W), le contrat affiché à droite de X0. W × H : taille de départ et minimum, ce
 -- que prend le cas courant (la fiche d'un contrat à deux étapes et sa rangée de boutons) ; le texte défile, on agrandit.
+-- Mesuré au simulateur (#82) : à deux étapes, deux apports, deux alertes (identité, ce qui a changé) et l'estimation sur
+-- une ligne, la fiche prend ~255 px ; la zone qui défile fait H − 78.
 local COL_W, X0 = 150, 166
-local W, H = 680, 400
+local W, H = 680, 340
 local ENTREE_H, NOUVELLE_H, ARCHIVES_H = 34, 22, 22
 local frame, list, pos, shownHash = nil, {}, 1, nil
 local deplie = false -- « Archivés (n) » replié par défaut, pour la session (#72)
@@ -88,8 +90,8 @@ local function plain(name) return (name:gsub("[\192-\255][\128-\191]*", BASE):lo
 --   titre, echeance, role ; bulle = { lignes } ; alertes = { textes } ;
 --   etapes = { { titre, gauche = { titre, lignes }, droite = { titre, lignes } } }, la gauche toujours « Tu … » ; une
 --   ligne : { id, qty, detail, fait, mot } (un objet ; detail = son prix au contrat ; fait = l'avancement, une fois
---   signé) ou { texte, champ, unite } (un montant ; champ = "caution" ou "livraison" : un champ à saisir, suivi de
---   unite, sur un préparé ou un à signer, #74) ;
+--   signé) ou { texte, champ, unite, montant } (un montant, en cuivre ; champ = "caution" ou "livraison" : un champ à
+--   saisir, suivi de unite, sur un préparé ou un à signer, #74) ;
 --   apres = { notes sous les étapes } ; estimation = { textes }.
 function ns.ctFiche(c, me)
   local status = ns.ctStatus(c)
@@ -129,9 +131,14 @@ function ns.ctFiche(c, me)
     end
     alerte(("Changé depuis la v%s : %s"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
   end
+  -- Sans prix : l'artisan le chiffre sur la fiche d'un à signer ou de son brouillon ; le client l'attend tant que rien
+  -- n'est signé. Signé ou terminé, plus rien à chiffrer : pas d'alerte (#82).
   if delivery - caution <= 0 then
-    alerte(artisan and "Aucun prix pour ton travail : change la livraison ci-dessous, ou « Répondre » pour chiffrer ta part."
-      or "Prix laissé à l'artisan : il le chiffrera en contre-proposant.")
+    if artisan and (status == "a_signer" or status == "brouillon") then
+      alerte("Aucun prix pour ton travail : change la livraison ci-dessous" .. (status == "a_signer" and ", ou « Répondre » pour chiffrer ta part." or "."))
+    elseif not artisan and (status == "a_signer" or status == "brouillon" or status == "envoye") then
+      alerte("Prix laissé à l'artisan : il le chiffrera en contre-proposant.")
+    end
   end
   -- Vérifications (n° 11, 12)
   for _, l in ipairs(c.o) do
@@ -172,11 +179,11 @@ function ns.ctFiche(c, me)
   local unique = #c.m == 0
   if not unique then
     local apports, cautionL = objets(c.m, artisan, "caution %s l'unité"),
-      { { texte = ns.money(caution) .. " de caution", champ = "caution", unite = "po de caution" } }
+      { { texte = ns.money(caution) .. " de caution", champ = "caution", unite = "po de caution", montant = caution } }
     if artisan then etape("1. Composants", "donnes", "donne", cautionL, apports)
     else etape("1. Composants", "donnes", "donne", apports, cautionL) end
   end
-  local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery), champ = "livraison", unite = "po" } }
+  local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery), champ = "livraison", unite = "po", montant = delivery } }
   if not unique then paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s)|r"):format(ns.money(caution), ns.moneySigned(delivery - caution)) } end
   local titre = unique and "Livraison" or "2. Livraison"
   if artisan then etape(titre, "livres", "paie", livre, paie) else etape(titre, "paies", "livre", paie, livre) end
@@ -263,6 +270,51 @@ local function clicObjet(self)
   if self.l and self.l.id then HandleModifiedItemClick(lien(self.l.id)) end
 end
 
+-- Les champs des montants (#74), remplis avec les valeurs reçues une fois par version affichée (frame.champs.pour) : une
+-- saisie n'est jamais écrasée par un rafraîchissement, et ne change ni le contrat ni son empreinte (#69) ; le clic lit
+-- ce qu'ils montrent.
+local function jours(c) return (("%.1f"):format(math.max(0, (c.d - GetServerTime()) / 86400)):gsub("%.0$", "")) end
+local function remplir(c)
+  local ch = frame.champs
+  ch.remplit = true
+  ch.recu = { caution = #c.m > 0 and ns.ctTotal(c.m) or nil, livraison = ns.ctTotal(c.o), delai = tonumber(jours(c)) }
+  ch.caution:SetText(po(ns.ctTotal(c.m)))
+  ch.livraison:SetText(po(ns.ctTotal(c.o)))
+  ch.delai:SetText(jours(c))
+  ch.remplit = nil
+end
+-- Ce que montrent les champs : pour chacun, rien s'il montre la valeur reçue, sinon sa valeur (cuivre, jours), ou false
+-- s'il est illisible, négatif, ou (délai) hors de 0-30 jours ; modifie = au moins un champ diffère du reçu.
+local function saisie()
+  local ch, s = frame.champs, {}
+  for nom, recu in pairs(ch.recu or {}) do
+    local v = tonumber((ch[nom]:GetText():gsub(",", "."):gsub("^%s+", ""):gsub("%s+$", "")))
+    if v and nom ~= "delai" then v = math.floor(v * 10000 + 0.5) end
+    if v ~= recu then
+      s[nom] = v and v >= 0 and (nom ~= "delai" or v > 0 and v <= 30) and v or false
+      s.modifie = true
+    end
+  end
+  return s
+end
+-- La saisie, ou nil, la raison du refus (une ligne : rien ne part).
+local function lire()
+  local s = saisie()
+  if s.delai == false then return nil, "délai entre 0 et 30 jours : rien n'est parti" end
+  if s.caution == false or s.livraison == false then return nil, "montant illisible ou négatif : rien n'est parti" end
+  return s
+end
+
+-- Ce que la fiche montre pendant la saisie (#82) : c avec les montants des champs, tels qu'ils partiraient (ns.ctMontants :
+-- caution rendue + prix, estimation, prix par objet suivent la saisie) ; un champ illisible garde la valeur reçue.
+local function apercu(c, s)
+  if not s.modifie then return c end
+  local v = {}
+  for k, x in pairs(c) do v[k] = x end
+  v.m, v.o, v.d = ns.ctMontants(c, s.caution or nil, s.livraison or nil, s.delai or nil)
+  return v
+end
+
 -- La fiche du contrat affiché (frame.ficheDe), dessinée de haut en bas dans le contenu qui défile, à sa largeur :
 -- en-tête, alertes, étapes en deux colonnes (la mienne à gauche), estimation (#73). Redessinée quand la largeur change.
 local ETAPE_W, ICONE, CHAMP_W = 92, 16, 64
@@ -271,7 +323,9 @@ local function saisissable(c) local s = ns.ctStatus(c) return s == "a_signer" or
 local function dessiner()
   local C, c = frame.content, frame.ficheDe
   local w = C:GetWidth()
-  for _, r in ipairs(frame.fiche) do r:Hide() end
+  local champs = c and saisissable(c) and frame.champs
+  -- Les champs restent montrés pendant la saisie (redessinée à chaque frappe, #82) : cachés, ils perdraient le focus.
+  for _, r in ipairs(frame.fiche) do if not (champs and r:GetObjectType() == "EditBox") then r:Hide() end end
   for _, b in ipairs(frame.cellules) do b:Hide() end
   if not c then
     frame.vide:Show()
@@ -280,8 +334,9 @@ local function dessiner()
     return
   end
   frame.vide:Hide()
-  local f, y, n = ns.ctFiche(c, ns.me()), 0, 0
-  local champs = saisissable(c) and frame.champs
+  local s = champs and saisie() or {}
+  local f, y, n = ns.ctFiche(apercu(c, s), ns.me()), 0, 0
+  if champs and #c.m == 0 then champs.caution:Hide() end -- pas d'apport, pas de caution
   local function place(r, x, dy, largeur)
     r:ClearAllPoints()
     r:SetPoint("TOPLEFT", C, "TOPLEFT", x, -(y + (dy or 0)))
@@ -322,7 +377,12 @@ local function dessiner()
     b.texte:ClearAllPoints()
     b.texte:SetPoint("TOPLEFT", l.id and ICONE + 4 or e and CHAMP_W + 12 or 0, e and -6 or -3)
     b.texte:SetWidth(col - (l.id and ICONE + 8 or e and CHAMP_W + 16 or 4))
-    b.texte:SetText(l.id and ligneTexte(l) or e and l.unite or l.texte)
+    -- Le total qui part peut différer du total tapé d'un cuivre par objet au plus (une valeur par unité, P1) : on le dit (#82).
+    local unite = e and l.unite
+    if e and type(s[l.champ]) == "number" and s[l.champ] ~= l.montant then
+      unite = ("%s  |cff999999(envoyé : %s, arrondi par objet)|r"):format(l.unite, money(l.montant))
+    end
+    b.texte:SetText(l.id and ligneTexte(l) or unite or l.texte)
     local h = math.max(e and 20 or ICONE, b.texte:GetStringHeight() + 3)
     b:SetSize(col - 4, h)
     place(b, x)
@@ -356,73 +416,51 @@ local function dessiner()
   if barre then barre:SetShown(C:GetHeight() > frame.scroll:GetHeight()) end -- la barre seulement si ça déborde, comme la colonne
 end
 
--- Les champs des montants (#74), remplis avec les valeurs reçues une fois par version affichée (frame.champs.pour) : une
--- saisie n'est jamais écrasée par un rafraîchissement, et ne change ni le contrat ni son empreinte (#69) ; le clic lit
--- ce qu'ils montrent.
-local function jours(c) return (("%.1f"):format(math.max(0, (c.d - GetServerTime()) / 86400)):gsub("%.0$", "")) end
-local function remplir(c)
-  local ch = frame.champs
-  ch.remplit = true
-  ch.recu = { caution = #c.m > 0 and ns.ctTotal(c.m) or nil, livraison = ns.ctTotal(c.o), delai = tonumber(jours(c)) }
-  ch.caution:SetText(po(ns.ctTotal(c.m)))
-  ch.livraison:SetText(po(ns.ctTotal(c.o)))
-  ch.delai:SetText(jours(c))
-  ch.remplit = nil
-end
--- Ce que montrent les champs : pour chacun, rien s'il montre la valeur reçue, sinon sa valeur (cuivre, jours), ou false
--- s'il est illisible, négatif, ou (délai) hors de 0-30 jours ; modifie = au moins un champ diffère du reçu.
-local function saisie()
-  local ch, s = frame.champs, {}
-  for nom, recu in pairs(ch.recu or {}) do
-    local v = tonumber((ch[nom]:GetText():gsub(",", "."):gsub("^%s+", ""):gsub("%s+$", "")))
-    if v and nom ~= "delai" then v = math.floor(v * 10000 + 0.5) end
-    if v ~= recu then
-      s[nom] = v and v >= 0 and (nom ~= "delai" or v > 0 and v <= 30) and v or false
-      s.modifie = true
-    end
-  end
-  return s
-end
--- La saisie, ou nil, la raison du refus (une ligne : rien ne part).
-local function lire()
-  local s = saisie()
-  if s.delai == false then return nil, "délai entre 0 et 30 jours : rien n'est parti" end
-  if s.caution == false or s.livraison == false then return nil, "montant illisible ou négatif : rien n'est parti" end
-  return s
-end
-
 -- Les boutons du bas, au plus trois (skill ui-addon) : préparé, « Envoyer » ; à signer, « Signer · Refuser · Répondre »,
 -- ou « Contre-proposer · Annuler » dès qu'un champ diffère du reçu (on ne signe jamais autre chose que ce qui est
 -- affiché) ; en attente, « Retirer » (et « Il a dit oui » parti en clair) ; signé ou terminé, aucun.
+-- Pendant l'attente de la réponse de présence (≤ 3 s, #71) : « En route… » sur le bouton qui a envoyé, grisé, les champs
+-- et « Annuler » figés (#82) : rien ne change sous la version qui part.
 local function boutons()
   for _, b in ipairs(frame.actions) do b:Hide() end
   local c = frame.ficheDe
+  local attend = c and ns.ctEnAttente(c)
+  for _, e in ipairs({ frame.champs.caution, frame.champs.livraison, frame.champs.delai }) do
+    if attend then e:ClearFocus() end
+    e:SetEnabled(not attend)
+    e:SetTextColor(attend and 0.6 or 1, attend and 0.6 or 1, attend and 0.6 or 1)
+  end
+  frame.counter:SetText(attend and "En route…" or "Contre-proposer")
+  frame.send:SetText(attend and "En route…" or "Envoyer")
   if not c then return end
   local status = ns.ctStatus(c)
   if status == "a_signer" then
     if saisie().modifie then
       frame.counter:Show(); frame.cancel:Show()
-      frame.counter:SetEnabled(not ns.ctEnAttente(c)) -- en route, sa réponse attendue : pas de second envoi (#71)
+      frame.counter:SetEnabled(not attend) -- en route, sa réponse attendue : pas de second envoi (#71)
+      frame.cancel:SetEnabled(not attend)
     else
       frame.accept:Show(); frame.refuse:Show()
       if c.artisan == ns.me() then frame.reply:Show() end
     end
   elseif status == "brouillon" then
     frame.send:Show()
-    frame.send:SetEnabled(not ns.ctEnAttente(c)) -- la question de présence est partie : pas de second envoi (#71)
+    frame.send:SetEnabled(not attend) -- la question de présence est partie : pas de second envoi (#71)
   elseif status == "envoye" then
     frame.withdraw:Show()
     if c.enClair then frame.manual:Show() end -- seulement parti en clair : parti par Handshake, sa signature compte
   end
   -- Réarmement (n° 5) : « Signer » et « Il a dit oui » (une signature locale) s'activent 2 s après le premier affichage
-  -- de CE contrat dans CET état, ou après « Annuler » ; « Refuser » avec « Signer » (il prend la place d'« Annuler »). Le
-  -- clic porte l'empreinte affichée, un autre contrat ne peut pas être signé par lui.
-  local signe = (frame.accept:IsShown() and frame.accept) or (frame.manual:IsShown() and frame.manual)
-  if signe then
+  -- de CE contrat dans CET état, ou après « Annuler » ; « Refuser » avec « Signer » (il prend la place d'« Annuler »),
+  -- « Retirer » avec « Il a dit oui » : il prend la place de « Contre-proposer » ou « Envoyer », un double clic ne retire
+  -- pas la version tout juste partie (#82). Le clic porte l'empreinte affichée, un autre contrat ne peut pas être signé
+  -- par lui.
+  local arme = frame.accept:IsShown() and { frame.accept, frame.refuse }
+    or frame.withdraw:IsShown() and { frame.withdraw, frame.manual }
+  if arme then
     firstShown[shownEmpreinte] = firstShown[shownEmpreinte] or GetTime()
     local wait = 2 - (GetTime() - firstShown[shownEmpreinte])
-    signe:SetEnabled(wait <= 0)
-    frame.refuse:SetEnabled(wait <= 0)
+    for _, b in ipairs(arme) do b:SetEnabled(wait <= 0) end
     if wait > 0 then C_Timer.After(wait + 0.05, boutons) end
   end
 end
@@ -642,14 +680,15 @@ local function build()
   end
   for i = 1, 2 do frame.etapes[i] = { fs("GameFontNormalSmall"), fs("GameFontNormalSmall"), fs("GameFontNormalSmall") } end
   -- Les champs des montants (#74), placés par dessiner : caution et livraison dans leur étape, le délai dans l'en-tête.
-  -- Entrée ne valide rien (P7, n° 25) ; chaque frappe ne fait que choisir les boutons (Signer ou Contre-proposer).
+  -- Entrée ne valide rien (P7, n° 25) ; chaque frappe ne fait que redessiner la fiche et choisir les boutons (Signer ou
+  -- Contre-proposer).
   local ch = {}
   local function champ(w)
     local e = CreateFrame("EditBox", nil, C, "InputBoxTemplate")
     e:SetSize(w, 20)
     e:SetAutoFocus(false)
     e:SetScript("OnEnterPressed", e.ClearFocus)
-    e:SetScript("OnTextChanged", function() if not ch.remplit then boutons() end end)
+    e:SetScript("OnTextChanged", function() if not ch.remplit then dessiner(); boutons() end end) -- la fiche suit la saisie (#82)
     frame.fiche[#frame.fiche + 1] = e
     return e
   end

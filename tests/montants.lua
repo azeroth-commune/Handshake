@@ -108,6 +108,65 @@ test("Montants : Contre-proposer envoie la v2 avec les montants affichés, du m�
         assertNil(HandshakeDB.contracts[CLE .. "+"], "pas de brouillon")
         assertEquals("Retirer", (bas(f)), "en attente de sa réponse")
         assertEquals(0, #champsVus(f), "les montants en texte")
+        -- #82 : Retirer prend la place de Contre-proposer ; réarmé 2 s, un double clic ne retire pas la v2 tout juste partie.
+        assertFalse(bouton(f, "Retirer"):IsEnabled(), "Retirer désarmé juste après l'envoi")
+        decalage = 2.1
+        SlashCmdList.HANDSHAKECONTRAT()
+        assertTrue(bouton(f, "Retirer"):IsEnabled(), "2 s après : armé")
+    end)
+end)
+
+-- #82 : pendant l'attente de la réponse de présence (≤ 3 s), « En route… » sur le bouton, grisé ; champs et Annuler figés.
+-- Un autre joueur (pas encore connu présent pour la session).
+test("Montants : Contre-proposer en attente de sa réponse, « En route… », champs et Annuler figés", function()
+    local ALI, ALIN = "Player-1-0000A082", "Ali Attente"
+    local c = recu({ origin = ALI, client = ALI, author = ALI, peer = { guid = ALI, name = ALIN } })
+    cleSur = ALI .. "#7401"
+    local ok, err = pcall(sur, c, function(f)
+        taper(f.champs.livraison, "2.5")
+        bouton(f, "Contre-proposer"):Click()
+        assertTrue(HandshakeDB.contracts[cleSur] == c and c.status == "a_signer", "rien n'est encore parti")
+        assertEquals("En route… · Annuler", (bas(f)))
+        assertFalse(bouton(f, "En route…"):IsEnabled(), "En route… grisé")
+        assertFalse(bouton(f, "Annuler"):IsEnabled(), "Annuler figé")
+        assertFalse(f.champs.livraison:IsEnabled() or f.champs.caution:IsEnabled() or f.champs.delai:IsEnabled(), "champs figés")
+        assertEquals("2.5", f.champs.livraison:GetText(), "la saisie reste")
+        FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|" .. ALI, "WHISPER", ALIN) -- son Handshake répond
+        local v2 = HandshakeDB.contracts[cleSur]
+        assertTrue(v2 ~= c and v2.v == "2" and v2.status == "envoye", "la v2 est partie à sa réponse")
+        assertEquals(25000, v2.o[1].qty * v2.o[1].unit, "avec la livraison affichée")
+        assertEquals("Retirer", (bas(f)))
+        assertTrue(f.champs.livraison:IsEnabled(), "les champs ne restent pas figés")
+    end)
+    cleSur = nil
+    if not ok then error(err, 0) end
+end)
+
+-- #82 : pendant la saisie, la fiche montre ce qui partirait (caution rendue + prix, estimation), sans perdre le champ ; le
+-- total réparti par objet peut différer du total tapé (moins d'un cuivre par objet) : la fiche le dit.
+test("Montants : la fiche suit la saisie ; le total qui part, arrondi par objet, est dit", function()
+    local function texteDe(f, motif)
+        for _, b in ipairs(f.cellules) do if b:IsShown() and (b.texte:GetText() or ""):find(motif, 1, true) then return b.texte:GetText() end end
+    end
+    sur(recu({ o = { { id = 2841, qty = 3, unit = 20000 } } }), function(f)
+        local avant, est = texteDe(f, "caution rendue"), f.estimation:GetText()
+        assertNotNil(avant, "la ligne caution rendue + prix")
+        local e = f.champs.livraison
+        e:SetFocus(); e:SetText("1"); e:GetScript("OnTextChanged")(e, true)
+        assertTrue(e:IsVisible() and e:HasFocus(), "le champ garde le focus pendant que la fiche se redessine")
+        e:ClearFocus()
+        assertTrue(texteDe(f, "caution rendue") ~= avant, "caution rendue + prix suit la saisie : " .. tostring(texteDe(f, "caution rendue")))
+        assertTrue(f.estimation:GetText() ~= est or not est:find("objets livrés", 1, true), "l'estimation suit la saisie")
+        local unite = texteDe(f, "arrondi par objet")
+        assertNotNil(unite, "1 po pour 3 objets : 3333 pc l'objet, le total qui part est dit")
+        present()
+        bouton(f, "Contre-proposer"):Click()
+        local v2 = HandshakeDB.contracts[CLE]
+        assertEquals(9999, v2.o[1].qty * v2.o[1].unit, "le total dit est celui qui part")
+    end)
+    sur(recu(), function(f)
+        taper(f.champs.livraison, "3")
+        assertNil(texteDe(f, "arrondi par objet"), "un objet : le total tapé part tel quel, rien à dire")
     end)
 end)
 

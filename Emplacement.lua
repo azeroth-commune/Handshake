@@ -7,7 +7,7 @@
 -- - Le projet entier (sa ligne d'en-tête) : « Commander tout » (une liste sans arbre se commande ainsi), ou dans une
 --   Réponse « Réponse à Bob · mon prix · travail » ; commandé en entier, tout l'arbre est une seule case.
 -- - Le panneau (une petite fenêtre de Handshake, à côté de la case) : ce qui est livré et apporté, l'artisan, l'offre, le
---   menu des apports, un bouton d'action (Vérifier et envoyer…, Nouvelle version, Contre-proposer, Voir dans Contrats) et
+--   menu des apports, un bouton d'action (Vérifier et envoyer…, Nouvelle version, Préparer la réponse…, Voir dans Contrats) et
 --   « Plus » (Voir dans Contrats, Annoncer dans le Commerce, Abandonner). Rien n'y part sur le fil :
 --   « Vérifier et envoyer… » prépare le brouillon de la v1 et l'ouvre sur sa fiche dans Contrats (caution, perte maximale,
 --   objets sans prix, échéance, objets liés, nom et GUID : SECURITE.md, P8, n° 11, 13, 26, 57), d'où « Envoyer la
@@ -267,7 +267,7 @@ function sync()
     P.go:SetText("Voir dans Contrats")
     P.go:SetEnabled(aVoir(v) ~= nil)
   else
-    P.go:SetText(rep and "Contre-proposer…" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
+    P.go:SetText(rep and "Préparer la réponse…" or not v.fige and "Vérifier et envoyer…" or v.ecart and "Nouvelle version" or "Voir dans Contrats")
     P.go:SetEnabled((rep or v.fige or not v.vide) and true or false)
   end
 end

@@ -31,7 +31,7 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   livré → rien. Une liste reçue (« Importer une liste reçue », menu
   « Plus » de la fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
   de Composants (`Composants.Tenir`) ouvert en Préparer (« Répondre » dans Contrats), son panneau sur la ligne du projet
-  (mon prix, ses apports, « Contre-proposer… » en Préparer : un brouillon de la nouvelle version, relu sur sa fiche dans
+  (mon prix, ses apports, « Préparer la réponse… » en Préparer : un brouillon de la nouvelle version, relu sur sa fiche dans
   Contrats, qui part de là, SECURITE.md P8 ; changer seulement les montants se fait sur la fiche, #74). Lancer y attend
   la signature (champ
   `lancer` de l'emplacement : « Lancer (contrat à signer) ») ; elle est Finie quand son contrat est clos (champ `fini`),

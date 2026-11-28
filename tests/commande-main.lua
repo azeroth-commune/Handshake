@@ -118,7 +118,7 @@ test("sans Composants, « Répondre » répond dans la liste : ce qu'il veut est
     local qtes = tous(HandshakeMainFrame, function(x) return x:GetObjectType() == "EditBox" and x:IsVisible() and x.liste == "lines" end)
     assertEquals(1, #qtes)
     assertTrue(not qtes[1]:IsEnabled(), "la quantité de ce qu'il veut est grisée")
-    assertNotNil(bouton(HandshakeMainFrame, "Contre-proposer…"))
+    assertNotNil(bouton(HandshakeMainFrame, "Préparer la réponse…"))
     HandshakeMainFrame:Hide()
     HandshakeContratsFrame:Hide()
     HandshakeDB.contracts["Player-1-0000B0B0#4242"] = nil

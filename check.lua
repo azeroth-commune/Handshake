@@ -1596,7 +1596,11 @@ do
   local prev = { v = "1", m = base.m, o = { { id = 7963, qty = 1, unit = 8000 } }, d = base.d }
   assert(a(ns.ctFiche(ct({ v = "2", prev = prev }), BOB), "Changé depuis la v1 : livraison"), "différentiel (n° 4)")
   assert(a(ns.ctFiche(ct({ o = { { id = 7963, qty = 1, unit = 6000 } } }), BOB), "Prix laissé à l'artisan"), "pas de prix, côté client")
-  assert(a(ns.ctFiche(ct({ o = { { id = 7963, qty = 1, unit = 6000 } } }), BEL), "Aucun prix pour ton travail"), "pas de prix, côté artisan")
+  assert(a(ns.ctFiche(ct({ status = "a_signer", o = { { id = 7963, qty = 1, unit = 6000 } } }), BEL), "Aucun prix pour ton travail : change la livraison ci-dessous, ou « Répondre »"), "pas de prix, côté artisan")
+  -- Plus rien à chiffrer (#82) : ni l'artisan sur un envoyé ou un signé, ni le client sur un signé.
+  assert(not a(ns.ctFiche(ct({ o = { { id = 7963, qty = 1, unit = 6000 } } }), BEL), "Aucun prix"), "pas d'alerte sans prix : artisan, envoyé")
+  assert(not a(ns.ctFiche(ct({ status = "signe", signed = GetServerTime(), o = { { id = 7963, qty = 1, unit = 6000 } } }), BEL), "Aucun prix"), "pas d'alerte sans prix : artisan, signé")
+  assert(not a(ns.ctFiche(ct({ status = "signe", signed = GetServerTime(), o = { { id = 7963, qty = 1, unit = 6000 } } }), BOB), "Prix laissé"), "pas d'alerte sans prix : client, signé")
   C_Item.GetItemInfo = function(id) if id == 7963 then return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, 1 end end
   assert(a(ns.ctFiche(ct(), BOB), "est lié quand ramassé : impossible à livrer"), "objet lié (n° 11)")
   C_Item.GetItemInfo = noop

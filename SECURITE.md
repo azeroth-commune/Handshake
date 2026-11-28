@@ -359,3 +359,9 @@ On signe ce qu'on a vu (P3, n° 5), et l'on contre-propose ce qu'on a vu :
   sont annulées »).
 - **Entrée dans un champ ne valide jamais rien** (P7, n° 25), vérifié au simulateur avec les champs de la fiche
   (`tests/contrat-affiche.lua`, `tests/montants.lua`).
+- **Suites (Handshake#82)** : pendant l'attente de la réponse de présence, les champs et « Annuler » sont figés et le
+  bouton qui a envoyé dit « En route… », grisé : rien ne change sous la version qui part. « Retirer », qui prend la
+  place de « Contre-proposer » ou « Envoyer », est réarmé 2 s comme « Signer » : un double clic ne retire pas la
+  version tout juste partie. Pendant la saisie, la fiche montre ce qui partirait (caution rendue + prix, prix par
+  objet, estimation, `ns.ctMontants`) ; le total réparti par objet (une valeur entière par unité, P1) peut différer du
+  total tapé d'un cuivre par objet au plus : la fiche dit alors le total envoyé, à côté du champ.

@@ -339,7 +339,7 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
         local rep = boutons(function(t) return t:find("^Réponse à ") ~= nil end)[1]
         assertNotNil(rep, "la Réponse, sur la ligne du projet")
         rep:Click()
-        assertEquals("Contre-proposer…", action():GetText(), "une réponse se contre-propose, de son panneau")
+        assertEquals("Préparer la réponse…", action():GetText(), "une réponse se contre-propose, de son panneau")
     end)
     HandshakeDB.commandes[p.id].reponse, p.tenu = nil, nil
     ComposantsFrame:Hide()
@@ -402,7 +402,7 @@ test("une demande reçue s'ouvre en Réponse, un projet tenu de Composants ; on 
         local rep = boutons(function(t) return t:find("^Réponse à Bob") ~= nil end)[1]
         assertNotNil(rep, "la Réponse, sur la ligne du projet")
         rep:Click()
-        assertEquals("Contre-proposer…", action():GetText())
+        assertEquals("Préparer la réponse…", action():GetText())
         assertEquals("Réponse à Bob", panneau().title:GetText())
         assertEquals(0, #boutons(function(t) return t == "Commander tout" end), "une Réponse ne se commande pas en entier")
         local commander = boutons(function(t) return t == "Commander" end)
@@ -460,10 +460,10 @@ test("« Répondre » ouvre la Réponse en Préparer ; une nouvelle version de s
     if not ok then error(err, 0) end
 end) end)
 
--- La contre-proposition de l'artisan part de sa fiche (SECURITE.md, P8, n° 11, 13, 26, 57) : « Contre-proposer… » dans le
+-- La contre-proposition de l'artisan part de sa fiche (SECURITE.md, P8, n° 11, 13, 26, 57) : « Préparer la réponse… » dans le
 -- panneau de la Réponse prépare un brouillon de la nouvelle version et ouvre Contrats dessus (caution, perte maximale,
 -- échéance, nom et GUID) ; rien ne part avant « Envoyer ».
-test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fiche ; il part de Contrats", function() sansRecettes(function()
+test("Réponse : « Préparer la réponse… » prépare un brouillon, relu sur sa fiche ; il part de Contrats", function() sansRecettes(function()
     local cle = "Player-1-0000B0B0#4346"
     local c = { origin = "Player-1-0000B0B0", id = "4346", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
         m = {}, o = { { id = 10721, qty = 1, unit = 50000 } }, d = GetServerTime() + 86400,
@@ -479,7 +479,7 @@ test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fic
         boutons(function(t) return t:find("^Réponse à Bob") ~= nil end)[1]:Click()
         local _, prix = champs()
         taper(prix, "7")
-        assertEquals("Contre-proposer…", action():GetText())
+        assertEquals("Préparer la réponse…", action():GetText())
         action():Click()
         local b = HandshakeDB.contracts[cle .. "+"]
         assertNotNil(b, "un brouillon de la v2, à côté de la v1")

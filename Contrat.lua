@@ -476,18 +476,23 @@ function ns.ctCounter(c, caution, delivery, days)
     return nil, "la version reçue a changé : relis-la, rien n'est parti"
   end
   if ns.ctEnAttente(c) then return nil, "déjà en route : sa réponse est attendue" end
-  local n = nextVersion(c, caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
-    days and (now() + math.floor(days * 86400)) or c.d)
+  local n = nextVersion(c, ns.ctMontants(c, caution, delivery, days))
   n.status = "brouillon" -- le temps de partir : jamais rangé
   return ns.ctEnvoyer(n)
+end
+
+-- Les termes (m, o, échéance) de c avec ces montants (nil = inchangé), unités mises à l'échelle : ce que Contre-proposer
+-- et Envoyer feront partir, et ce que la fiche montre pendant la saisie (#82). Un cuivre par objet au plus peut séparer
+-- le total ainsi réparti du total tapé (une valeur entière par unité, P1) : la fiche montre le total qui part.
+function ns.ctMontants(c, caution, delivery, days)
+  return caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
+    days and (now() + math.floor(days * 86400)) or c.d
 end
 
 -- Brouillon (pas encore envoyé) : on le modifie sur place, sans nouvelle version.
 function ns.ctEditDraft(c, caution, delivery, days)
   if c.status ~= "brouillon" then return end
-  if caution then c.m = scale(c.m, caution) end
-  if delivery then c.o = scale(c.o, delivery) end
-  if days then c.d = now() + math.floor(days * 86400) end
+  c.m, c.o, c.d = ns.ctMontants(c, caution, delivery, days)
 end
 
 -- Les termes d'une demande (CONCEPTION.md). Le contrat ne voit que des objets × quantités, quelle que soit l'origine :
