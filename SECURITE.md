@@ -128,7 +128,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 
 | # | Attaque | Contre-mesure | Reste |
 |---|---|---|---|
-| 49 | **Plantage avant l'écriture** (les SavedVariables ne s'écrivent qu'au /reload) puis « refais l'étape ». | Après chaque étape, bouton « Sauvegarder » (/reload) ; une étape sans trace est « non prouvée », jamais « à refaire » d'office ; ce que l'autre dit sert d'indice à confirmer à la main ; conseil `/chatlog`. | Plantage dans la fenêtre non sauvegardée |
+| 49 | **Plantage avant l'écriture** (les SavedVariables ne s'écrivent qu'à la déconnexion ou au /reload) puis « refais l'étape ». | Une étape sans trace est « non prouvée », jamais « à refaire » d'office ; ce que l'autre dit sert d'indice à confirmer à la main ; conseil `/chatlog`. Plus de bouton « Sauvegarder » (Handshake#70). | Plantage avant l'écriture : accepté |
 | 50 | **Perte de données** (dossier WTF effacé, autre PC). | Export / import d'un contrat en chaîne ; alerte si la dernière sauvegarde est plus vieille que le dernier transfert. | Réduit |
 | 51 | **« Synchronisons, prends ma version »**. | Jamais de fusion automatique : différentiel affiché, tout changement = nouvelle version signée. | — |
 | 52 | **Autre addon chez la victime** qui modifie l'état ou dessine un faux panneau. | État en variables locales, rien en global ; n° 38. | Hors de portée |
@@ -163,7 +163,8 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 
 - L'écart entre la caution et la vraie valeur, et l'exposition entre les deux étapes : inhérents au modèle, mais
   chiffrés et affichés avant de signer.
-- Un plantage entre un échange et la sauvegarde.
+- Un plantage entre un échange et l'écriture sur le disque (déconnexion ou /reload) : accepté (n° 49). L'étape perdue
+  est « non prouvée », jamais à refaire d'office.
 - Une machine compromise (version piégée de l'addon, autre addon malveillant).
 - Un joueur qui passe outre un NON CONFORME.
 
@@ -180,7 +181,8 @@ Les deux derniers sortent du périmètre « addon officiel, non modifié, et jou
 6. **Besoins recalculés par le client** depuis les recettes, **caution recalculée** par chacun, **pertes maximales** affichées.
 7. **Règle d'échéance** écrite dans le contrat.
 8. Panneau : verdict dans les deux sens, cases 1–6, objets illisibles = INCONNU, « Accepter » grisé si non conforme (à vérifier en jeu), dérogation chiffrée.
-9. Bouton **Sauvegarder** (/reload) après chaque transfert.
+9. Une étape sans trace est **non prouvée**, jamais à refaire d'office ; conseil `/chatlog` (n° 49 ; le bouton
+   « Sauvegarder » est retiré, Handshake#70).
 
 ## État d'avancement (18/11/2026, contrat + panneau d'échange)
 
@@ -193,8 +195,7 @@ vérifiés contre les recettes (12), estimation et perte maximale de chaque côt
 d'un autre partenaire (26), objets liés quand ramassés (11).
 
 Écrit mais à vérifier en jeu : panneau d'échange, « Remplir ma part », griser « Accepter » (32), dérogation chiffrée
-(60), inscription confirmée par l'or et les sacs (37), fonctions du jeu capturées et `issecurevariable` (38),
-« Sauvegarder » (49).
+(60), inscription confirmée par l'or et les sacs (37), fonctions du jeu capturées et `issecurevariable` (38).
 
 Pas encore fait : courrier contre-remboursement (39–44), réputation (59), option « amis / guilde seulement » (21),
 export / import d'un contrat (50), prix robuste sur plusieurs jours et plancher marchand (55), alerte d'addons
@@ -288,3 +289,10 @@ On envoie ce qu'on a vu (P3), comme on signe ce qu'on a vu (n° 5) :
 - **l'envoi ne s'appelle que de deux fichiers** : `Contrat.lua` (le module des contrats) et `ContratUI.lua` (la fenêtre
   Contrats). Une garde statique de `check.lua` parcourt tous les fichiers du TOC, présents et à venir ;
 - **Entrée dans un champ ne valide jamais rien** (P7, n° 25), vérifié au simulateur (`tests/contrat-affiche.lua`).
+
+## Ajout : plus de « Sauvegarder » (Handshake#70)
+
+Le bouton « Sauvegarder » (un /reload) et l'alerte « pas encore enregistré sur le disque » sont retirés (28/11/2026),
+avec l'état qui les portait. Restent, pour n° 49 : une étape sans trace est « non prouvée », jamais « à refaire »
+d'office, ce que l'autre dit n'est qu'un indice à confirmer à la main, et le conseil `/chatlog`. Le risque restant, un
+plantage du jeu avant l'écriture des SavedVariables (déconnexion ou /reload), est accepté.
