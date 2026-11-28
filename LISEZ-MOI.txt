@@ -29,7 +29,8 @@ FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
   « Commander » sur un bloc de l'arbre (ou « Commander tout » sur la ligne du projet) crée un contrat préparé : le bloc
   devient une seule case « Contrat n°12 · artisan · état ». Clic sur la case : son panneau. Mets l'artisan, ton
   « Offre » (ou laisse vide : l'artisan chiffrera), coche dans « Apports » ce que tu fournis toi-même,
-  puis « Vérifier et envoyer… » : le contrat s'ouvre dans /contrat ; relis-le, puis « Envoyer la proposition ».
+  puis « Vérifier et envoyer… » : le contrat s'ouvre dans /contrat ; relis-le (caution, livraison et délai s'y
+  changent), puis « Envoyer ».
   S'il a Handshake, le contrat part signé ; sinon (pas de réponse en 3 s), son texte lui est chuchoté en clair, et
   « Il a dit oui » note son accord à la main. Une ligne dans le chat dit comment il est parti.
   « Plus » : voir dans /contrat, annoncer dans le Commerce, abandonner.
@@ -43,8 +44,10 @@ FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
 COMMANDE À LA MAIN (sans arbre)
   /handshake, /handshake liste, ou « + Nouvelle commande » dans /contrat : deux listes, « ce que je veux » et « ce que
   j'apporte ». Tape un objet dans la recherche (ou glisse un objet de tes sacs sur la liste),
-  mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
-  Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre » avec Composants : la Réponse, un projet de Composants).
+  mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer » dans /contrat.
+  Une demande reçue : « Répondre » dans /contrat (avec Composants, la Réponse, un projet de Composants ; sans lui, la liste).
+  Pour ne changer que les montants, change-les sur sa fiche : « Signer » laisse alors place à « Contre-proposer »
+  (part tout de suite) et « Annuler » (remet ce que tu as reçu).
   « Importer une liste reçue » (menu « Plus » de cette fenêtre) : une liste chuchotée ou collée ; avec Composants, elle devient un
   projet commandé en entier.
 

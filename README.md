@@ -18,7 +18,7 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   (`HandshakeDB.commandes[p.id]`) ; le bloc se réduit à une case « Contrat n°12 · artisan · état » ; son panneau (une
   fenêtre de Handshake) règle l'artisan, l'offre et les apports ; « Vérifier et envoyer… » prépare le brouillon de la v1
   et l'ouvre sur sa fiche dans Contrats (caution, perte maximale, objets sans prix, échéance, objets liés, nom et GUID),
-  d'où « Envoyer la proposition » le fait partir (par Handshake s'il l'a, sinon en clair, #71) : rien ne part du
+  d'où « Envoyer » le fait partir (par Handshake s'il l'a, sinon en clair, #71) : rien ne part du
   panneau ; « Plus » : voir dans Contrats, annoncer dans le Commerce, abandonner. Hors Préparer (`p.phase`), le panneau est en lecture seule. Refusé,
   retiré, échu ou abandonné, le bloc revient, sans ses apports. Dans les **Besoins** (l'emplacement des Besoins, même
   fournisseur, phase Réunir) : une ligne par contrat vivant, « Contrat n°12 · à recevoir », verte « reçu » une fois livré,
@@ -32,7 +32,8 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   « Plus » de la fenêtre de Handshake) devient un projet commandé en entier. Une demande reçue s'ouvre en **Réponse**, un projet tenu
   de Composants (`Composants.Tenir`) ouvert en Préparer (« Répondre » dans Contrats), son panneau sur la ligne du projet
   (mon prix, ses apports, « Contre-proposer… » en Préparer : un brouillon de la nouvelle version, relu sur sa fiche dans
-  Contrats, qui part de là ; toute contre-proposition aussi, SECURITE.md P8). Lancer y attend la signature (champ
+  Contrats, qui part de là, SECURITE.md P8 ; changer seulement les montants se fait sur la fiche, #74). Lancer y attend
+  la signature (champ
   `lancer` de l'emplacement : « Lancer (contrat à signer) ») ; elle est Finie quand son contrat est clos (champ `fini`),
   et son propre contrat ne compte pas dans `clos` (ses sous-traitances seules).
   Handshake lit l'arbre par `Composants.Arbre` et suit le signal `Composants.QuandChange` : supprimer un projet efface

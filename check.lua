@@ -1299,7 +1299,7 @@ do
   ns.projetApport(p, 5500, true)
   assert(E.apports(p) == nil and E.aDonner(p)[5500], "mes apports : à donner (des Besoins), pas hors de mon arbre")
   -- Vérifier et envoyer… : sans artisan connu, pas de brouillon (la raison est dite) ; avec, le brouillon de la v1, rien
-  -- sur le fil ; il part de sa fiche (« Envoyer la proposition »).
+  -- sur le fil ; il part de sa fiche (« Envoyer »).
   ns.projetArtisan(p, "Cid", f)
   local rien, pourquoi = ns.projetEnvoyer(p, f)
   assert(not rien and pourquoi, "artisan inconnu : pas de brouillon")
@@ -1310,7 +1310,7 @@ do
   assert(ns.projetEnvoyer(p, f) == ct, "parti : pas refait")
   -- Aucun autre chemin ne fait partir un contrat en sautant sa fiche, ni la v1 ni une nouvelle version (contre-proposition,
   -- réponse de l'artisan : des brouillons, Contrat.lua newVersion) : l'envoi ne s'appelle que de la fenêtre Contrats
-  -- (« Envoyer la proposition », lié au contrat affiché) et du module des contrats ; tout autre fichier du TOC, présent ou
+  -- (« Envoyer », lié au contrat affiché) et du module des contrats ; tout autre fichier du TOC, présent ou
   -- à venir, n'y touche pas.
   for fichier in HSTOC:gmatch("([%w_]+%.lua)") do
     if fichier ~= "Contrat.lua" and fichier ~= "ContratUI.lua" then
@@ -1381,7 +1381,7 @@ do
   local q = C.NouveauProjet({ lines = { { id = 5541, qty = 1 } } })
   ns.projetCommander(q, {})
   ns.projetArtisan(q, BELN, 1)
-  local ct = assert(ns.ctPropose(assert(ns.projetEnvoyer(q, 1)))) -- (« Envoyer la proposition », sur sa fiche)
+  local ct = assert(ns.ctPropose(assert(ns.projetEnvoyer(q, 1)))) -- (« Envoyer », sur sa fiche)
   assert(next(lignes(q)) == nil, "tout confié : rien à réunir")
   cns.lancer(q)
   assert(not cns.avancerPhase(q) and q.phase == "reunir", "tout est là mais le contrat est ouvert : Réunir")
@@ -1477,7 +1477,7 @@ do
   assert(chez[ns.ctKey(cf)].v == "1" and chez[ns.ctKey(cm)].v == "1" and cf.v == "1", "rien ne part sans clic")
   assert(not ns.projetNouvelleVersion(p, m), "pas d'écart, pas de nouvelle version")
   -- « Nouvelle version » (#19) : la v2 en brouillon, à côté de la v1, relue avec le différentiel avant l'envoi ; rien n'est
-  -- parti. Préparée de nouveau, elle est refaite. Elle part de Contrats (« Envoyer la proposition ») et remplace la v1.
+  -- parti. Préparée de nouveau, elle est refaite. Elle part de Contrats (« Envoyer ») et remplace la v1.
   local brouillon = assert(ns.projetNouvelleVersion(p, f))
   assert(brouillon.status == "brouillon" and brouillon.v == "2" and ns.ctKey(brouillon) ~= ns.ctKey(cf)
     and HandshakeDB.contracts[ns.ctKey(brouillon)] == brouillon and HandshakeDB.contracts[ns.ctKey(cf)] == cf, "brouillon à côté de la v1")

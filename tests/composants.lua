@@ -154,7 +154,7 @@ local function verifierEtEnvoyer(c)
     assertTrue(HandshakeContratsFrame.titre:GetText():find("BROUILLON", 1, true) ~= nil, "sur la fiche de ce brouillon")
     local envoyer
     for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer" and b:IsShown() end)) do envoyer = b end
-    assertNotNil(envoyer, "« Envoyer la proposition » sur la fiche")
+    assertNotNil(envoyer, "« Envoyer » sur la fiche")
     envoyer:Click()
     HandshakeContratsFrame:Hide()
     return HandshakeDB.contracts[c.contrat]

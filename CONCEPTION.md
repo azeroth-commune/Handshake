@@ -56,6 +56,11 @@
    FAIT le 18/11/2026 : « Répondre dans l'arbre » (contrat à signer, côté artisan) ouvre la demande comme une commande
    liée (`order.reply`) : lignes figées, apports en Ctrl+clic, « Mon prix », en-tête « ma part · mon prix · travail »,
    « Contre-proposer » = nouvelle version (cautions déjà au contrat gardées, apport ajouté au prix de mon scan).
+   Le 28/11/2026 (#74) : toute nouvelle version part de sa fiche dans Contrats. Un seul « Répondre » (artisan) : la
+   Réponse dans Composants s'il est chargé, la liste sinon (plus de « Répondre en liste ») ; elle prépare un brouillon
+   de la nouvelle version, relu sur sa fiche, puis « Envoyer ». Les montants (caution s'il y a des apports, livraison,
+   délai) se changent dans la fiche même : un montant qui diffère du reçu remplace « Signer » par « Contre-proposer »
+   et « Annuler », et la contre-proposition part du même clic, sans brouillon de contre-proposition.
 4. Accord : contrat avec caution, ou vente simple vérifiée. Retirer le bouton « Contrat » actuel (remplacé par l'envoi
    de la demande) et l'ancienne case « il fournit les composants » (remplacée par les apports).
 5. Plus tard : « un objet à la fois » (moins d'avance pour l'artisan), coopération à plusieurs.
