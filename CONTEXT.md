@@ -23,6 +23,22 @@ _Avoid_: requête
 Le projet tenu d'un artisan, né d'une demande reçue (« Répondre », dans la fenêtre des contrats de Handshake) et ouvert en Préparer : Handshake en tient les lignes (ce que le demandeur veut) ; l'artisan y change ses apports, ses choix de case et son prix, puis contre-propose. Lancer y attend la signature ; elle est Finie quand le contrat est clos (livré par l'échange vérifié), pas quand l'arbre est plein. L'artisan peut à son tour en commander des blocs à d'autres.
 _Avoid_: reply (à l'écrit)
 
+### L'envoi
+
+**Envoyer** (un contrat):
+Un seul geste : Handshake demande d'abord à l'autre joueur s'il a Handshake ; s'il répond, le contrat part signé des deux côtés ; sinon, il part **en clair** (grill du 28/11/2026).
+_Avoid_: envoyer en clair (comme bouton à part)
+
+**En clair**:
+Le texte d'un contrat chuchoté à un joueur sans Handshake ; il ne vaut pas signature. Son accord se note à la main (« Il a dit oui »), et le panneau d'échange vérifie contre ma copie.
+
+**Terminé** (un contrat):
+Clos, refusé, retiré ou échu : plus rien n'en dépend. Un contrat signé mais pas livré n'est pas terminé.
+
+**Archivé** (un contrat):
+Un contrat terminé rangé à part, relisible tel quel ; tout contrat terminé l'est d'office, sauf le dernier terminé, gardé en vue pour qu'on voie son issue (grill du 28/11/2026). Désarchiver le remet parmi les autres.
+_Avoid_: supprimé, historique
+
 ### Le prix
 
 **Apport**:
