@@ -1934,7 +1934,10 @@ do
   local ui = io.open("Handshake/ContratUI.lua"):read("*a"):gsub("%-%-[^\n]*", "")
   assert(ui:find("ns.ctEnvoyer(c)", 1, true) and not ui:find("ctPropose", 1, true) and not ui:find("ctSendRaw", 1, true),
     "la fenêtre Contrats envoie par Envoyer, jamais par Handshake sans question")
-  assert(not ui:find("Envoyer en clair", 1, true) and not ui:find("ns.whisper", 1, true), "plus de bouton « Envoyer en clair »")
+  assert(not ui:find("ns.whisper", 1, true), "le clair part du module des contrats")
+  for f in HSTOC:gmatch("([%w_]+%.lua)") do -- ni dans Contrats, ni dans les menus « Plus » : « Envoyer » couvre le joueur sans Handshake
+    assert(not io.open("Handshake/" .. f):read("*a"):find("Envoyer en clair", 1, true), f .. " : plus de bouton « Envoyer en clair »")
+  end
   assert(not ui:find('"signe"', 1, true), "la fenêtre ne signe rien elle-même (ns.ctIlADitOui)")
 
   C_Timer, ns.debugSend, print, GetTime, UnitName, UnitGUID = T0, D0, P0, G0, UN0, UG0

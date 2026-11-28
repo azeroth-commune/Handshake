@@ -8,10 +8,11 @@
 --   Réponse « Réponse à Bob · mon prix · travail » ; commandé en entier, tout l'arbre est une seule case.
 -- - Le panneau (une petite fenêtre de Handshake, à côté de la case) : ce qui est livré et apporté, l'artisan, l'offre, le
 --   menu des apports, un bouton d'action (Vérifier et envoyer…, Nouvelle version, Contre-proposer, Voir dans Contrats) et
---   « Plus » (Voir dans Contrats, Envoyer en clair, Annoncer dans le Commerce, Abandonner). Rien n'y part sur le fil :
+--   « Plus » (Voir dans Contrats, Annoncer dans le Commerce, Abandonner). Rien n'y part sur le fil :
 --   « Vérifier et envoyer… » prépare le brouillon de la v1 et l'ouvre sur sa fiche dans Contrats (caution, perte maximale,
 --   objets sans prix, échéance, objets liés, nom et GUID : SECURITE.md, P8, n° 11, 13, 26, 57), d'où « Envoyer la
---   proposition » le fait partir ; envoyer la v1 vaut signature dès que l'artisan accepte.
+--   proposition » le fait partir (par Handshake s'il l'a, sinon en clair : #71) ; envoyer la v1 vaut signature dès que
+--   l'artisan accepte.
 -- - Hors Préparer (Réunir, Fabriquer, Fini : p.phase, l'arbre en lecture seule), seulement la case et son état : ni
 --   Commander, ni Commander tout, et le panneau en lecture (son état, « Voir dans Contrats »).
 -- - Dans les Besoins (l'emplacement des Besoins, Composants#27) : une ligne par contrat vivant du projet, « Contrat n°12 ·
@@ -212,7 +213,6 @@ local function construire()
     local voir = aVoir(v)
     if voir then root:CreateButton("Voir dans Contrats", function() ns.openContracts(voir) end) end
     if v.reponse or enLecture(p) then return end
-    root:CreateButton("Envoyer en clair", function() ns.sendOrder(ns.projetCommande(p, i)) end)
     if not v.fige then
       root:CreateButton("Annoncer dans le Commerce", function() dire(select(2, ns.projetAnnoncer(p, i))); redessiner() end)
     end
