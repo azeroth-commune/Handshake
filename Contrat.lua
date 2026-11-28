@@ -305,10 +305,11 @@ local function horsBornes(c)
   if c.d < now() or c.d > now() + MAX_DAYS * 86400 then return "échéance dépassée ou à plus de 30 jours" end
 end
 
--- Ce qui doit tenir avant tout envoi : un brouillon de nouvelle version (#19) périmé est effacé, pas envoyé ; puis nos
--- bornes. Renvoie nil, ou la raison.
+-- Ce qui doit tenir avant tout envoi : une nouvelle version périmée (#19) ne part pas, son brouillon est effacé (une
+-- contre-proposition, jamais rangée, #74, n'efface rien) ; puis nos bornes. Renvoie nil, ou la raison.
 local function pasPret(c)
   if ns.ctBrouillonPerime(c) then
+    if store()[key(c)] ~= c then return "la version reçue a changé : relis-la, rien n'est parti" end
     store()[key(c)] = nil
     return "le contrat a changé depuis ce brouillon : « Nouvelle version » le refait"
   end
@@ -368,18 +369,22 @@ repondu = function(name, clair)
   attente[name] = nil
   for _, e in ipairs(liste or {}) do
     local c = e.c
-    local change = store()[key(c)] ~= c or c.status ~= "brouillon" or ns.ctCanonical(c) ~= e.texte
+    local change = (not e.direct and store()[key(c)] ~= c) or c.status ~= "brouillon" or ns.ctCanonical(c) ~= e.texte
     local err = change and "le contrat a changé pendant l'attente de sa réponse" or pasPret(c)
       or clair and cheminDe(c) == "handshake" and "pas de réponse de son Handshake : réessaie quand il est en ligne"
     if err then notify(("rien n'est parti à %s : %s."):format(name, err))
     else dire(partir(c, clair), clair) end
   end
 end
+-- c attend la réponse, ou (c en cours) sa contre-proposition l'attend.
 function ns.ctEnAttente(c)
-  for _, e in ipairs(c.peer and attente[c.peer.name] or {}) do if e.c == c then return true end end
+  for _, e in ipairs(c.peer and attente[c.peer.name] or {}) do
+    if e.c == c or c.hash and e.c.parent == c.hash and e.c.origin == c.origin and e.c.id == c.id then return true end
+  end
   return false
 end
 function ns.ctEnvoyer(c)
+  if c.status ~= "brouillon" then return nil, "déjà parti" end
   if ns.ctEnAttente(c) then return nil, "déjà en route : sa réponse est attendue" end
   local err = pasPret(c)
   if err then return nil, err end
@@ -395,7 +400,8 @@ function ns.ctEnvoyer(c)
     attente[name] = liste
     C_Timer.After(3, function() if attente[name] == liste then repondu(name, true) end end)
   end
-  liste[#liste + 1] = { c = c, texte = ns.ctCanonical(c) }
+  -- direct : une contre-proposition (#74), jamais rangée ; seule sa version parente doit tenir (pasPret, périmée)
+  liste[#liste + 1] = { c = c, texte = ns.ctCanonical(c), direct = store()[key(c)] ~= c }
   if #liste == 1 then send(name, wire("Q")) end -- après l'inscription : la réponse peut arriver tout de suite (debug)
   return c
 end
@@ -450,10 +456,10 @@ local function nextVersion(c, m, o, d)
   return { origin = c.origin, id = c.id, v = tostring(tonumber(c.v) + 1), parent = c.hash, client = c.client, artisan = c.artisan,
     peer = c.peer, m = m, o = o, d = d, prev = snapshot(c) }
 end
--- Toute nouvelle version (contre-proposition, réponse de l'artisan, nouvelle version d'une demande) est préparée en
--- brouillon (#19), à côté de la version en cours : rien ne part avant que son auteur ait relu SA fiche dans Contrats
--- (caution, perte maximale, objets sans prix, échéance, nom et GUID : P8, n° 11, 13, 26, 57) et cliqué « Envoyer la
--- proposition » (ns.ctEnvoyer). Préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
+-- La réponse de l'artisan et la nouvelle version d'une demande, faites hors de Contrats (Composants, la liste), sont
+-- préparées en brouillon (#19), à côté de la version en cours : rien ne part avant que son auteur ait relu SA fiche dans
+-- Contrats (caution, perte maximale, objets sans prix, échéance, nom et GUID : P8, n° 11, 13, 26, 57) et cliqué
+-- « Envoyer » (ns.ctEnvoyer). Préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
 local function newVersion(c, m, o, d)
   local n = nextVersion(c, m, o, d)
   local err = horsBornes(n)
@@ -462,9 +468,18 @@ local function newVersion(c, m, o, d)
   store()[key(n)] = n
   return n
 end
+-- Contre-proposition (#74) : la version suivante de c, la version en cours affichée sur sa fiche, avec les montants de
+-- ses champs (nil = inchangé), envoyée du même clic par la règle d'Envoyer (présence, chemin décidé à la v1). Pas de
+-- brouillon relu : la fiche affichée l'était. Renvoie la version partie (ou en route), ou nil, raison (rien ne part).
 function ns.ctCounter(c, caution, delivery, days)
-  return newVersion(c, caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
+  if store()[c.origin .. "#" .. c.id] ~= c or (c.status ~= "a_signer" and c.status ~= "envoye") then
+    return nil, "la version reçue a changé : relis-la, rien n'est parti"
+  end
+  if ns.ctEnAttente(c) then return nil, "déjà en route : sa réponse est attendue" end
+  local n = nextVersion(c, caution and scale(c.m, caution) or c.m, delivery and scale(c.o, delivery) or c.o,
     days and (now() + math.floor(days * 86400)) or c.d)
+  n.status = "brouillon" -- le temps de partir : jamais rangé
+  return ns.ctEnvoyer(n)
 end
 
 -- Brouillon (pas encore envoyé) : on le modifie sur place, sans nouvelle version.

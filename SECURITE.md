@@ -277,15 +277,17 @@ On envoie ce qu'on a vu (P3), comme on signe ce qu'on a vu (n° 5) :
 - **la fenêtre Contrats retient la clé du contrat affiché**, pas sa place dans la liste : une proposition qui arrive en
   tête, un brouillon périmé effacé ne font glisser aucun autre contrat sous les yeux. Si le contrat affiché disparaît
   (son brouillon parti ou périmé), c'est sa version en cours qui s'affiche ;
-- **chaque clic de la fiche** (« Envoyer la proposition », « Il a dit oui », et les autres boutons d'un contrat)
+- **chaque clic de la fiche** (« Envoyer », « Contre-proposer », « Il a dit oui », et les autres boutons d'un contrat)
   porte la clé du contrat affiché et une empreinte de ce qui en est affiché (ses termes canoniques et son état ; un
   brouillon n'a pas encore d'empreinte, elle est calculée). Le contrat est relu dans la base par sa clé : absent, ou
   d'une autre empreinte (refait ailleurs sans que la fenêtre se redessine), **rien ne part**, une ligne le dit et la
   fiche redessinée est à relire. « Signer » garde en plus son réarmement de 2 s (n° 5) ; l'envoi n'en a pas besoin :
   c'est le texte du joueur lui-même ;
-- **toute nouvelle version passe par un brouillon relu sur sa fiche** (contre-proposition, réponse de l'artisan, nouvelle
-  version d'une demande : `newVersion` dans `Contrat.lua`), puis « Envoyer la proposition » ; un brouillon dépassé par
-  la version de l'autre est périmé : effacé, jamais envoyé (`ctBrouillonPerime`, testé pour les trois chemins) ;
+- **toute nouvelle version part de sa fiche** : la réponse de l'artisan et la nouvelle version d'une demande, faites
+  hors de Contrats (Composants, la liste), sont des brouillons relus sur leur fiche (`newVersion` dans `Contrat.lua`),
+  puis « Envoyer » ; un brouillon dépassé par la version de l'autre est périmé : effacé, jamais envoyé
+  (`ctBrouillonPerime`, testé pour les deux chemins). La contre-proposition n'a plus de brouillon : elle part du même
+  clic, de la fiche de la version qu'elle remplace (Handshake#74, plus bas) ;
 - **l'envoi ne s'appelle que de deux fichiers** : `Contrat.lua` (le module des contrats) et `ContratUI.lua` (la fenêtre
   Contrats). Une garde statique de `check.lua` parcourt tous les fichiers du TOC, présents et à venir ;
 - **Entrée dans un champ ne valide jamais rien** (P7, n° 25), vérifié au simulateur (`tests/contrat-affiche.lua`).
@@ -325,9 +327,35 @@ plantage du jeu avant l'écriture des SavedVariables (déconnexion ou /reload), 
   sans question, même s'il est entre-temps connu présent — son Handshake n'a pas de v1 et l'ignorerait en silence ;
   partie ou reçue par Handshake, elle part par Handshake, **jamais en clair** — sinon sa v1 resterait signable chez lui
   pendant que ma v2 serait partie en clair, deux copies divergentes : s'il n'est pas connu présent, la question part, et
-  sans réponse en 3 s rien ne part, le brouillon reste, une ligne dit de réessayer quand il est en ligne. Seule une v1
+  sans réponse en 3 s rien ne part, le brouillon reste (une contre-proposition : les champs de la fiche gardent la
+  saisie, rien n'est rangé), une ligne dit de réessayer quand il est en ligne. Seule une v1
   choisit le clair par son silence.
 - **Retirer un contrat parti en clair** : il n'a rien reçu par Handshake, une ligne en clair le lui dit (« Contrat
   retiré : … », par `ns.whisper`, donc rien en mode debug) ; ma copie passe à « retiré ».
 - **Bêta, pas de compatibilité** : un ancien Handshake (sans la réponse) se tait, et reçoit donc le texte en clair ; on
   redistribue le zip.
+
+## Ajout : les montants sur la fiche (Handshake#74)
+
+On signe ce qu'on a vu (P3, n° 5), et l'on contre-propose ce qu'on a vu :
+
+- **Caution, livraison et délai sont des champs de la fiche** d'un contrat préparé ou à signer (la caution seulement
+  s'il y a des apports), du texte ailleurs. Une saisie est locale : elle ne change ni le contrat ni son empreinte, et
+  le clic, toujours lié au contrat affiché (Handshake#69), lit ce que les champs montrent.
+- **On ne signe jamais autre chose que ce qui est affiché** : dès qu'un champ diffère de la valeur reçue (illisible
+  compris), « Signer » est remplacé par « Contre-proposer » et « Annuler ». « Annuler » remet les valeurs reçues ;
+  « Signer » revient réarmé 2 s (n° 5), et « Refuser », qui prend la place d'« Annuler », avec lui (P7 : un double clic
+  sur « Annuler » ne refuse rien).
+- **La contre-proposition part du même clic**, sans brouillon relu : la version suivante, avec les montants affichés,
+  par la règle d'Envoyer (présence, chemin décidé à la v1, Handshake#71) (`ns.ctCounter`). Elle n'est faite que de la
+  version en cours (sinon : « la version reçue a changé », rien ne part) ; une seule à la fois pendant l'attente de la
+  réponse ; ne pouvant partir (bornes, pas de réponse de son Handshake), une ligne le dit et les champs gardent la
+  saisie. `ns.ctCounter` ne s'appelle, comme l'envoi, que de `Contrat.lua` et `ContratUI.lua` (garde statique de
+  `check.lua`).
+- **Montant illisible ou négatif, délai hors de 0-30 jours** : refusé, une ligne le dit, rien ne part ; nos bornes
+  (n° 11, 14, 15) valent ensuite comme pour tout envoi.
+- **Une version de l'autre qui arrive pendant la saisie** : la fiche passe à elle, la saisie est jetée, « Signer »
+  revient désarmé 2 s (nouvelle empreinte, n° 5), et une ligne le dit (« <nom> a envoyé une vN : tes modifications
+  sont annulées »).
+- **Entrée dans un champ ne valide jamais rien** (P7, n° 25), vérifié au simulateur avec les champs de la fiche
+  (`tests/contrat-affiche.lua`, `tests/montants.lua`).

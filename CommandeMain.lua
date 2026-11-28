@@ -83,7 +83,7 @@ function ns.mainPreparer(order)
 end
 
 ---------------------------------------------------------------------------------------------------
--- La fenêtre (/handshake liste ; « Répondre en liste » dans Contrats) : l'artisan et l'offre en haut, les deux
+-- La fenêtre (/handshake liste ; « Répondre » dans Contrats, sans Composants) : l'artisan et l'offre en haut, les deux
 -- listes côte à côte, l'état de la demande et les boutons en bas.
 local W, ROW, ROWS = 580, 24, 4 -- taille de départ et minimum : 4 lignes par colonne ; plus, on agrandit
 local frame, reponse -- reponse : la clé du contrat auquel on répond (nil = ma commande à la main)
@@ -288,7 +288,7 @@ function refresh()
   else
     local ct = o.contrat and ns.ctStore()[o.contrat]
     frame.status:SetText(not ct and "Pas encore préparée."
-      or ct.status == "brouillon" and "Brouillon dans Contrats : relis-le, puis « Envoyer la proposition »."
+      or ct.status == "brouillon" and "Brouillon dans Contrats : relis-le, puis « Envoyer »."
       or ("Contrat %s. « Nouvelle » pour une autre commande."):format(ns.etatDemande(ct)))
   end
   frame.go:SetText(c and "Contre-proposer…" or ns.commandeEnvoyee(o) and "Voir la demande" or "Préparer la demande")

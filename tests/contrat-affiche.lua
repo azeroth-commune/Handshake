@@ -74,14 +74,14 @@ test("Contrats : un clic d'envoi dont le contrat affiché a changé n'envoie rie
         -- refait ailleurs (Composants refait un brouillon), sans que la fenêtre se redessine : autre empreinte
         local refait = contrat(A, "771", "brouillon", "Aline Affichee", { o = { { id = 2841, qty = 1, unit = 900 } } })
         db[cles[1]] = refait
-        bouton(f, "Envoyer la proposition"):Click()
+        bouton(f, "Envoyer"):Click()
         assertEquals(refait, db[cles[1]], "autre empreinte : rien n'est parti, ni l'ancien brouillon affiché")
         assertEquals("brouillon", refait.status, "autre empreinte : rien n'est parti")
         assertTrue(#dits > 0 and dits[#dits]:find("a changé", 1, true) ~= nil, "une ligne le dit : " .. tostring(dits[#dits]))
         -- le clic a redessiné : c'est maintenant le brouillon refait qui est affiché ; effacé sans redessin : autre clé
         db[cles[1]] = nil
         local n = #dits
-        bouton(f, "Envoyer la proposition"):Click()
+        bouton(f, "Envoyer"):Click()
         assertEquals("brouillon", refait.status, "plus affichable : rien n'est parti")
         assertTrue(#dits > n and dits[#dits]:find("a changé", 1, true) ~= nil, "une ligne le dit")
         -- relu (la fenêtre redessinée), le clic part avec ce qui est affiché ; Aline a Handshake (un message d'elle : #71)
@@ -89,7 +89,7 @@ test("Contrats : un clic d'envoi dont le contrat affiché a changé n'envoie rie
         db[cles[1]] = refait
         ouvrir()
         cliquerEntree(f, "Aline Affichee")
-        bouton(f, "Envoyer la proposition"):Click()
+        bouton(f, "Envoyer"):Click()
         assertEquals("envoye", refait.status, "relu : il part")
     end)
     print = P -- rendu même si le test échoue
@@ -105,7 +105,7 @@ test("Contrats : Entrée dans un champ ne valide jamais rien (P7)", function()
         for _, nom in ipairs({ "Aline Affichee", "Carla Arrivee" }) do
             cliquerEntree(f, nom)
             local champs = tous(f, function(c) return c:GetObjectType() == "EditBox" and c:IsVisible() end)
-            assertTrue(#champs >= 3, "les champs de " .. nom)
+            assertTrue(#champs >= 2, "les champs de " .. nom .. " (livraison, délai ; pas d'apports : pas de caution)")
             for _, e in ipairs(champs) do
                 e:SetFocus()
                 e:SetText("7")

@@ -54,7 +54,7 @@ test("Envoyer : sans réponse en 3 s, parti en clair ; « Il a dit oui » réarm
         afficher("Sam Sansaddon")
         local f = HandshakeContratsFrame
         assertNil(bouton(f, "Envoyer en clair"), "plus de bouton « Envoyer en clair »")
-        local envoyer = bouton(f, "Envoyer la proposition")
+        local envoyer = bouton(f, "Envoyer")
         envoyer:Click()
         assertEquals("brouillon", c.status, "la question est partie : on attend sa réponse")
         assertTrue(not envoyer:IsEnabled(), "pendant l'attente, pas de second envoi")

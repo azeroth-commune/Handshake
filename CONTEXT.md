@@ -29,6 +29,10 @@ _Avoid_: reply (à l'écrit)
 Un seul geste : Handshake demande d'abord à l'autre joueur s'il a Handshake ; s'il répond, le contrat part signé des deux côtés ; sinon, il part **en clair** (grill du 28/11/2026).
 _Avoid_: envoyer en clair (comme bouton à part)
 
+**Contre-proposer**:
+Changer un montant (caution, livraison, délai) sur la fiche d'un contrat à signer, puis l'envoyer : la version suivante part du même clic, par la règle d'Envoyer. Tant qu'un montant affiché diffère du reçu, on ne peut pas signer (#74). Pas de brouillon de contre-proposition ; la Réponse de l'artisan, elle, se prépare dans Composants (ou la liste) et se relit sur sa fiche.
+_Avoid_: modifier (un contrat reçu)
+
 **En clair**:
 Le texte d'un contrat chuchoté à un joueur sans Handshake ; il ne vaut pas signature. Son accord se note à la main (« Il a dit oui »), et le panneau d'échange vérifie contre ma copie.
 
