@@ -1,7 +1,7 @@
 -- Handshake : la commande à la main (#38), sans arbre ni projet. Deux listes d'objets × quantités, « ce que je veux » et
 -- « ce que j'apporte », remplies par la recherche d'objets du socle ou par un objet déposé dessus ; l'artisan et l'offre.
 -- Elle part par le chemin d'une commande de projet : brouillon de contrat (ns.ctFromDemande), relu et envoyé dans
--- Contrats, ou texte lisible (ns.sendOrder). Côté artisan, une demande reçue se répond dans la même liste : ce qu'il veut
+-- Contrats (« Envoyer » : par Handshake s'il l'a, sinon en clair, #71). Côté artisan, une demande reçue se répond dans la même liste : ce qu'il veut
 -- en lecture seule, apports et prix modifiables, contre-proposition (ns.ctReplyFromOrder).
 -- Ctrl+clic droit n'est jamais pris ici : il appartient à Composants.
 local _, ns = ...
@@ -228,20 +228,13 @@ local function build()
   end)
   frame.annonce:SetPoint("LEFT", frame.nouvelle, "RIGHT", 6, 0)
   -- Ce qui sert rarement (skill ui-addon : 3 ou 4 boutons au plus) : dans « Plus ». Importer une liste reçue (en
-  -- chuchotement, ou collée) : un projet de Composants commandé en entier, ou, sans lui, cette commande à la main ; la
-  -- demande en clair, chuchotée à l'artisan (pas dans une réponse).
+  -- chuchotement, ou collée) : un projet de Composants commandé en entier, ou, sans lui, cette commande à la main.
   frame.plus = CreateFrame("DropdownButton", nil, frame, "WowStyle1DropdownTemplate")
   frame.plus:SetWidth(90)
   frame.plus:OverrideText("Plus")
   frame.plus:SetPoint("LEFT", frame.annonce, "RIGHT", 6, 0)
   frame.plus:SetupMenu(function(_, root)
     root:CreateButton("Importer une liste reçue", function() ns.openImport() end)
-    if order().reponse then return end
-    root:CreateButton("Envoyer en clair", function()
-      local o = order()
-      if #o.lines == 0 then return say("rien à envoyer") end
-      ns.sendOrder(o)
-    end)
   end)
   ns.onglets(frame, 1) -- et l'onglet « Annonces lues » (Annonce.lua)
   frame:SetScript("OnShow", function() refresh() end)

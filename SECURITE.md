@@ -277,7 +277,7 @@ On envoie ce qu'on a vu (P3), comme on signe ce qu'on a vu (n° 5) :
 - **la fenêtre Contrats retient la clé du contrat affiché**, pas sa place dans la liste : une proposition qui arrive en
   tête, un brouillon périmé effacé ne font glisser aucun autre contrat sous les yeux. Si le contrat affiché disparaît
   (son brouillon parti ou périmé), c'est sa version en cours qui s'affiche ;
-- **chaque clic de la fiche** (« Envoyer la proposition », « Envoyer en clair », et les autres boutons d'un contrat)
+- **chaque clic de la fiche** (« Envoyer la proposition », « Il a dit oui », et les autres boutons d'un contrat)
   porte la clé du contrat affiché et une empreinte de ce qui en est affiché (ses termes canoniques et son état ; un
   brouillon n'a pas encore d'empreinte, elle est calculée). Le contrat est relu dans la base par sa clé : absent, ou
   d'une autre empreinte (refait ailleurs sans que la fenêtre se redessine), **rien ne part**, une ligne le dit et la
@@ -296,3 +296,38 @@ Le bouton « Sauvegarder » (un /reload) et l'alerte « pas encore enregistré s
 avec l'état qui les portait. Restent, pour n° 49 : une étape sans trace est « non prouvée », jamais « à refaire »
 d'office, ce que l'autre dit n'est qu'un indice à confirmer à la main, et le conseil `/chatlog`. Le risque restant, un
 plantage du jeu avant l'écriture des SavedVariables (déconnexion ou /reload), est accepté.
+
+## Ajout : Envoyer, la question de présence (Handshake#71)
+
+« Envoyer » est un seul geste (CONTEXT.md) : Handshake demande d'abord à l'autre joueur s'il a Handshake.
+
+- **La question et sa réponse** sont deux messages d'add-on sans aucun champ libre (P4) : `Q|3|<mon GUID>` et
+  `H|3|<son GUID>`, sur le préfixe des contrats, en chuchotement seulement (n° 19), lus comme tout message de contrat :
+  morceaux bornés (n° 16), **même limite de débit par expéditeur** (30 messages par minute, n° 21), GUID déclaré
+  confronté à ce que le serveur a donné (n° 26) ; un champ en trop, ce n'est pas une question. Elles ne révèlent
+  qu'une chose : **« j'ai Handshake »** — ni contrat, ni perso, ni version. Le Handshake qui reçoit la question répond
+  seul, sans rien afficher ni rien proposer de cliquer ; il ne répond qu'à l'expéditeur nommé par le serveur.
+- **Présence retenue pour la session** (par le nom que le serveur donne) : un joueur qui a répondu, ou dont un message
+  de contrat valide est arrivé, n'est plus questionné ; le silence, lui, n'est pas retenu (un autre envoi repose la
+  question). La présence ne décide que du chemin du texte, jamais d'une valeur : se dire présent ne fait que recevoir
+  le contrat signé, ce qu'un joueur peut toujours demander pour lui-même, et un tiers ne peut pas parler pour lui (le
+  nom de l'expéditeur vient du serveur).
+- **Réponse dans les 3 s** : le contrat part par Handshake, comme avant. **Pas de réponse** : son texte part **en clair**,
+  chuchoté (`ns.whisper`, donc détourné vers le journal en mode debug : rien ne part sur le réseau), et le contrat garde
+  le marqueur `enClair`. Le contrat attend tel qu'affiché au clic : modifié, effacé ou périmé pendant l'attente, rien ne
+  part et une ligne le dit ; pendant l'attente, « Envoyer » est grisé et un second envoi refusé (`ns.ctEnAttente`).
+- **« Il a dit oui »** (n° 9) n'existe que pour un contrat parti en clair : bouton absent sinon, et **refusé dans le
+  module** (`ns.ctIlADitOui`) pour un contrat parti par Handshake, où seule sa signature compte. C'est une signature
+  locale : réarmée 2 s après l'affichage, comme « Signer » (P7, n° 5). La copie locale reste la référence, le panneau
+  d'échange vérifie pareil.
+- **Le chemin se décide à la v1, les versions suivantes le suivent** (lu sur la version en cours, son marqueur
+  `enClair`) : partie en clair, une nouvelle version (contre-proposition, nouvelle version d'une demande) part en clair
+  sans question, même s'il est entre-temps connu présent — son Handshake n'a pas de v1 et l'ignorerait en silence ;
+  partie ou reçue par Handshake, elle part par Handshake, **jamais en clair** — sinon sa v1 resterait signable chez lui
+  pendant que ma v2 serait partie en clair, deux copies divergentes : s'il n'est pas connu présent, la question part, et
+  sans réponse en 3 s rien ne part, le brouillon reste, une ligne dit de réessayer quand il est en ligne. Seule une v1
+  choisit le clair par son silence.
+- **Retirer un contrat parti en clair** : il n'a rien reçu par Handshake, une ligne en clair le lui dit (« Contrat
+  retiré : … », par `ns.whisper`, donc rien en mode debug) ; ma copie passe à « retiré ».
+- **Bêta, pas de compatibilité** : un ancien Handshake (sans la réponse) se tait, et reçoit donc le texte en clair ; on
+  redistribue le zip.

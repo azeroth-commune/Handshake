@@ -1308,7 +1308,8 @@ do
   for fichier in HSTOC:gmatch("([%w_]+%.lua)") do
     if fichier ~= "Contrat.lua" and fichier ~= "ContratUI.lua" then
       local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
-      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true), fichier .. " envoie un contrat sans sa fiche")
+      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true) and not code:find("ctEnvoyer", 1, true),
+        fichier .. " envoie un contrat sans sa fiche")
     end
   end
   -- Le minage : préparé (j'apporte le cuivre), son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc
@@ -1755,3 +1756,196 @@ do
   HandshakeDB.main = nil
 end
 print("Handshake : sans Composants OK")
+
+-- Envoyer (#71) : un seul geste. Une question de présence (Q) part en silence, sur le préfixe des contrats, en
+-- chuchotement ; le Handshake de l'autre répond seul (H), sans rien afficher. Répondu : le contrat part par Handshake ;
+-- pas de réponse en 3 s : son texte part en clair, chuchoté, et le contrat garde le marqueur « en clair », seul à permettre
+-- « Il a dit oui ». Un joueur qui a répondu, ou dont un message de contrat valide est arrivé, n'est plus questionné.
+do
+  local T0, D0, P0, G0, UN0, UG0 = C_Timer, ns.debugSend, print, GetTime, UnitName, UnitGUID
+  local minuteurs, captes, dits = {}, {}, {}
+  UnitName = function() return NOM[current]:match("^(%S+) (%S+)$") end -- les joueurs simulés, comme plus haut
+  UnitGUID = function(u) if u == "player" then return current end end
+  GetTime = function() return 10000 end -- loin des envois d'avant : le débit de chacun repart de zéro
+  C_Timer = { After = function(s, fn) minuteurs[#minuteurs + 1] = { s = s, fn = fn } end, NewTicker = noop }
+  print = function(s) dits[#dits + 1] = tostring(s) end
+  local GDEN, DENN, GEVE, EVEN = "Player-6942-0000DE15", "Denis Sansaddon", "Player-6942-00000E7E", "Eve Bavarde"
+  -- Carl a Handshake (le réseau simulé le livre) ; Denis n'a pas d'add-on, Eve envoie ce qu'elle veut : leurs envois sont
+  -- captés (ns.debugSend), rien ne leur arrive.
+  NOM[GCARL], GUIDDE[CARLN], bases[GCARL], projets[GCARL] = CARLN, GCARL, { contracts = {} }, {}
+  ns.debugSend = function(kind, target, text)
+    if target == DENN or target == EVEN then captes[#captes + 1] = { kind = kind, target = target, text = text } return true end
+    return D0(kind, target, text)
+  end
+  local KG, KN = ns.knownGUID, ns.knownName -- les GUID appris plus haut (renommages, cibles piégées) : oubliés le temps du bloc
+  ns.knownGUID, ns.knownName = {}, {}
+  local n = 1795100000
+  local function brouillon(g, nom)
+    n = n + 1
+    local c = { origin = BOB, id = tostring(n), v = "1", parent = "0", client = BOB, artisan = g, peer = { guid = g, name = nom },
+      m = { { id = 3858, qty = 2, unit = 150 } }, o = { { id = 7963, qty = 1, unit = 9400 } }, d = clock + 86400, status = "brouillon" }
+    HandshakeDB.contracts[ns.ctKey(c)] = c
+    return c
+  end
+  local function types(depuis) -- les types des messages d'addon partis depuis le rang depuis
+    local t = {}
+    for i = depuis + 1, #wire do t[#t + 1] = wire[i].text:match("^%d+/%d+|(%a)|") end
+    return table.concat(t)
+  end
+  as(BOB)
+
+  -- Présence répondue : Q, H, puis le contrat par Handshake ; Carl n'a rien vu de la question.
+  local w0, notes0 = #wire, #notes
+  local c1 = assert(ns.ctEnvoyer(brouillon(GCARL, CARLN)))
+  assert(types(w0) == "QHP", "question, réponse, contrat : " .. types(w0))
+  assert(wire[w0 + 1].target == CARLN and wire[w0 + 2].target == BOBN, "chuchotés de l'un à l'autre")
+  assert(c1.status == "envoye" and not c1.enClair and bases[GCARL].contracts[ns.ctKey(c1)].status == "a_signer", "parti par Handshake, arrivé")
+  local chezCarl = 0
+  for i = notes0 + 1, #notes do if notes[i]:find(GCARL, 1, true) == 1 then chezCarl = chezCarl + 1 end end
+  assert(chezCarl == 1 and notes[#notes - 1]:find("te propose un contrat", 1, true), "Carl n'a vu que le contrat, rien de la question")
+  assert(notes[#notes] == BOB .. " : contrat v1 parti signé à " .. CARLN .. " (il a Handshake).", "la ligne du chat : " .. notes[#notes])
+  assert(#dits == 0, "rien d'imprimé")
+  for _, m in ipairs(minuteurs) do m.fn() end -- la réponse est arrivée : le minuteur des 3 s ne fait plus rien
+  assert(#wire == w0 + 3 and not c1.enClair, "rien de plus après 3 s")
+  assert(not ns.ctIlADitOui(c1) and c1.status == "envoye", "parti par Handshake : « Il a dit oui » refusé")
+
+  -- Présence connue : pas de nouvelle question.
+  minuteurs, w0 = {}, #wire
+  local c2 = assert(ns.ctEnvoyer(brouillon(GCARL, CARLN)))
+  assert(types(w0) == "P" and c2.status == "envoye" and #minuteurs == 0, "Carl a déjà répondu : le contrat directement")
+  -- Un message de contrat valide arrivé vaut réponse : Carl signe c2, Belegard a négocié avec Bob plus haut.
+  as(GCARL); assert(ns.ctAccept(bases[GCARL].contracts[ns.ctKey(c2)], c2.hash)); as(BOB)
+  assert(c2.status == "signe", "signé par Carl")
+
+  -- Pas de réponse en 3 s : le texte en clair, le marqueur ; pendant l'attente, pas de second envoi.
+  ns.learnGUID(DENN, GDEN)
+  captes, w0, notes0 = {}, #wire, #notes
+  local c3 = brouillon(GDEN, DENN)
+  assert(ns.ctEnvoyer(c3) == c3 and #captes == 1 and captes[1].kind == "addon" and captes[1].text == "1/1|Q|3|" .. BOB,
+    "la question seule, sur le préfixe des contrats : " .. tostring(captes[1] and captes[1].text))
+  assert(c3.status == "brouillon" and ns.ctEnAttente(c3) and #minuteurs == 1 and minuteurs[1].s == 3, "en attente de sa réponse, 3 s")
+  local rien, pourquoi = ns.ctEnvoyer(c3)
+  assert(not rien and pourquoi:find("attendue", 1, true) and #captes == 1, "pas de second envoi pendant l'attente")
+  minuteurs[1].fn()
+  assert(c3.status == "envoye" and c3.enClair and c3.hash and not ns.ctEnAttente(c3), "parti en clair, marqué")
+  assert(#captes >= 3 and captes[2].kind == "chuchotement" and captes[2].text:find("^Contrat") and captes[#captes].text:find("à la livraison", 1, true),
+    "le texte du contrat, chuchoté : " .. tostring(captes[2] and captes[2].text))
+  assert(notes[#notes] == BOB .. " : contrat v1 parti en clair à " .. DENN .. " (pas de réponse de Handshake) : s'il dit oui, « Il a dit oui ».",
+    "la ligne du chat : " .. notes[#notes])
+  assert(#wire == w0, "rien par le réseau des Handshake")
+  assert(ns.ctIlADitOui(c3) and c3.status == "signe" and c3.manual, "parti en clair : « Il a dit oui » le signe")
+  -- Pas de mémoire du silence : un autre contrat pour Denis repose la question. Retiré, un contrat en clair le lui dit
+  -- en clair (une ligne chuchotée), rien par le réseau des Handshake.
+  minuteurs, captes = {}, {}
+  local c4 = assert(ns.ctEnvoyer(brouillon(GDEN, DENN)))
+  assert(#captes == 1 and captes[1].text:find("|Q|", 1, true), "Denis n'a pas répondu : nouvelle question")
+  minuteurs[1].fn()
+  local avant = #captes
+  ns.ctWithdraw(c4)
+  assert(c4.status == "retire" and #captes == avant + 1 and captes[#captes].kind == "chuchotement"
+    and captes[#captes].text:find("^Contrat retiré"), "retiré : une ligne en clair, " .. tostring(captes[#captes].text))
+  -- Modifié pendant l'attente : rien ne part, une ligne le dit.
+  minuteurs, captes = {}, {}
+  local c5 = brouillon(GDEN, DENN)
+  ns.ctEnvoyer(c5)
+  ns.ctEditDraft(c5, nil, 20000)
+  minuteurs[1].fn()
+  assert(c5.status == "brouillon" and #captes == 1 and notes[#notes]:find("a changé pendant l'attente", 1, true), "modifié : rien n'est parti")
+
+  -- La contre-proposition passe par la même règle : Carl contre-propose c1 à Bob, qui a Handshake (Bob lui a parlé).
+  as(GCARL)
+  w0 = #wire
+  local contre = assert(ns.ctCounter(bases[GCARL].contracts[ns.ctKey(c1)], nil, 9500))
+  assert(ns.ctEnvoyer(contre) and types(w0) == "P" and bases[BOB].contracts[ns.ctKey(c1)].v == "2", "contre-proposition par Handshake")
+  as(BOB)
+
+  -- Le destinataire répond seul, sans rien afficher ; la limite de débit (30 par minute et par expéditeur) vaut pour la
+  -- question.
+  captes, notes0, dits = {}, #notes, {}
+  for _ = 1, 35 do inject(EVEN, BOB, "Q|3|" .. GEVE) end
+  assert(#captes == 30 and captes[1].kind == "addon" and captes[1].text == "1/1|H|3|" .. BOB, "30 réponses au plus : " .. #captes)
+  assert(#notes == notes0 and #dits == 0, "rien d'affiché")
+  inject(EVEN, BOB, "Q|3|" .. GEVE .. "|en trop") -- (débit épuisé de toute façon) ; un champ en trop n'est pas une question
+  -- Une question au GUID qui n'est pas le sien est rejetée comme tout message (n° 26) : pas de réponse.
+  GetTime = function() return 10100 end -- une minute plus tard : le débit repart
+  captes = {}
+  inject(EVEN, BOB, "Q|3|" .. GEVE .. "|en trop")
+  assert(#captes == 0, "champ en trop : pas une question")
+  ns.learnGUID(EVEN, GEVE)
+  inject(EVEN, BOB, "Q|3|" .. GDEN)
+  assert(#captes == 0, "GUID d'un autre : pas de réponse")
+  -- La réponse d'un tiers ne libère pas l'envoi d'un autre (présence par le nom donné par le serveur) ; une réponse
+  -- arrivée après les 3 s ne fait rien partir une seconde fois.
+  minuteurs, captes, w0 = {}, {}, #wire
+  local c6 = brouillon(GDEN, DENN)
+  ns.ctEnvoyer(c6)
+  inject(EVEN, BOB, "H|3|" .. GEVE)
+  assert(c6.status == "brouillon" and ns.ctEnAttente(c6) and #captes == 1, "la réponse d'Eve ne vaut pas pour Denis")
+  minuteurs[1].fn()
+  local apres = #captes
+  inject(DENN, BOB, "H|3|" .. GDEN)
+  assert(c6.status == "envoye" and c6.enClair and #captes == apres and #wire == w0, "réponse tardive : rien ne part deux fois")
+
+  -- Le chemin se décide à la v1, les versions suivantes le suivent. Parente partie en clair : la nouvelle version part en
+  -- clair, sans question, même si Gaston est entre-temps connu présent (son Handshake n'a pas de v1 : il l'ignorerait).
+  -- Gaston et Fanny, nouveaux (pas encore connus présents) : leurs envois sont captés eux aussi.
+  local GGAS, GASN, GFAN, FANN = "Player-6942-0000CA57", "Gaston Clair", "Player-6942-0000FA77", "Fanny Absente"
+  local D1 = ns.debugSend
+  ns.debugSend = function(kind, target, text)
+    if target == GASN or target == FANN then captes[#captes + 1] = { kind = kind, target = target, text = text } return true end
+    return D1(kind, target, text)
+  end
+  ns.learnGUID(GASN, GGAS)
+  minuteurs, captes, w0 = {}, {}, #wire
+  local c7 = brouillon(GGAS, GASN)
+  ns.ctEnvoyer(c7)
+  minuteurs[1].fn()
+  assert(c7.enClair, "v1 partie en clair")
+  -- Gaston toujours sans Handshake (pas connu présent) : la v2 part en clair tout de suite, sans question.
+  captes = {}
+  local v2s = assert(ns.ctCounter(c7, nil, 9500))
+  assert(ns.ctEnvoyer(v2s) == v2s and v2s.status == "envoye" and v2s.enClair and #minuteurs == 1 and #captes >= 1
+    and captes[1].kind == "chuchotement" and #wire == w0, "v2 en clair sans question : " .. tostring((captes[1] or {}).text))
+  inject(GASN, BOB, "H|3|" .. GGAS) -- Gaston a installé Handshake : connu présent
+  captes = {}
+  local v2c = assert(ns.ctCounter(v2s, nil, 9600))
+  assert(ns.ctEnvoyer(v2c) == v2c and v2c.v == "3" and v2c.status == "envoye" and v2c.enClair and #minuteurs == 1, "la v3 suit la v1 : en clair")
+  assert(#captes >= 2 and captes[1].kind == "chuchotement" and #wire == w0, "pas de question ni de contrat par Handshake : " .. tostring(captes[1].text))
+  assert(notes[#notes]:find("parti en clair", 1, true), "la ligne du chat : " .. notes[#notes])
+  -- Parente partie par Handshake (ou reçue par Handshake) : la nouvelle version part par Handshake, jamais en clair. Fanny
+  -- (une session d'avant : sa présence est oubliée) ne répond pas : rien ne part, le brouillon reste, une ligne le dit ;
+  -- elle répond : la v2 part par Handshake.
+  ns.learnGUID(FANN, GFAN)
+  local c8 = brouillon(GFAN, FANN)
+  c8.status, c8.author, c8.hash = "envoye", BOB, ns.ctHash(ns.ctCanonical(c8)) -- partie par Handshake avant le /reload
+  minuteurs, captes = {}, {}
+  local v2h = assert(ns.ctCounter(c8, nil, 9700))
+  assert(ns.ctEnvoyer(v2h) == v2h and #captes == 1 and captes[1].text:find("|Q|", 1, true), "Fanny pas connue présente : la question")
+  minuteurs[1].fn()
+  assert(v2h.status == "brouillon" and not v2h.enClair and HandshakeDB.contracts[ns.ctKey(v2h)] == v2h and #captes == 1,
+    "pas de réponse : rien ne part, le brouillon reste")
+  assert(c8.status == "envoye" and c8.v == "1", "la v1 reste")
+  assert(notes[#notes]:find("pas de réponse de son Handshake : réessaie quand il est en ligne", 1, true), "la ligne du chat : " .. notes[#notes])
+  ns.ctEnvoyer(v2h)
+  inject(FANN, BOB, "H|3|" .. GFAN)
+  assert(v2h.status == "envoye" and not v2h.enClair and captes[#captes].kind == "addon" and captes[#captes].text:find("|P|3|", 1, true),
+    "elle répond : la v2 part par Handshake")
+  ns.debugSend = D1
+
+  -- Aucun envoi hors du transport (ns.debugSend : le mode debug n'envoie rien) : pas de SendChatMessage dans les contrats,
+  -- le clair passe par ns.whisper ; la fenêtre Contrats envoie par « Envoyer » et note « Il a dit oui » par le module.
+  local code = io.open("Handshake/Contrat.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  assert(not code:find("SendChatMessage", 1, true), "Contrat.lua chuchote par ns.whisper")
+  local ui = io.open("Handshake/ContratUI.lua"):read("*a"):gsub("%-%-[^\n]*", "")
+  assert(ui:find("ns.ctEnvoyer(c)", 1, true) and not ui:find("ctPropose", 1, true) and not ui:find("ctSendRaw", 1, true),
+    "la fenêtre Contrats envoie par Envoyer, jamais par Handshake sans question")
+  assert(not ui:find("ns.whisper", 1, true), "le clair part du module des contrats")
+  for f in HSTOC:gmatch("([%w_]+%.lua)") do -- ni dans Contrats, ni dans les menus « Plus » : « Envoyer » couvre le joueur sans Handshake
+    assert(not io.open("Handshake/" .. f):read("*a"):find("Envoyer en clair", 1, true), f .. " : plus de bouton « Envoyer en clair »")
+  end
+  assert(not ui:find('"signe"', 1, true), "la fenêtre ne signe rien elle-même (ns.ctIlADitOui)")
+
+  C_Timer, ns.debugSend, print, GetTime, UnitName, UnitGUID = T0, D0, P0, G0, UN0, UG0
+  ns.knownGUID, ns.knownName = KG, KN
+end
+print("Handshake : Envoyer (présence, en clair, Il a dit oui) OK")

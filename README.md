@@ -18,8 +18,8 @@ conception : `CONCEPTION.md` ; modèle de menace : `SECURITE.md` ; pour le joueu
   (`HandshakeDB.commandes[p.id]`) ; le bloc se réduit à une case « Contrat n°12 · artisan · état » ; son panneau (une
   fenêtre de Handshake) règle l'artisan, l'offre et les apports ; « Vérifier et envoyer… » prépare le brouillon de la v1
   et l'ouvre sur sa fiche dans Contrats (caution, perte maximale, objets sans prix, échéance, objets liés, nom et GUID),
-  d'où « Envoyer la proposition » le fait partir : rien ne part du panneau ; « Plus » : voir dans Contrats, envoyer en
-  clair, annoncer dans le Commerce, abandonner. Hors Préparer (`p.phase`), le panneau est en lecture seule. Refusé,
+  d'où « Envoyer la proposition » le fait partir (par Handshake s'il l'a, sinon en clair, #71) : rien ne part du
+  panneau ; « Plus » : voir dans Contrats, annoncer dans le Commerce, abandonner. Hors Préparer (`p.phase`), le panneau est en lecture seule. Refusé,
   retiré, échu ou abandonné, le bloc revient, sans ses apports. Dans les **Besoins** (l'emplacement des Besoins, même
   fournisseur, phase Réunir) : une ligne par contrat vivant, « Contrat n°12 · à recevoir », verte « reçu » une fois livré,
   son état et « Abandonner » (la lecture seule hors Préparer ne vaut que pour l'arbre) ; `clos` = tous les contrats
