@@ -12,9 +12,10 @@ local function contrat(champs)
     for k, v in pairs(champs or {}) do c[k] = v end
     return c
 end
-local function sur(c, fn)
+local function sur(c, fn, autres) -- autres : d'autres contrats dans la base (clé -> contrat)
     local avant = HandshakeDB.contracts
     HandshakeDB.contracts = { [CARLA .. "#7301"] = c }
+    for k, x in pairs(autres or {}) do HandshakeDB.contracts[k] = x end
     local ok, err = pcall(function() SlashCmdList.HANDSHAKECONTRAT(); fn(HandshakeContratsFrame) end)
     GameTooltip:Hide()
     if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
@@ -108,4 +109,19 @@ test("Fiche : signé, l'avancement à côté de chaque quantité", function()
         assertTrue(objet(f, 2841).texte:GetText():find("reçu 5/10", 1, true) ~= nil, objet(f, 2841).texte:GetText())
         assertTrue(f.apres:GetText():find("Solde des échanges", 1, true) ~= nil, "le solde")
     end)
+end)
+
+-- n° 26 (#80) : un nom qui ne diffère d'un autre partenaire que par les accents déclenche l'alerte ; l'accent est ramené
+-- à sa lettre de base (l'exemple de SECURITE.md : Bélegard / Belegard), un nom sans accent n'y change rien.
+test("Fiche : nom très proche, les accents ramenés à la lettre de base (Bélegard / Belegard)", function()
+    local function alertes(nom, autre)
+        local texte
+        sur(contrat({ peer = { guid = CARLA, name = nom } }), function(f) texte = f.alertes:GetText() or "" end,
+            { ["Player-1-0000BE26#1"] = contrat({ origin = "Player-1-0000BE26", id = "1", peer = { guid = "Player-1-0000BE26", name = autre } }) })
+        return texte
+    end
+    assertTrue(alertes("Bélegard Marteaudefer", "Belegard Marteaudefer"):find("Nom très proche de Belegard Marteaudefer", 1, true) ~= nil, "Bélegard / Belegard")
+    assertTrue(alertes("Belegard Marteaudefer", "Bélegard Marteaudefer"):find("Nom très proche de Bélegard Marteaudefer", 1, true) ~= nil, "Belegard / Bélegard")
+    assertTrue(alertes("Élise Forge", "Elise Forge"):find("Nom très proche", 1, true) ~= nil, "majuscule accentuée : Élise / Elise")
+    assertTrue(alertes("Belegard Marteaudefer", "Bolegard Marteaudefer"):find("Nom très proche", 1, true) == nil, "sans accent, un autre nom : pas d'alerte")
 end)

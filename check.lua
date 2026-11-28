@@ -1586,7 +1586,12 @@ do
   -- Une alerte par cas.
   assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = BELN } }), BOB), "Identité de Belegard pas encore vérifiée"), "identité pas vérifiée")
   HandshakeDB.contracts.proche = { peer = { name = "Bèlegard Marteaudefer" } }
-  assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = "Bélegard Marteaudefer", verified = true } }), BOB), "Nom très proche de Bèlegard"), "nom proche (n° 26)")
+  assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = "Bélegard Marteaudefer", verified = true } }), BOB), "Nom très proche de B"), "nom proche (n° 26)") -- de Bèlegard, ou de Belegard (#80)
+  -- L'exemple même de SECURITE.md n° 26 : l'accent ramené à sa lettre de base, majuscule comprise (#80).
+  HandshakeDB.contracts.proche = { peer = { name = "Belegard Marteaudefer" } }
+  assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = "Bélegard Marteaudefer", verified = true } }), BOB), "Nom très proche de Belegard"), "Bélegard / Belegard (n° 26)")
+  assert(a(ns.ctFiche(ct({ peer = { guid = GBEL, name = "BÉlegard Marteaudefer", verified = true } }), BOB), "Nom très proche de Belegard"), "BÉlegard / Belegard (n° 26)")
+  assert(not a(ns.ctFiche(ct({ peer = { guid = GBEL, name = "Bolegard Marteaudefer", verified = true } }), BOB), "Nom très proche"), "un autre nom : pas d'alerte")
   HandshakeDB.contracts.proche = nil
   local prev = { v = "1", m = base.m, o = { { id = 7963, qty = 1, unit = 8000 } }, d = base.d }
   assert(a(ns.ctFiche(ct({ v = "2", prev = prev }), BOB), "Changé depuis la v1 : livraison"), "différentiel (n° 4)")

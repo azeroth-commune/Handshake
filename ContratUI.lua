@@ -72,7 +72,14 @@ local function expansion(o)
   return qty, anc, unknown
 end
 
-local function plain(name) return name:lower():gsub("[\128-\255]", "") end
+-- Un nom ramené à ses lettres de base, en minuscules (n° 26 : « Bélegard » = « Belegard ») : chaque lettre accentuée
+-- (UTF-8) devient sa lettre de base, avant :lower() qui ne connaît pas « É ». Un autre caractère non ASCII est retiré.
+local BASE = {}
+for base, lettres in pairs({ a = "àâäáãåÀÂÄÁÃÅ", c = "çÇ", e = "éèêëÉÈÊË", i = "îïíìÎÏÍÌ", n = "ñÑ", o = "ôöóòõøÔÖÓÒÕØ",
+  u = "ùûüúÙÛÜÚ", y = "ÿýŸÝ", ae = "æÆ", oe = "œŒ" }) do
+  for l in lettres:gmatch("[\192-\255][\128-\191]*") do BASE[l] = base end
+end
+local function plain(name) return (name:gsub("[\192-\255][\128-\191]*", BASE):lower():gsub("[\128-\255]", "")) end
 
 -- La fiche d'un contrat vue depuis ma place (me) : ce que la fenêtre dessine (#73), et rien d'autre. Rien n'y manque de
 -- ce qui sert la sécurité, c'est seulement rangé : GUID, empreinte et identité dans la bulle du nom ; ce qui doit arrêter
