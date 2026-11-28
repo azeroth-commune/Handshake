@@ -54,7 +54,7 @@ un contrat « signé », un nom d'objet, une version d'addon) n'est jamais une p
 | 2 | **Usurpation de l'auteur** : `P|3|<GUID de Belegard>|…` envoyé par Mallory. | L'origine de l'ID doit être le GUID déclaré par l'expéditeur, qui doit concorder avec le serveur (n° 26) ; on affiche toujours le nom authentifié, jamais déduit du GUID. | — |
 | 3 | **Rôles incohérents ou inversés** : la victime se retrouve à verser la caution en se croyant cliente. | Rejet si {client, artisan} ≠ {moi, l'expéditeur} ; affichage écrit depuis mon rôle : « TU donnes … / IL donne … ». | — |
 | 4 | **Contre-proposition piégée** : « juste la date », mais 36 → 3 minerais, ou caution / fournisseur / paiement changés. | Différentiel champ par champ avec la version précédente, champs changés surlignés, alerte forte sur caution, prix, rôles, fournisseur. Jamais d'acceptation automatique. | Inattention |
-| 5 | **Version qui change pendant la lecture** : v4 arrive, le clic accepte autre chose que ce qui était lu. | Le bouton Accepter est lié à l'empreinte *affichée* ; une nouvelle version ferme la vue, montre le différentiel, réarme le bouton après 1–2 s. | — |
+| 5 | **Version qui change pendant la lecture** : v4 arrive, le clic accepte autre chose que ce qui était lu. | Le bouton Accepter est lié à l'empreinte *affichée* ; une nouvelle version ferme la vue, montre le différentiel, réarme le bouton après 1–2 s. Les envois de la fiche aussi sont liés au contrat affiché (clé et empreinte, voir l'ajout Handshake#69). | — |
 | 6 | **Rejeu, versions concurrentes** : vieil « accepté », deux v4 différentes. | v(n+1) retire les versions ≤ n ; un « accepté » ne vaut que pour la dernière version et vient de l'autre signataire ; chaque proposition porte l'empreinte de sa version parente (conflit → tout annulé, on repropose) ; dédoublonnage (ID, version, type). | — |
 | 7 | **Empreinte truquée ou collision**. | Sans effet sur les valeurs (P3) : l'empreinte ne sert qu'à constater qu'on a signé la même chose. Empreinte d'au moins 64 bits quand même, recalculée sur la forme canonique locale. | — |
 | 8 | **ID réutilisé** (contrat clos renvoyé, même horodatage). | Contrats indexés par (GUID du signataire d'origine, ID) ; un ID connu ne peut que progresser en version avant acceptation, et seulement de la part du nom authentifié de sa première version. | Un GUID jamais appris revendiqué par un autre nom occupe cet ID : la proposition s'affiche sous le vrai nom, rien ne passe à l'échange (n° 26) |
@@ -268,3 +268,23 @@ contrat (P2, P4). Ce qui en est montré :
 - **`/handshake essai lue <texte>`** ne fait que passer le texte au lecteur local, d'un faux auteur « Essai » : rien ne
   part sur le réseau (sauf un clic sur « Répondre », qui sur une ligne d'essai chuchote le vrai message à moi-même, jamais au faux auteur « Essai »). Les essais d'avant restent listés
   (une entrée par objet ou métier) ; chaque essai écrit sa ligne de signal ou la raison du refus.
+
+## Ajout : les envois sont liés au contrat affiché (Handshake#69)
+
+On envoie ce qu'on a vu (P3), comme on signe ce qu'on a vu (n° 5) :
+
+- **la fenêtre Contrats retient la clé du contrat affiché**, pas sa place dans la liste : une proposition qui arrive en
+  tête, un brouillon périmé effacé ne font glisser aucun autre contrat sous les yeux. Si le contrat affiché disparaît
+  (son brouillon parti ou périmé), c'est sa version en cours qui s'affiche ;
+- **chaque clic de la fiche** (« Envoyer la proposition », « Envoyer en clair », et les autres boutons d'un contrat)
+  porte la clé du contrat affiché et une empreinte de ce qui en est affiché (ses termes canoniques et son état ; un
+  brouillon n'a pas encore d'empreinte, elle est calculée). Le contrat est relu dans la base par sa clé : absent, ou
+  d'une autre empreinte (refait ailleurs sans que la fenêtre se redessine), **rien ne part**, une ligne le dit et la
+  fiche redessinée est à relire. « Signer » garde en plus son réarmement de 2 s (n° 5) ; l'envoi n'en a pas besoin :
+  c'est le texte du joueur lui-même ;
+- **toute nouvelle version passe par un brouillon relu sur sa fiche** (contre-proposition, réponse de l'artisan, nouvelle
+  version d'une demande : `newVersion` dans `Contrat.lua`), puis « Envoyer la proposition » ; un brouillon dépassé par
+  la version de l'autre est périmé : effacé, jamais envoyé (`ctBrouillonPerime`, testé pour les trois chemins) ;
+- **l'envoi ne s'appelle que de deux fichiers** : `Contrat.lua` (le module des contrats) et `ContratUI.lua` (la fenêtre
+  Contrats). Une garde statique de `check.lua` parcourt tous les fichiers du TOC, présents et à venir ;
+- **Entrée dans un champ ne valide jamais rien** (P7, n° 25), vérifié au simulateur (`tests/contrat-affiche.lua`).
