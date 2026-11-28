@@ -2,8 +2,9 @@
 -- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
 -- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
--- « Envoyer » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants) l'envoie d'un clic ;
--- « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un brouillon, relu ici ; « Nouvelle version »
+-- « Vérifier et envoyer… » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants)
+-- en ouvre le brouillon, relu ici ; « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un
+-- brouillon, relu ici ; « Nouvelle version »
 -- un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ». Une demande reçue se
 -- répond dans l'arbre ou en liste. La fenêtre retient la clé du contrat affiché, et chaque clic de sa fiche part avec ce
 -- contrat-là, tel qu'affiché (empreinte), ou rien (#69).

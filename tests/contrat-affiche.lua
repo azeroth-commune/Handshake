@@ -64,7 +64,7 @@ end)
 
 test("Contrats : un clic d'envoi dont le contrat affiché a changé n'envoie rien, une ligne le dit", function()
     local dits, P = {}, print
-    sur(function()
+    local ok, err = pcall(sur, function()
         print = function(s) dits[#dits + 1] = tostring(s) end
         local db = HandshakeDB.contracts
         db[cles[1]] = contrat(A, "771", "brouillon", "Aline Affichee")
@@ -74,6 +74,7 @@ test("Contrats : un clic d'envoi dont le contrat affiché a changé n'envoie rie
         local refait = contrat(A, "771", "brouillon", "Aline Affichee", { o = { { id = 2841, qty = 1, unit = 900 } } })
         db[cles[1]] = refait
         bouton(f, "Envoyer la proposition"):Click()
+        assertEquals(refait, db[cles[1]], "autre empreinte : rien n'est parti, ni l'ancien brouillon affiché")
         assertEquals("brouillon", refait.status, "autre empreinte : rien n'est parti")
         assertTrue(#dits > 0 and dits[#dits]:find("a changé", 1, true) ~= nil, "une ligne le dit : " .. tostring(dits[#dits]))
         -- le clic a redessiné : c'est maintenant le brouillon refait qui est affiché ; effacé sans redessin : autre clé
@@ -89,7 +90,8 @@ test("Contrats : un clic d'envoi dont le contrat affiché a changé n'envoie rie
         bouton(f, "Envoyer la proposition"):Click()
         assertEquals("envoye", refait.status, "relu : il part")
     end)
-    print = P
+    print = P -- rendu même si le test échoue
+    if not ok then error(err, 0) end
 end)
 
 test("Contrats : Entrée dans un champ ne valide jamais rien (P7)", function()
