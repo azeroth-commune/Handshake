@@ -30,6 +30,8 @@ FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
   devient une seule case « Contrat n°12 · artisan · état ». Clic sur la case : son panneau. Mets l'artisan, ton
   « Offre » (ou laisse vide : l'artisan chiffrera), coche dans « Apports » ce que tu fournis toi-même,
   puis « Vérifier et envoyer… » : le contrat s'ouvre dans /contrat ; relis-le, puis « Envoyer la proposition ».
+  S'il a Handshake, le contrat part signé ; sinon (pas de réponse en 3 s), son texte lui est chuchoté en clair, et
+  « Il a dit oui » note son accord à la main. Une ligne dans le chat dit comment il est parti.
   « Plus » : voir dans /contrat, envoyer en clair, annoncer dans le Commerce, abandonner.
   « Lancer » le projet (même si le contrat n'est pas encore signé) : ses Besoins ont une ligne par contrat
   « Contrat n°12 · à recevoir », verte « reçu » une fois livré, et tes apports sont des lignes comme les autres (il faut
