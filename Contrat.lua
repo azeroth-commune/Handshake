@@ -349,8 +349,18 @@ end
 -- Envoyer (#71, CONTEXT.md) : un seul geste. Si l'on sait qu'il a Handshake, le contrat part par Handshake ; sinon une
 -- question de présence (Q) part, et sa réponse (H) dans les 3 s le fait partir par Handshake, son silence en clair. Le
 -- contrat attend tel quel : modifié ou effacé entre-temps, rien ne part. Renvoie le contrat, ou nil, raison.
+-- Le chemin se décide à la v1, les versions suivantes le suivent (lu sur la version en cours, que pasPret a vue à jour) :
+-- partie en clair, la nouvelle version part en clair sans question (son Handshake, installé depuis, n'a pas de v1 et
+-- l'ignorerait) ; partie ou reçue par Handshake, elle part par Handshake, jamais en clair (sinon sa v1 resterait signable
+-- chez lui) : sans réponse, rien ne part. Seule une v1 choisit le clair par son silence.
+local function cheminDe(c) -- "clair", "handshake", ou nil (une v1 : libre)
+  if c.parent == "0" then return nil end
+  local cur = store()[c.origin .. "#" .. c.id]
+  return cur and cur.enClair and "clair" or "handshake"
+end
 local function dire(c, clair)
-  notify(clair and ("contrat v%s parti en clair à %s (pas de réponse de Handshake) : s'il dit oui, « Il a dit oui »."):format(c.v, c.peer.name)
+  notify(clair and ("contrat v%s parti en clair à %s (%s) : s'il dit oui, « Il a dit oui »."):format(c.v, c.peer.name,
+      c.v == "1" and "pas de réponse de Handshake" or "comme la version d'avant")
     or ("contrat v%s parti signé à %s (il a Handshake)."):format(c.v, c.peer.name))
 end
 repondu = function(name, clair)
@@ -360,6 +370,7 @@ repondu = function(name, clair)
     local c = e.c
     local change = store()[key(c)] ~= c or c.status ~= "brouillon" or ns.ctCanonical(c) ~= e.texte
     local err = change and "le contrat a changé pendant l'attente de sa réponse" or pasPret(c)
+      or clair and cheminDe(c) == "handshake" and "pas de réponse de son Handshake : réessaie quand il est en ligne"
     if err then notify(("rien n'est parti à %s : %s."):format(name, err))
     else dire(partir(c, clair), clair) end
   end
@@ -373,8 +384,9 @@ function ns.ctEnvoyer(c)
   local err = pasPret(c)
   if err then return nil, err end
   local name = c.peer.name
-  if presents[name] then
-    dire(partir(c), false)
+  local chemin = cheminDe(c)
+  if chemin == "clair" or presents[name] then
+    dire(partir(c, chemin == "clair"), chemin == "clair")
     return c
   end
   local liste = attente[name]
@@ -402,11 +414,15 @@ function ns.ctRefuse(c)
   send(c.peer.name, wire("R", c.origin, c.id, c.v))
 end
 
--- Parti en clair : il n'a rien reçu par Handshake, retirer ne change que ma copie (rien ne part).
+-- Parti en clair : il n'a rien reçu par Handshake, une ligne en clair le lui dit (ns.whisper : rien en mode debug).
 function ns.ctWithdraw(c)
   if c.status ~= "envoye" then return end
   c.status = "retire"
-  if not c.enClair then send(c.peer.name, wire("X", c.origin, c.id, c.v)) end
+  if c.enClair then
+    ns.whisper(("Contrat retiré : celui à la livraison %s, avant le %s, ne tient plus."):format(ns.poText(ns.ctTotal(c.o)), date("%d/%m %H:%M", c.d)), c.peer.name)
+  else
+    send(c.peer.name, wire("X", c.origin, c.id, c.v))
+  end
 end
 
 -- « Il a dit oui » (#71) : l'accord d'un joueur sans Handshake, noté à la main. Seulement pour un contrat parti en clair :

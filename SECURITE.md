@@ -320,6 +320,14 @@ plantage du jeu avant l'écriture des SavedVariables (déconnexion ou /reload), 
   module** (`ns.ctIlADitOui`) pour un contrat parti par Handshake, où seule sa signature compte. C'est une signature
   locale : réarmée 2 s après l'affichage, comme « Signer » (P7, n° 5). La copie locale reste la référence, le panneau
   d'échange vérifie pareil.
-- **Retirer un contrat parti en clair** ne change que ma copie : il n'a rien reçu par Handshake, rien ne part.
+- **Le chemin se décide à la v1, les versions suivantes le suivent** (lu sur la version en cours, son marqueur
+  `enClair`) : partie en clair, une nouvelle version (contre-proposition, nouvelle version d'une demande) part en clair
+  sans question, même s'il est entre-temps connu présent — son Handshake n'a pas de v1 et l'ignorerait en silence ;
+  partie ou reçue par Handshake, elle part par Handshake, **jamais en clair** — sinon sa v1 resterait signable chez lui
+  pendant que ma v2 serait partie en clair, deux copies divergentes : s'il n'est pas connu présent, la question part, et
+  sans réponse en 3 s rien ne part, le brouillon reste, une ligne dit de réessayer quand il est en ligne. Seule une v1
+  choisit le clair par son silence.
+- **Retirer un contrat parti en clair** : il n'a rien reçu par Handshake, une ligne en clair le lui dit (« Contrat
+  retiré : … », par `ns.whisper`, donc rien en mode debug) ; ma copie passe à « retiré ».
 - **Bêta, pas de compatibilité** : un ancien Handshake (sans la réponse) se tait, et reçoit donc le texte en clair ; on
   redistribue le zip.

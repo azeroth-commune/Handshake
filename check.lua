@@ -1834,15 +1834,16 @@ do
     "la ligne du chat : " .. notes[#notes])
   assert(#wire == w0, "rien par le réseau des Handshake")
   assert(ns.ctIlADitOui(c3) and c3.status == "signe" and c3.manual, "parti en clair : « Il a dit oui » le signe")
-  -- Pas de mémoire du silence : un autre contrat pour Denis repose la question. Retiré, un contrat en clair ne change que
-  -- ma copie : rien ne part (il n'a pas Handshake).
+  -- Pas de mémoire du silence : un autre contrat pour Denis repose la question. Retiré, un contrat en clair le lui dit
+  -- en clair (une ligne chuchotée), rien par le réseau des Handshake.
   minuteurs, captes = {}, {}
   local c4 = assert(ns.ctEnvoyer(brouillon(GDEN, DENN)))
   assert(#captes == 1 and captes[1].text:find("|Q|", 1, true), "Denis n'a pas répondu : nouvelle question")
   minuteurs[1].fn()
   local avant = #captes
   ns.ctWithdraw(c4)
-  assert(c4.status == "retire" and #captes == avant, "retiré : ma copie seulement")
+  assert(c4.status == "retire" and #captes == avant + 1 and captes[#captes].kind == "chuchotement"
+    and captes[#captes].text:find("^Contrat retiré"), "retiré : une ligne en clair, " .. tostring(captes[#captes].text))
   -- Modifié pendant l'attente : rien ne part, une ligne le dit.
   minuteurs, captes = {}, {}
   local c5 = brouillon(GDEN, DENN)
@@ -1884,6 +1885,47 @@ do
   local apres = #captes
   inject(DENN, BOB, "H|3|" .. GDEN)
   assert(c6.status == "envoye" and c6.enClair and #captes == apres and #wire == w0, "réponse tardive : rien ne part deux fois")
+
+  -- Le chemin se décide à la v1, les versions suivantes le suivent. Parente partie en clair : la nouvelle version part en
+  -- clair, sans question, même si Gaston est entre-temps connu présent (son Handshake n'a pas de v1 : il l'ignorerait).
+  -- Gaston et Fanny, nouveaux (pas encore connus présents) : leurs envois sont captés eux aussi.
+  local GGAS, GASN, GFAN, FANN = "Player-6942-0000CA57", "Gaston Clair", "Player-6942-0000FA77", "Fanny Absente"
+  local D1 = ns.debugSend
+  ns.debugSend = function(kind, target, text)
+    if target == GASN or target == FANN then captes[#captes + 1] = { kind = kind, target = target, text = text } return true end
+    return D1(kind, target, text)
+  end
+  ns.learnGUID(GASN, GGAS)
+  minuteurs, captes, w0 = {}, {}, #wire
+  local c7 = brouillon(GGAS, GASN)
+  ns.ctEnvoyer(c7)
+  minuteurs[1].fn()
+  inject(GASN, BOB, "H|3|" .. GGAS) -- Gaston a installé Handshake : connu présent
+  assert(c7.enClair, "v1 partie en clair")
+  captes = {}
+  local v2c = assert(ns.ctCounter(c7, nil, 9600))
+  assert(ns.ctEnvoyer(v2c) == v2c and v2c.v == "2" and v2c.status == "envoye" and v2c.enClair and #minuteurs == 1, "la v2 suit la v1 : en clair")
+  assert(#captes >= 2 and captes[1].kind == "chuchotement" and #wire == w0, "pas de question ni de contrat par Handshake : " .. tostring(captes[1].text))
+  assert(notes[#notes]:find("parti en clair", 1, true), "la ligne du chat : " .. notes[#notes])
+  -- Parente partie par Handshake (ou reçue par Handshake) : la nouvelle version part par Handshake, jamais en clair. Fanny
+  -- (une session d'avant : sa présence est oubliée) ne répond pas : rien ne part, le brouillon reste, une ligne le dit ;
+  -- elle répond : la v2 part par Handshake.
+  ns.learnGUID(FANN, GFAN)
+  local c8 = brouillon(GFAN, FANN)
+  c8.status, c8.author, c8.hash = "envoye", BOB, ns.ctHash(ns.ctCanonical(c8)) -- partie par Handshake avant le /reload
+  minuteurs, captes = {}, {}
+  local v2h = assert(ns.ctCounter(c8, nil, 9700))
+  assert(ns.ctEnvoyer(v2h) == v2h and #captes == 1 and captes[1].text:find("|Q|", 1, true), "Fanny pas connue présente : la question")
+  minuteurs[1].fn()
+  assert(v2h.status == "brouillon" and not v2h.enClair and HandshakeDB.contracts[ns.ctKey(v2h)] == v2h and #captes == 1,
+    "pas de réponse : rien ne part, le brouillon reste")
+  assert(c8.status == "envoye" and c8.v == "1", "la v1 reste")
+  assert(notes[#notes]:find("pas de réponse de son Handshake : réessaie quand il est en ligne", 1, true), "la ligne du chat : " .. notes[#notes])
+  ns.ctEnvoyer(v2h)
+  inject(FANN, BOB, "H|3|" .. GFAN)
+  assert(v2h.status == "envoye" and not v2h.enClair and captes[#captes].kind == "addon" and captes[#captes].text:find("|P|3|", 1, true),
+    "elle répond : la v2 part par Handshake")
+  ns.debugSend = D1
 
   -- Aucun envoi hors du transport (ns.debugSend : le mode debug n'envoie rien) : pas de SendChatMessage dans les contrats,
   -- le clair passe par ns.whisper ; la fenêtre Contrats envoie par « Envoyer » et note « Il a dit oui » par le module.
