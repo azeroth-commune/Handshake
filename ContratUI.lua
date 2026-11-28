@@ -71,21 +71,34 @@ end
 
 local function plain(name) return name:lower():gsub("[\128-\255]", "") end
 
-function ns.ctDescribe(c, me)
-  local t, status = {}, ns.ctStatus(c)
+-- La fiche d'un contrat vue depuis ma place (me) : ce que la fenêtre dessine (#73), et rien d'autre. Rien n'y manque de
+-- ce qui sert la sécurité, c'est seulement rangé : GUID, empreinte et identité dans la bulle du nom ; ce qui doit arrêter
+-- l'œil (identité pas vérifiée, nom proche n° 26, différentiel n° 4, vérifications n° 11-12, échange à vérifier n° 37)
+-- en alertes, en haut, seulement quand elles s'appliquent ; TON estimation et ta perte maximale en bas (P8).
+--   titre, echeance, role ; bulle = { lignes } ; alertes = { textes } ;
+--   etapes = { { titre, gauche = { titre, lignes }, droite = { titre, lignes } } }, la gauche toujours « Tu … » ; une
+--   ligne : { id, qty, unit, fait, mot } (un objet ; fait = l'avancement, une fois signé) ou { texte } (un montant) ;
+--   apres = { notes sous les étapes } ; estimation = { textes }.
+function ns.ctFiche(c, me)
+  local status = ns.ctStatus(c)
   local peer, artisan = c.peer or {}, me == c.artisan
   local other = peer.name or "?" -- le nom donné par le serveur, jamais déduit du GUID
-  local add = function(s) t[#t + 1] = s end
+  local otherShort = other:match("^%S+") or other
   local caution, delivery = ns.ctTotal(c.m), ns.ctTotal(c.o)
-  add(("|cffffd100Contrat avec %s|r"):format(ns.identity(other, peer.guid)))
-  add(("Toi : %s   ·   v%s   ·   empreinte %s"):format(ns.myIdentity(), c.v, (c.hash or "—"):sub(1, 8)))
-  add((STATUS[status] or status) .. ("   ·   tu es %s   ·   échéance %s"):format(artisan and "l'ARTISAN" or "le CLIENT", rel(c.d - GetServerTime())))
-  if c.enClair then add(("|cffe6994dParti en clair : %s n'a pas répondu par Handshake ; s'il dit oui, « Il a dit oui ».|r"):format(other)) end
-  add(peer.verified and ("Identité de %s : |cff59cc73confirmée par le serveur|r (GUID %s)"):format(other, tostring(peer.guid))
-    or ("Identité de %s : |cffe6994dGUID annoncé, vérifié au premier échange|r (GUID %s)"):format(other, tostring(peer.guid)))
+  local f = { alertes = {}, etapes = {}, apres = {}, estimation = {} }
+  local function alerte(s, rouge) f.alertes[#f.alertes + 1] = (rouge and "|cffe64d4d! " or "|cffe6994d! ") .. s .. "|r" end
+  f.titre = ("%s · v%s · %s"):format(other:gsub("|", "||"), c.v, STATUS[status] or status)
+  f.echeance = "échéance " .. rel(c.d - GetServerTime())
+  f.role = artisan and "Tu es l'artisan." or "Tu es le client."
+  f.bulle = { ns.identity(other, peer.guid),
+    peer.verified and "|cff59cc73Identité confirmée par le serveur|r" or "|cffe6994dGUID annoncé, vérifié au premier échange|r",
+    "Toi : " .. ns.myIdentity(), ("v%s · empreinte %s"):format(c.v, (c.hash or "—"):sub(1, 8)) }
+
+  if c.enClair then alerte(("Parti en clair : %s n'a pas répondu par Handshake ; s'il dit oui, « Il a dit oui »."):format(other)) end
+  if not peer.verified then alerte(("Identité de %s pas encore vérifiée : GUID annoncé, vérifié au premier échange"):format(otherShort)) end
   for _, x in pairs(ns.ctStore()) do -- n° 26 : nom presque identique à un autre partenaire
     local o2 = x.peer and x.peer.name or other
-    if o2 ~= other and plain(o2) == plain(other) then add(("|cffe64d4d! Nom très proche de %s : vérifie que c'est bien la bonne personne.|r"):format(o2)) break end
+    if o2 ~= other and plain(o2) == plain(other) then alerte(("Nom très proche de %s : vérifie que c'est bien la bonne personne."):format(o2), true) break end
   end
   if c.prev then -- n° 4 : ce qui a changé
     local ch = {}
@@ -102,78 +115,99 @@ function ns.ctDescribe(c, me)
       end
       for id in pairs(old) do ch[#ch + 1] = ns.itemLabel(id) .. " retiré" end
     end
-    add(("|cffe6994dChangé depuis la v%s : %s|r"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
+    alerte(("Changé depuis la v%s : %s"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
   end
-  -- « tu donnes » / « Bob donne » : le client et l'artisan vus depuis ma place, prénom seul.
-  local otherShort = other:match("^%S+")
-  local function verb(isMe, tu, il) return isMe and ("Tu " .. tu) or (otherShort .. " " .. il) end
-  add(" ")
-  if #c.m > 0 then
-    add("|cffffd100Étape 1 — l'artisan achète les composants|r")
-    for _, l in ipairs(c.m) do add(("   %s %d × %s   (caution %s l'unité)"):format(verb(not artisan, "donnes", "donne"), l.qty, ns.itemLabel(l.id), ns.money(l.unit))) end
-    add(("   %s la caution : %s"):format(verb(artisan, "verses", "verse"), ns.money(caution)))
-  end
-  add("|cffffd100Étape " .. (#c.m > 0 and "2" or "unique") .. " — le client achète les objets|r")
-  for _, l in ipairs(c.o) do add(("   %s %d × %s   (%s l'objet)"):format(verb(artisan, "livres", "livre"), l.qty, ns.itemLabel(l.id), ns.money(l.unit))) end
-  add(("   %s : %s%s"):format(verb(not artisan, "paies", "paie"), ns.money(delivery), #c.m > 0 and (" (caution rendue %s + prix %s)"):format(ns.money(caution), ns.moneySigned(delivery - caution)) or ""))
   if delivery - caution <= 0 then
-    add(artisan and "   |cffe6994d! Aucun prix pour ton travail : « Répondre » ou « Répondre en liste » pour chiffrer ta part.|r"
-      or "   |cffe6994dPrix laissé à l'artisan : il le chiffrera en contre-proposant.|r")
+    alerte(artisan and "Aucun prix pour ton travail : « Répondre » ou « Répondre en liste » pour chiffrer ta part."
+      or "Prix laissé à l'artisan : il le chiffrera en contre-proposant.")
   end
-  if #c.m == 0 then add("   |cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r") end
-  add(" ")
-
-  -- P8 : ton estimation, ta perte maximale (ns.ctEstimation, la même que sur la page du projet).
-  local e = ns.ctEstimation(c, me)
-  add(("|cffffd100Ton estimation|r (scan de l'HV : %s)"):format(e.scanned or "jamais"))
-  if #c.m > 0 then
-    add(("   composants ~%s · caution %s%+.0f %%|r"):format(money(e.composants), e.alerte and "|cffe64d4d" or "|cff59cc73", e.ecart))
-    if e.manquants > 0 then add(("   |cffe6994d! %d composant(s) sans prix connu : estimation incomplète|r"):format(e.manquants)) end
-    if artisan then
-      add(("   Si le client disparaît après l'étape 1 : tu perds au plus %s + ton travail"):format(money(e.perte)))
-    else
-      add(("   Si l'artisan disparaît après l'étape 1 : tu perds au plus %s"):format(money(e.perte)))
-    end
-  end
-  if e.valeur > 0 then add(("   les objets livrés valent ~%s à l'HV (tu %s %s)"):format(money(e.valeur), artisan and "reçois" or "paies", money(delivery))) end
-
-  -- Vérifications
-  local checks = {}
+  -- Vérifications (n° 11, 12)
   for _, l in ipairs(c.o) do
-    if select(14, C_Item.GetItemInfo(l.id)) == 1 then checks[#checks + 1] = ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à livrer" end
+    if select(14, C_Item.GetItemInfo(l.id)) == 1 then alerte(ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à livrer", true) end
   end
   for _, l in ipairs(c.m) do
-    if select(14, C_Item.GetItemInfo(l.id)) == 1 then checks[#checks + 1] = ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à fournir" end
+    if select(14, C_Item.GetItemInfo(l.id)) == 1 then alerte(ns.itemLabel(l.id) .. " est lié quand ramassé : impossible à fournir", true) end
   end
   if #c.m > 0 then
     local need, anc, unknown = expansion(c.o)
-    if #unknown > 0 then checks[#checks + 1] = "recette inconnue pour " .. ns.itemLabel(unknown[1]) .. " : quantités de composants non vérifiables" end
+    if #unknown > 0 then alerte("recette inconnue pour " .. ns.itemLabel(unknown[1]) .. " : quantités de composants non vérifiables", true) end
     if #unknown == 0 then
       for _, l in ipairs(c.m) do
-        if not need[l.id] then checks[#checks + 1] = ns.itemLabel(l.id) .. " n'entre pas dans les recettes"
-        elseif l.qty > need[l.id] then checks[#checks + 1] = ("%s : %d demandés, la recette en consomme %d"):format(ns.itemLabel(l.id), l.qty, need[l.id]) end
+        if not need[l.id] then alerte(ns.itemLabel(l.id) .. " n'entre pas dans les recettes", true)
+        elseif l.qty > need[l.id] then alerte(("%s : %d demandés, la recette en consomme %d"):format(ns.itemLabel(l.id), l.qty, need[l.id]), true) end
         for _, l2 in ipairs(c.m) do
-          if anc[l2.id] and anc[l2.id][l.id] then checks[#checks + 1] = ns.itemLabel(l.id) .. " ET son composant " .. ns.itemLabel(l2.id) .. " sont demandés" end
+          if anc[l2.id] and anc[l2.id][l.id] then alerte(ns.itemLabel(l.id) .. " ET son composant " .. ns.itemLabel(l2.id) .. " sont demandés", true) end
         end
       end
     end
   end
-  if #checks > 0 then
-    add(" ")
-    add("|cffe64d4dÀ vérifier|r")
-    for _, s in ipairs(checks) do add("   |cffe64d4d! " .. s .. "|r") end
-  end
+  if c.unconfirmed then alerte(("%d échange(s) à vérifier : terminés, mais ton or ou tes sacs n'ont pas bougé comme prévu"):format(#c.unconfirmed)) end
 
-  -- Avancement
-  if c.ledger or c.unconfirmed then
-    add(" ")
-    add("|cffffd100Avancement (ce que ton addon a vu passer)|r")
-    local inList, outList = artisan and c.m or c.o, artisan and c.o or c.m
-    for _, l in ipairs(inList) do add(("   reçu %d/%d %s"):format((c.got or {})[l.id] or 0, l.qty, ns.itemLabel(l.id))) end
-    for _, l in ipairs(outList) do add(("   donné %d/%d %s"):format((c.gave or {})[l.id] or 0, l.qty, ns.itemLabel(l.id))) end
-    add(("   solde (reçu − donné, en valeurs du contrat) : %s"):format(ns.moneySigned(c.net or 0)))
-    if c.unconfirmed then add(("   |cffe6994d! %d échange(s) à vérifier : terminés, mais ton or ou tes sacs n'ont pas bougé comme prévu|r"):format(#c.unconfirmed)) end
+  -- Les étapes en deux colonnes, la mienne à gauche ; l'avancement (ce que ton addon a vu passer) une fois signé.
+  local suivi = c.signed or c.ledger
+  local function objets(list, recu)
+    local t = {}
+    for _, l in ipairs(list) do
+      t[#t + 1] = { id = l.id, qty = l.qty, unit = l.unit, mot = recu and "reçu" or "donné",
+        fait = suivi and ((recu and (c.got or {}) or (c.gave or {}))[l.id] or 0) or nil }
+    end
+    return t
   end
+  local function etape(titre, jeTitre, ilTitre, mes, siens)
+    f.etapes[#f.etapes + 1] = { titre = titre, gauche = { titre = "Tu " .. jeTitre, lignes = mes },
+      droite = { titre = otherShort .. " " .. ilTitre, lignes = siens } }
+  end
+  local unique = #c.m == 0
+  if not unique then
+    local apports, cautionL = objets(c.m, artisan), { { texte = ns.money(caution) .. " de caution" } }
+    if artisan then etape("1. Composants", "donnes", "donne", cautionL, apports)
+    else etape("1. Composants", "donnes", "donne", apports, cautionL) end
+  end
+  local livre, paie = objets(c.o, not artisan), { { texte = ns.money(delivery) } }
+  if not unique then paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s)|r"):format(ns.money(caution), ns.moneySigned(delivery - caution)) } end
+  local titre = unique and "Livraison" or "2. Livraison"
+  if artisan then etape(titre, "livres", "paie", livre, paie) else etape(titre, "paies", "livre", paie, livre) end
+  if unique then f.apres[#f.apres + 1] = "|cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r" end
+  if c.ledger then f.apres[#f.apres + 1] = ("Solde des échanges (reçu − donné, en valeurs du contrat) : %s"):format(ns.moneySigned(c.net or 0)) end
+
+  -- P8 : ton estimation, ta perte maximale (ns.ctEstimation, la même que sur la page du projet), en une ligne.
+  local e, parts = ns.ctEstimation(c, me), {}
+  if not unique then
+    parts[#parts + 1] = "composants ~" .. money(e.composants)
+    parts[#parts + 1] = ("caution %s%+.0f %%|r"):format(e.alerte and "|cffe64d4d" or "|cff59cc73", e.ecart)
+    parts[#parts + 1] = "perte max " .. money(e.perte) .. (artisan and " + ton travail" or "")
+  end
+  if e.valeur > 0 then parts[#parts + 1] = "objets livrés ~" .. money(e.valeur) end
+  f.estimation[1] = ("|cffffd100Ton estimation|r (scan : %s) : %s"):format(e.scanned or "jamais", #parts > 0 and table.concat(parts, " · ") or "aucun prix connu")
+  if e.manquants > 0 then f.estimation[2] = ("|cffe6994d! %d composant(s) sans prix connu : estimation incomplète|r"):format(e.manquants) end
+  return f
+end
+
+-- Une ligne d'étape en texte : « 20 × Cuivre  donné 3/20 », ou le montant.
+local function ligneTexte(l)
+  if not l.id then return l.texte end
+  local s = ("%d × %s"):format(l.qty, ns.itemLabel(l.id))
+  if l.fait then s = s .. ("  %s%s %d/%d|r"):format(l.fait >= l.qty and "|cff59cc73" or "|cff999999", l.mot, l.fait, l.qty) end
+  return s
+end
+
+-- La fiche en texte (vérification hors jeu, débogage) : tout ce que la fenêtre montre, bulle du nom comprise.
+function ns.ctDescribe(c, me)
+  local f, t = ns.ctFiche(c, me), {}
+  local function add(s) t[#t + 1] = s end
+  add(f.titre .. "   ·   " .. f.echeance)
+  add(f.role)
+  for _, s in ipairs(f.bulle) do add("   " .. s) end
+  for _, s in ipairs(f.alertes) do add(s) end
+  for _, e in ipairs(f.etapes) do
+    add(e.titre)
+    for _, col in ipairs({ e.gauche, e.droite }) do
+      add("   " .. col.titre)
+      for _, l in ipairs(col.lignes) do add("      " .. ligneTexte(l)) end
+    end
+  end
+  for _, s in ipairs(f.apres) do add(s) end
+  for _, s in ipairs(f.estimation) do add(s) end
   return table.concat(t, "\n")
 end
 
