@@ -715,13 +715,17 @@ assert(atBob and atBob.status == "a_signer" and atBob.author == BEL, "Bob a la p
 assert(atBob.peer.guid == GBEL and atBob.peer.name == BELN and not atBob.peer.verified, "le nom du serveur, le GUID déclaré, pas encore vérifié")
 assert(atBob.hash == bases[BEL].contracts[k].hash, "même empreinte des deux côtés")
 
--- Bob contre-propose une caution de 6000 au lieu de 5400 : v2, parent = v1. Un brouillon d'abord, à côté de la v1 : rien
--- ne part avant qu'il ait relu la fiche de SA version et cliqué « Envoyer la proposition » (P8, n° 11, 13, 26, 57).
+-- Bob contre-propose une caution de 6000 au lieu de 5400 : v2, parent = v1. Elle part du même clic, de la fiche de la v1
+-- où il a changé le montant (#74) : pas de brouillon relu. Une version qui n'est plus celle en cours ne se contre-propose
+-- pas ; hors bornes, rien ne part.
 local envoyes = #wire
-local brouillon2 = assert(ns.ctCounter(atBob, 6000, nil, nil))
-assert(brouillon2.status == "brouillon" and #wire == envoyes and HandshakeDB.contracts[ns.ctKey(brouillon2)] == brouillon2
-  and HandshakeDB.contracts[k] == atBob and atBob.v == "1" and atBob.status == "a_signer", "contre-proposition : un brouillon, rien n'est parti")
-assert(ns.ctPropose(brouillon2) and #wire == envoyes + 1, "envoyée de sa fiche")
+local _, raison = ns.ctCounter({ origin = BEL, id = "1795000000", v = "1", status = "a_signer", m = atBob.m, o = atBob.o }, 6000)
+assert(raison and raison:find("a changé", 1, true) and #wire == envoyes, "pas la version en cours : refusée, rien n'est parti")
+_, raison = ns.ctCounter(atBob, nil, nil, 31)
+assert(raison and raison:find("30 jours", 1, true) and #wire == envoyes and not HandshakeDB.contracts[k .. "+"], "échéance hors bornes : rien n'est parti")
+local v2b = assert(ns.ctCounter(atBob, 6000, nil, nil))
+assert(v2b.status == "envoye" and v2b.v == "2" and HandshakeDB.contracts[k] == v2b and not HandshakeDB.contracts[k .. "+"]
+  and wire[#wire].text:find("|P|3|", 1, true), "contre-proposition partie du même clic, pas de brouillon")
 as(BEL)
 local atBel = HandshakeDB.contracts[k]
 assert(atBel.v == "2" and atBel.status == "a_signer" and atBel.prev.v == "1" and ns.ctTotal(atBel.m) == 36 * 167, "contre-proposition reçue, avec la version d'avant")
@@ -966,22 +970,25 @@ local back = HandshakeDB.contracts[key1]
 assert(back.v == "2" and back.status == "a_signer" and back.prev.v == "1", "Bob reçoit la contre-proposition")
 assert(not ns.ctReplyFromOrder({ reponse = key1, lines = demande.lines }), "le client ne répond pas comme artisan")
 -- Un brouillon de nouvelle version dépassé (l'autre a envoyé la sienne entre-temps) ne part pas : il est effacé, comme
--- celui d'une nouvelle version de demande (ctVersionDemande, plus bas). Contre-proposition d'abord (ctCounter)…
+-- celui d'une nouvelle version de demande (ctVersionDemande, plus bas).
 do
   local function relance(qui) -- qui envoie une nouvelle version de sa copie (+10 pa à la livraison)
     as(qui)
     local c = HandshakeDB.contracts[key1]
-    assert(ns.ctPropose(assert(ns.ctCounter(c, nil, ns.ctTotal(c.o) + 1000))))
+    assert(ns.ctCounter(c, nil, ns.ctTotal(c.o) + 1000))
   end
   local function perime(b, quoi)
     local envoyes = #wire
     local rien, err = ns.ctPropose(b)
     assert(not rien and err:find("a changé") and not HandshakeDB.contracts[ns.ctKey(b)] and #wire == envoyes, quoi .. " périmé : effacé, rien n'est parti")
   end
-  local contre = assert(ns.ctCounter(back, nil, ns.ctTotal(back.o) + 500)) -- Bob, sur la v2 reçue
-  relance(BEL) -- Belegard envoie sa v3 avant
+  -- La contre-proposition (#74) n'a plus de brouillon : Bob a la v2 sous les yeux, Belegard envoie sa v3 avant son clic ;
+  -- la contre-proposition de la v2 est refusée, rien ne part.
+  relance(BEL)
   as(BOB)
-  perime(contre, "la contre-proposition (ctCounter)")
+  local envoyes = #wire
+  local rien, err = ns.ctCounter(back, nil, ns.ctTotal(back.o) + 500)
+  assert(not rien and err:find("a changé", 1, true) and #wire == envoyes, "la contre-proposition d'une version remplacée : refusée")
   assert(HandshakeDB.contracts[key1].v == "3" and HandshakeDB.contracts[key1].status == "a_signer", "la v3 de Belegard reste à signer")
   -- … puis la réponse de l'artisan (ctReplyFromOrder) : Belegard prépare la sienne sur la v4 de Bob, Bob envoie sa v5 avant.
   relance(BOB)
@@ -1230,7 +1237,7 @@ do
   -- Belegard contre-propose (+ 10 pa), Bob signe : la commande suit son contrat, pas le projet.
   as(BEL)
   local chez = HandshakeDB.contracts[ns.ctKey(ct)]
-  ns.ctPropose(assert(ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000)))
+  assert(ns.ctCounter(chez, nil, ns.ctTotal(chez.o) + 1000))
   as(BOB)
   assert(cmd().etat == "contre-proposé", "contre-proposée")
   local v2 = HandshakeDB.contracts[ns.ctKey(ct)]
@@ -1308,7 +1315,8 @@ do
   for fichier in HSTOC:gmatch("([%w_]+%.lua)") do
     if fichier ~= "Contrat.lua" and fichier ~= "ContratUI.lua" then
       local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
-      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true) and not code:find("ctEnvoyer", 1, true),
+      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true) and not code:find("ctEnvoyer", 1, true)
+        and not code:find("ctCounter", 1, true),
         fichier .. " envoie un contrat sans sa fiche")
     end
   end
@@ -1397,7 +1405,7 @@ do
   assert(not E.confie(p, C.Arbre(p, true).blocDe.Forge) and lignes(p)[2870] == nil and lignes(p)[5500], "le bloc revient")
   -- Contre-proposé par Belegard (à signer, c'est à moi) : refusé, des deux côtés.
   i, k = forge()
-  as(BEL); ns.ctPropose(assert(ns.ctCounter(bases[BEL].contracts[k], nil, ns.ctTotal(bases[BEL].contracts[k].o) + 1000))); as(BOB)
+  as(BEL); assert(ns.ctCounter(bases[BEL].contracts[k], nil, ns.ctTotal(bases[BEL].contracts[k].o) + 1000)); as(BOB)
   assert(HandshakeDB.contracts[k].status == "a_signer", "sa contre-proposition")
   assert(ns.abandonner(p, i) == "refuse" and bases[BEL].contracts[k].status == "refuse", "à signer : refusé, des deux côtés")
   -- Signé : le projet le lâche ; rien ne part, le contrat reste signé des deux côtés (son registre, son échéance).
@@ -1496,7 +1504,7 @@ do
   assert(not cmd(f).ecart and cmd(f).etat == "contre-proposé", "nouvelle version partie : plus d'écart")
   -- Sa contre-proposition qui ne change que le prix : rien à signaler (la part du projet n'a pas bougé).
   as(BEL)
-  ns.ctPropose(assert(ns.ctCounter(recu, nil, ns.ctTotal(recu.o) + 1000)))
+  assert(ns.ctCounter(recu, nil, ns.ctTotal(recu.o) + 1000))
   as(BOB)
   assert(cmd(f).etat == "contre-proposé" and not cmd(f).ecart, "il change son prix : pas d'écart")
   -- Une quantité qui change : le minage (plus de bronze) et la forge (plus de cuirasses).
@@ -1532,7 +1540,7 @@ do
   assert(b.v == "4" and b.prev.v == "3", "brouillon de la v4")
   as(BEL)
   local v3 = HandshakeDB.contracts[ns.ctKey(cf)]
-  assert(ns.ctPropose(assert(ns.ctCounter(v3, nil, ns.ctTotal(v3.o) + 500))))
+  assert(ns.ctCounter(v3, nil, ns.ctTotal(v3.o) + 500))
   as(BOB)
   local _, perime = ns.ctPropose(b)
   assert(perime and perime:find("a changé") and not HandshakeDB.contracts[ns.ctKey(b)], "périmé : effacé, pas envoyé")
@@ -1931,7 +1939,8 @@ do
   as(GCARL)
   w0 = #wire
   local contre = assert(ns.ctCounter(bases[GCARL].contracts[ns.ctKey(c1)], nil, 9500))
-  assert(ns.ctEnvoyer(contre) and types(w0) == "P" and bases[BOB].contracts[ns.ctKey(c1)].v == "2", "contre-proposition par Handshake")
+  assert(contre.status == "envoye" and types(w0) == "P" and bases[BOB].contracts[ns.ctKey(c1)].v == "2", "contre-proposition par Handshake")
+  assert(not ns.ctEnvoyer(contre) and types(w0) == "P", "partie : pas une seconde fois")
   as(BOB)
 
   -- Le destinataire répond seul, sans rien afficher ; la limite de débit (30 par minute et par expéditeur) vaut pour la
@@ -1979,29 +1988,31 @@ do
   -- Gaston toujours sans Handshake (pas connu présent) : la v2 part en clair tout de suite, sans question.
   captes = {}
   local v2s = assert(ns.ctCounter(c7, nil, 9500))
-  assert(ns.ctEnvoyer(v2s) == v2s and v2s.status == "envoye" and v2s.enClair and #minuteurs == 1 and #captes >= 1
+  assert(v2s.status == "envoye" and v2s.enClair and #minuteurs == 1 and #captes >= 1
     and captes[1].kind == "chuchotement" and #wire == w0, "v2 en clair sans question : " .. tostring((captes[1] or {}).text))
   inject(GASN, BOB, "H|3|" .. GGAS) -- Gaston a installé Handshake : connu présent
   captes = {}
   local v2c = assert(ns.ctCounter(v2s, nil, 9600))
-  assert(ns.ctEnvoyer(v2c) == v2c and v2c.v == "3" and v2c.status == "envoye" and v2c.enClair and #minuteurs == 1, "la v3 suit la v1 : en clair")
+  assert(v2c.v == "3" and v2c.status == "envoye" and v2c.enClair and #minuteurs == 1, "la v3 suit la v1 : en clair")
   assert(#captes >= 2 and captes[1].kind == "chuchotement" and #wire == w0, "pas de question ni de contrat par Handshake : " .. tostring(captes[1].text))
   assert(notes[#notes]:find("parti en clair", 1, true), "la ligne du chat : " .. notes[#notes])
   -- Parente partie par Handshake (ou reçue par Handshake) : la nouvelle version part par Handshake, jamais en clair. Fanny
-  -- (une session d'avant : sa présence est oubliée) ne répond pas : rien ne part, le brouillon reste, une ligne le dit ;
-  -- elle répond : la v2 part par Handshake.
+  -- (une session d'avant : sa présence est oubliée) ne répond pas : rien ne part, rien n'est rangé (les champs de la fiche
+  -- gardent la saisie), une ligne le dit ; pendant l'attente, pas de seconde contre-proposition ; elle répond : la v2 part
+  -- par Handshake.
   ns.learnGUID(FANN, GFAN)
   local c8 = brouillon(GFAN, FANN)
   c8.status, c8.author, c8.hash = "envoye", BOB, ns.ctHash(ns.ctCanonical(c8)) -- partie par Handshake avant le /reload
   minuteurs, captes = {}, {}
   local v2h = assert(ns.ctCounter(c8, nil, 9700))
-  assert(ns.ctEnvoyer(v2h) == v2h and #captes == 1 and captes[1].text:find("|Q|", 1, true), "Fanny pas connue présente : la question")
+  assert(#captes == 1 and captes[1].text:find("|Q|", 1, true), "Fanny pas connue présente : la question")
+  assert(ns.ctEnAttente(c8) and not ns.ctCounter(c8, nil, 9800) and #captes == 1, "en route : pas de seconde contre-proposition")
   minuteurs[1].fn()
-  assert(v2h.status == "brouillon" and not v2h.enClair and HandshakeDB.contracts[ns.ctKey(v2h)] == v2h and #captes == 1,
-    "pas de réponse : rien ne part, le brouillon reste")
-  assert(c8.status == "envoye" and c8.v == "1", "la v1 reste")
+  assert(v2h.status == "brouillon" and not v2h.enClair and not HandshakeDB.contracts[ns.ctKey(v2h)] and #captes == 1
+    and not ns.ctEnAttente(c8), "pas de réponse : rien ne part, rien n'est rangé")
+  assert(c8.status == "envoye" and c8.v == "1" and HandshakeDB.contracts[ns.ctKey(c8)] == c8, "la v1 reste")
   assert(notes[#notes]:find("pas de réponse de son Handshake : réessaie quand il est en ligne", 1, true), "la ligne du chat : " .. notes[#notes])
-  ns.ctEnvoyer(v2h)
+  v2h = assert(ns.ctCounter(c8, nil, 9700)) -- réessayé : un nouveau clic
   inject(FANN, BOB, "H|3|" .. GFAN)
   assert(v2h.status == "envoye" and not v2h.enClair and captes[#captes].kind == "addon" and captes[#captes].text:find("|P|3|", 1, true),
     "elle répond : la v2 part par Handshake")
