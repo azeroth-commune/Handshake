@@ -49,12 +49,13 @@ async_test("Commande à la main agrandie : plus de lignes, les boutons du bas re
     end)
 end)
 
-async_test("Contrats agrandie : le texte suit la largeur ; « Commande à la main » sous la barre de titre", function(done)
+async_test("Contrats agrandie : le texte suit la largeur ; aucun bouton en haut, la fiche sous la barre de titre", function(done)
     SlashCmdList.HANDSHAKECONTRAT()
     local f = HandshakeContratsFrame
     local w, h = f:GetSize()
-    local main = bouton(f, "Commande à la main")
-    assertTrue(main:GetTop() <= f:GetTop() - 24, "sous la barre de titre")
+    for _, t in ipairs({ "Commande à la main", "Sauvegarder" }) do assertNil(bouton(f, t), "plus de « " .. t .. " »") end
+    local haut = f.body:GetTop()
+    assertTrue(haut <= f:GetTop() - 24 and haut >= f:GetTop() - 40, "la fiche sous la barre de titre : " .. (f:GetTop() - haut))
     local avant = f.body:GetWidth()
     f:SetSize(w + 200, h)
     ensuite(done, function()
@@ -101,6 +102,14 @@ test("Contrats : une colonne à gauche, une entrée par contrat ; un clic l'affi
         local function r(i) return rang[HandshakeDB.contracts[cles[i]]] end
         assertTrue(r(3) < r(1) and r(1) < r(2) and r(2) < r(4), "triée comme le menu d'avant")
         assertTrue(montrees[1]:GetLeft() < f.body:GetLeft(), "la colonne à gauche du contrat")
+        -- « + Nouvelle commande » : la première ligne de la colonne, au-dessus de tous les contrats ; elle ouvre la Commande à la main.
+        local nouvelle = bouton(f, "+ Nouvelle commande")
+        assertNotNil(nouvelle, "« + Nouvelle commande »")
+        assertTrue(nouvelle:GetLeft() < f.body:GetLeft(), "dans la colonne")
+        for _, x in ipairs(montrees) do assertTrue(nouvelle:GetBottom() >= x:GetTop() - 1, "au-dessus de " .. x.nom:GetText()) end
+        nouvelle:Click()
+        assertTrue(HandshakeMainFrame and HandshakeMainFrame:IsShown(), "la Commande à la main s'ouvre")
+        HandshakeMainFrame:Hide()
     end)
     if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
     for _, cle in ipairs(cles) do HandshakeDB.contracts[cle] = nil end

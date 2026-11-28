@@ -14,7 +14,7 @@ local _, ns = ...
 -- que prend le cas courant (la ligne « Modifier » et la plus longue rangée de boutons) ; le texte défile, on agrandit.
 local COL_W, X0 = 150, 166
 local W, H = 680, 400
-local ENTREE_H = 34
+local ENTREE_H, NOUVELLE_H = 34, 22
 local frame, list, pos, shownHash = nil, {}, 1, nil
 -- Le contrat affiché, retenu par sa clé à travers les rafraîchissements (#69), et l'empreinte de ce qui en est affiché.
 local shownKey, shownEmpreinte
@@ -169,7 +169,6 @@ function ns.ctDescribe(c, me)
     add(("   solde (reçu − donné, en valeurs du contrat) : %s"):format(ns.moneySigned(c.net or 0)))
     if c.unconfirmed then add(("   |cffe6994d! %d échange(s) à vérifier : terminés, mais ton or ou tes sacs n'ont pas bougé comme prévu|r"):format(#c.unconfirmed)) end
   end
-  if c.unsaved then add("|cffe6994d! Pas encore enregistré sur le disque : « Sauvegarder » (/reload).|r") end
   return table.concat(t, "\n")
 end
 
@@ -203,9 +202,6 @@ local function refresh()
   local c, me = list[pos], ns.me()
   shownKey, shownEmpreinte = c and ns.ctKey(c), c and empreinte(c)
   frame.syncColonne() -- la liste et le contrat affiché ont pu changer
-  local unsaved = false
-  for _, x in ipairs(list) do if x.unsaved then unsaved = true end end
-  frame.save:SetShown(unsaved)
   for _, b in ipairs(frame.actions) do b:Hide() end
   frame.edit:SetShown(false)
   if not c then
@@ -294,7 +290,8 @@ local function build()
   end
   -- Le contrat affiché : une colonne de tous les contrats, comme celle des projets de Composants (skill ui-addon : pas de
   -- menu déroulant) ; une entrée par contrat, qui et quelle version, l'état en dessous ; celle affichée surlignée (le
-  -- surlignage du jeu, tenu, et un trait doré) ; clic = l'afficher. Elle défile au-delà de sa hauteur.
+  -- surlignage du jeu, tenu, et un trait doré) ; clic = l'afficher. Elle défile au-delà de sa hauteur. En tête, une ligne
+  -- « + Nouvelle commande » : la Commande à la main, sans arbre ni projet (#38, #70).
   local col = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
   col:SetPoint("TOPLEFT", 10, -30) -- sous la barre de titre du gabarit
   col:SetPoint("BOTTOMLEFT", 10, 10)
@@ -305,11 +302,19 @@ local function build()
   local liste = CreateFrame("Frame", nil, sc)
   liste:SetSize(COL_W - 28, 1)
   sc:SetScrollChild(liste)
+  local nouvelle = CreateFrame("Button", nil, liste)
+  nouvelle:SetSize(COL_W - 28, NOUVELLE_H - 2)
+  nouvelle:SetPoint("TOPLEFT")
+  nouvelle:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+  nouvelle:SetFontString(nouvelle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")) -- doré, aligné sur les noms
+  nouvelle:GetFontString():SetPoint("LEFT", 8, 0)
+  nouvelle:SetText("+ Nouvelle commande")
+  nouvelle:SetScript("OnClick", function() ns.openCommandeMain() end)
   frame.entrees = {}
   local function entree(i)
     local b = CreateFrame("Button", nil, liste)
     b:SetSize(COL_W - 28, ENTREE_H - 2)
-    b:SetPoint("TOPLEFT", 0, -(i - 1) * ENTREE_H)
+    b:SetPoint("TOPLEFT", 0, -NOUVELLE_H - (i - 1) * ENTREE_H)
     b.fond = b:CreateTexture(nil, "BACKGROUND")
     b.fond:SetAllPoints()
     b.fond:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
@@ -342,12 +347,12 @@ local function build()
       b:Show()
     end
     for i = #list + 1, #frame.entrees do frame.entrees[i]:Hide() end
-    liste:SetHeight(#list * ENTREE_H + 8)
+    liste:SetHeight(NOUVELLE_H + #list * ENTREE_H + 8)
     if sc.ScrollBar then sc.ScrollBar:SetShown(liste:GetHeight() > sc:GetHeight()) end -- la barre seulement si ça déborde
   end
 
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-  scroll:SetPoint("TOPLEFT", X0, -60) -- sous « Commande à la main »
+  scroll:SetPoint("TOPLEFT", X0, -34) -- sous la barre de titre
   scroll:SetPoint("BOTTOMRIGHT", -32, 96)
   frame.content = CreateFrame("Frame", nil, scroll)
   frame.content:SetSize(W - X0 - 36, 1)
@@ -386,19 +391,9 @@ local function build()
   frame.refuse:SetPoint("LEFT", frame.accept, "RIGHT", 6, 0)
   frame.reply:SetPoint("LEFT", frame.refuse, "RIGHT", 6, 0)
   frame.replyList:SetPoint("LEFT", frame.reply, "RIGHT", 6, 0)
-  local main = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate") -- une commande sans arbre ni projet (#38)
-  main:SetSize(150, 22)
-  main:SetPoint("TOPRIGHT", -14, -32)
-  main:SetText("Commande à la main")
-  main:SetScript("OnClick", function() ns.openCommandeMain() end)
   frame.send:SetPoint("BOTTOMLEFT", X0, 12)
   frame.withdraw:SetPoint("BOTTOMLEFT", X0, 12)
   frame.manual:SetPoint("LEFT", frame.withdraw, "RIGHT", 6, 0)
-  frame.save = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  frame.save:SetSize(110, 22)
-  frame.save:SetPoint("RIGHT", main, "LEFT", -6, 0) -- en haut, à côté de « Commande à la main » : le bas est aux actions
-  frame.save:SetText("Sauvegarder")
-  frame.save:SetScript("OnClick", ReloadUI)
 
   -- Modifier / contre-proposer : totaux et échéance
   local edit = CreateFrame("Frame", nil, frame)

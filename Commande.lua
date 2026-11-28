@@ -689,7 +689,6 @@ f:SetScript("OnEvent", function(_, event, a1, a2, ...)
   for _, base in ipairs({ db.contracts, db.debug and db.debug.contracts or {} }) do
     for k, c in pairs(base) do if not tostring(c.client):find("^Player%-") then base[k] = nil end end
   end
-  for _, c in pairs(db.contracts) do c.unsaved = nil end -- ce qui est chargé a été enregistré
   ns.purgerProjets(db)
   ns.numeroterAnciennes(db)
 end)

@@ -563,7 +563,6 @@ function ns.ctRecord(c, me, snap, t)
   for _, l in ipairs(inList) do if (c.got[l.id] or 0) < l.qty then done = false end end
   for _, l in ipairs(outList) do if (c.gave[l.id] or 0) < l.qty then done = false end end
   if done then c.status = "clos" end
-  c.unsaved = true
   return r
 end
 

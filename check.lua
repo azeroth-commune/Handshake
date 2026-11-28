@@ -843,6 +843,7 @@ local s2 = snap(BELN, { items = {}, money = 9400 }, { items = { [7963] = 1 }, mo
 assert(ns.ctEvaluate(signed, BOB, s2, clock).ok, "livraison conforme")
 ns.ctRecord(signed, BOB, s2, clock)
 assert(signed.status == "clos" and signed.net == 0, "contrat clos, solde nul")
+assert(signed.unsaved == nil, "plus d'état « non enregistré » (#70)")
 print("Handshake : échanges vérifiés et contrat clos OK")
 
 -- Demande (CONCEPTION.md) : Bob veut une claymore (30 minerais + 4 cuirs lourds), il apporte le cuir (Ctrl+clic),
