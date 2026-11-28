@@ -376,10 +376,11 @@ repondu = function(name, clair)
     else dire(partir(c, clair), clair) end
   end
 end
--- c attend la réponse, ou (c en cours) sa contre-proposition l'attend.
+-- c attend la réponse, ou (c en cours) sa contre-proposition l'attend : renvoie la version en route (c, ou sa
+-- contre-proposition), sinon false.
 function ns.ctEnAttente(c)
   for _, e in ipairs(c.peer and attente[c.peer.name] or {}) do
-    if e.c == c or c.hash and e.c.parent == c.hash and e.c.origin == c.origin and e.c.id == c.id then return true end
+    if e.c == c or c.hash and e.c.parent == c.hash and e.c.origin == c.origin and e.c.id == c.id then return e.c end
   end
   return false
 end

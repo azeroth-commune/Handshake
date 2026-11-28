@@ -339,7 +339,7 @@ test("Dans une réponse, la quantité de ce qu'il veut est grisée, d'après le 
         local rep = boutons(function(t) return t:find("^Réponse à ") ~= nil end)[1]
         assertNotNil(rep, "la Réponse, sur la ligne du projet")
         rep:Click()
-        assertEquals("Préparer la réponse…", action():GetText(), "une réponse se contre-propose, de son panneau")
+        assertEquals("Préparer la réponse…", action():GetText(), "une réponse se prépare, de son panneau")
     end)
     HandshakeDB.commandes[p.id].reponse, p.tenu = nil, nil
     ComposantsFrame:Hide()

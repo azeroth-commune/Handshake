@@ -93,7 +93,9 @@ local function plain(name) return (name:gsub("[\192-\255][\128-\191]*", BASE):lo
 --   signé) ou { texte, champ, unite, montant } (un montant, en cuivre ; champ = "caution" ou "livraison" : un champ à
 --   saisir, suivi de unite, sur un préparé ou un à signer, #74) ;
 --   apres = { notes sous les étapes } ; estimation = { textes }.
-function ns.ctFiche(c, me)
+-- recu (facultatif) : le contrat reçu quand c en est l'aperçu de la saisie (#82) ; le différentiel n° 4 se calcule sur
+-- lui, jamais sur ma saisie.
+function ns.ctFiche(c, me, recu)
   local status = ns.ctStatus(c)
   local peer, artisan = c.peer or {}, me == c.artisan
   local other = peer.name or "?" -- le nom donné par le serveur, jamais déduit du GUID
@@ -114,13 +116,14 @@ function ns.ctFiche(c, me)
     local o2 = x.peer and x.peer.name or other
     if o2 ~= other and plain(o2) == plain(other) then alerte(("Nom très proche de %s : vérifie que c'est bien la bonne personne."):format(o2), true) break end
   end
-  if c.prev then -- n° 4 : ce qui a changé
+  local r = recu or c
+  if r.prev then -- n° 4 : ce qui a changé, de la version d'avant à la version reçue
     local ch = {}
-    local pc, pd = ns.ctTotal(c.prev.m), ns.ctTotal(c.prev.o)
-    if pc ~= caution then ch[#ch + 1] = ("caution %s -> %s"):format(ns.money(pc), ns.money(caution)) end
-    if pd ~= delivery then ch[#ch + 1] = ("livraison %s -> %s"):format(ns.money(pd), ns.money(delivery)) end
-    if c.prev.d ~= c.d then ch[#ch + 1] = "échéance changée" end
-    for _, pair in ipairs({ { c.prev.m, c.m }, { c.prev.o, c.o } }) do
+    local pc, pd, rc, rd = ns.ctTotal(r.prev.m), ns.ctTotal(r.prev.o), ns.ctTotal(r.m), ns.ctTotal(r.o)
+    if pc ~= rc then ch[#ch + 1] = ("caution %s -> %s"):format(ns.money(pc), ns.money(rc)) end
+    if pd ~= rd then ch[#ch + 1] = ("livraison %s -> %s"):format(ns.money(pd), ns.money(rd)) end
+    if r.prev.d ~= r.d then ch[#ch + 1] = "échéance changée" end
+    for _, pair in ipairs({ { r.prev.m, r.m }, { r.prev.o, r.o } }) do
       local old = {}
       for _, l in ipairs(pair[1]) do old[l.id] = l.qty end
       for _, l in ipairs(pair[2]) do
@@ -129,7 +132,7 @@ function ns.ctFiche(c, me)
       end
       for id in pairs(old) do ch[#ch + 1] = ns.itemLabel(id) .. " retiré" end
     end
-    alerte(("Changé depuis la v%s : %s"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
+    alerte(("Changé depuis la v%s : %s"):format(r.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
   end
   -- Sans prix : l'artisan le chiffre sur la fiche d'un à signer ou de son brouillon ; le client l'attend tant que rien
   -- n'est signé. Signé ou terminé, plus rien à chiffrer : pas d'alerte (#82).
@@ -184,7 +187,11 @@ function ns.ctFiche(c, me)
     else etape("1. Composants", "donnes", "donne", apports, cautionL) end
   end
   local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery), champ = "livraison", unite = "po", montant = delivery } }
-  if not unique then paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s)|r"):format(ns.money(caution), ns.moneySigned(delivery - caution)) } end
+  if not unique then -- au cuivre près (#82) : moneySigned arrondit au-delà d'1 po
+    local prix = delivery - caution
+    paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s%s|r|cff999999)|r"):format(ns.money(caution),
+      prix >= 0 and "|cff59cc73+" or "|cffe64d4d-", ns.money(math.abs(prix))) }
+  end
   local titre = unique and "Livraison" or "2. Livraison"
   if artisan then etape(titre, "livres", "paie", livre, paie) else etape(titre, "paies", "livre", paie, livre) end
   if unique then f.apres[#f.apres + 1] = "|cff999999Vente simple : rien n'est apporté, donc pas de caution ; le panneau vérifiera l'objet et le prix.|r" end
@@ -274,13 +281,16 @@ end
 -- saisie n'est jamais écrasée par un rafraîchissement, et ne change ni le contrat ni son empreinte (#69) ; le clic lit
 -- ce qu'ils montrent.
 local function jours(c) return (("%.1f"):format(math.max(0, (c.d - GetServerTime()) / 86400)):gsub("%.0$", "")) end
-local function remplir(c)
+-- montre (facultatif) : la version dont les champs montrent les montants (la contre-proposition en route, #82) ; les
+-- valeurs reçues restent celles de c.
+local function remplir(c, montre)
   local ch = frame.champs
+  montre = montre or c
   ch.remplit = true
   ch.recu = { caution = #c.m > 0 and ns.ctTotal(c.m) or nil, livraison = ns.ctTotal(c.o), delai = tonumber(jours(c)) }
-  ch.caution:SetText(po(ns.ctTotal(c.m)))
-  ch.livraison:SetText(po(ns.ctTotal(c.o)))
-  ch.delai:SetText(jours(c))
+  ch.caution:SetText(po(ns.ctTotal(montre.m)))
+  ch.livraison:SetText(po(ns.ctTotal(montre.o)))
+  ch.delai:SetText(jours(montre))
   ch.remplit = nil
 end
 -- Ce que montrent les champs : pour chacun, rien s'il montre la valeur reçue, sinon sa valeur (cuivre, jours), ou false
@@ -335,7 +345,7 @@ local function dessiner()
   end
   frame.vide:Hide()
   local s = champs and saisie() or {}
-  local f, y, n = ns.ctFiche(apercu(c, s), ns.me()), 0, 0
+  local f, y, n = ns.ctFiche(apercu(c, s), ns.me(), c), 0, 0
   if champs and #c.m == 0 then champs.caution:Hide() end -- pas d'apport, pas de caution
   local function place(r, x, dy, largeur)
     r:ClearAllPoints()
@@ -380,7 +390,7 @@ local function dessiner()
     -- Le total qui part peut différer du total tapé d'un cuivre par objet au plus (une valeur par unité, P1) : on le dit (#82).
     local unite = e and l.unite
     if e and type(s[l.champ]) == "number" and s[l.champ] ~= l.montant then
-      unite = ("%s  |cff999999(envoyé : %s, arrondi par objet)|r"):format(l.unite, money(l.montant))
+      unite = ("%s  |cff999999(envoyé : %s, arrondi par objet)|r"):format(l.unite, ns.money(l.montant)) -- exact, au cuivre
     end
     b.texte:SetText(l.id and ligneTexte(l) or unite or l.texte)
     local h = math.max(e and 20 or ICONE, b.texte:GetStringHeight() + 3)
@@ -435,7 +445,8 @@ local function boutons()
   if not c then return end
   local status = ns.ctStatus(c)
   if status == "a_signer" then
-    if saisie().modifie then
+    -- Une contre-proposition en route sur ce contrat : « En route… » et Annuler grisés, quelle que soit la saisie (#82).
+    if attend or saisie().modifie then
       frame.counter:Show(); frame.cancel:Show()
       frame.counter:SetEnabled(not attend) -- en route, sa réponse attendue : pas de second envoi (#71)
       frame.cancel:SetEnabled(not attend)
@@ -490,7 +501,10 @@ local function refresh()
       print(("|cffa98fffContrats :|r %s a envoyé une v%s : tes modifications sont annulées."):format(c.peer.name, c.v))
     end
     ch.pour, ch.cle, ch.recu = pour, c and ns.ctKey(c), nil
-    if pour then remplir(c) end
+    if pour then -- revenu sur un contrat dont la contre-proposition est en route : les champs la montrent (#82)
+      local enRoute = ns.ctEnAttente(c)
+      remplir(c, enRoute and enRoute ~= c and enRoute or nil)
+    end
   end
   dessiner()
   boutons()

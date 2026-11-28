@@ -131,6 +131,21 @@ test("Montants : Contre-proposer en attente de sa réponse, « En route… », c
         assertFalse(bouton(f, "Annuler"):IsEnabled(), "Annuler figé")
         assertFalse(f.champs.livraison:IsEnabled() or f.champs.caution:IsEnabled() or f.champs.delai:IsEnabled(), "champs figés")
         assertEquals("2.5", f.champs.livraison:GetText(), "la saisie reste")
+        -- Un autre contrat affiché puis celui-ci de nouveau : toujours en route, jamais Signer (relecture #82).
+        local AUTRE = "Player-1-0000A083"
+        HandshakeDB.contracts[AUTRE .. "#1"] = recu({ origin = AUTRE, id = "1", client = AUTRE, author = AUTRE, hash = "00000000000a0831",
+            peer = { guid = AUTRE, name = "Autre Contrat" } })
+        SlashCmdList.HANDSHAKECONTRAT()
+        local function afficher(x) for _, b in ipairs(f.entrees) do if b:IsShown() and b.c == x then b:GetScript("OnClick")(b, "LeftButton") return end end error("entrée absente") end
+        afficher(HandshakeDB.contracts[AUTRE .. "#1"])
+        assertEquals("Signer · Refuser · Répondre", (bas(f)), "l'autre contrat")
+        decalage = 5
+        afficher(c)
+        assertEquals("En route… · Annuler", (bas(f)), "revenu : toujours en route")
+        assertFalse(bouton(f, "En route…"):IsEnabled() or bouton(f, "Annuler"):IsEnabled(), "En route… et Annuler grisés")
+        assertEquals("2.5", f.champs.livraison:GetText(), "les champs montrent la contre-proposition en route")
+        assertFalse(f.champs.livraison:IsEnabled(), "champs figés")
+        HandshakeDB.contracts[AUTRE .. "#1"] = nil
         FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|" .. ALI, "WHISPER", ALIN) -- son Handshake répond
         local v2 = HandshakeDB.contracts[cleSur]
         assertTrue(v2 ~= c and v2.v == "2" and v2.status == "envoye", "la v2 est partie à sa réponse")
@@ -148,21 +163,24 @@ test("Montants : la fiche suit la saisie ; le total qui part, arrondi par objet,
     local function texteDe(f, motif)
         for _, b in ipairs(f.cellules) do if b:IsShown() and (b.texte:GetText() or ""):find(motif, 1, true) then return b.texte:GetText() end end
     end
+    local pieces = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
     sur(recu({ o = { { id = 2841, qty = 3, unit = 20000 } } }), function(f)
         local avant, est = texteDe(f, "caution rendue"), f.estimation:GetText()
         assertNotNil(avant, "la ligne caution rendue + prix")
         local e = f.champs.livraison
-        e:SetFocus(); e:SetText("1"); e:GetScript("OnTextChanged")(e, true)
+        e:SetFocus(); e:SetText("10"); e:GetScript("OnTextChanged")(e, true)
         assertTrue(e:IsVisible() and e:HasFocus(), "le champ garde le focus pendant que la fiche se redessine")
         e:ClearFocus()
         assertTrue(texteDe(f, "caution rendue") ~= avant, "caution rendue + prix suit la saisie : " .. tostring(texteDe(f, "caution rendue")))
         assertTrue(f.estimation:GetText() ~= est or not est:find("objets livrés", 1, true), "l'estimation suit la saisie")
         local unite = texteDe(f, "arrondi par objet")
-        assertNotNil(unite, "1 po pour 3 objets : 3333 pc l'objet, le total qui part est dit")
+        assertNotNil(unite, "10 po pour 3 objets : 33333 pc l'objet, le total qui part est dit")
+        assertTrue(unite:find("envoyé : " .. pieces(99999), 1, true) ~= nil, "au cuivre près, pas arrondi à 10 po : " .. unite)
+        assertTrue(texteDe(f, "caution rendue"):find(pieces(99599), 1, true) ~= nil, "le prix au cuivre près : " .. texteDe(f, "caution rendue"))
         present()
         bouton(f, "Contre-proposer"):Click()
         local v2 = HandshakeDB.contracts[CLE]
-        assertEquals(9999, v2.o[1].qty * v2.o[1].unit, "le total dit est celui qui part")
+        assertEquals(99999, v2.o[1].qty * v2.o[1].unit, "le total dit est celui qui part")
     end)
     sur(recu(), function(f)
         taper(f.champs.livraison, "3")
@@ -261,4 +279,19 @@ test("Montants : signé, aucun bouton et les montants en texte ; au plus trois b
             if s ~= "a_signer" then assertEquals(0, #champsVus(f), s .. " : pas de champ") end
         end)
     end
+end)
+
+-- Relecture #82 : le différentiel n° 4 (« Changé depuis la v1 ») se calcule sur la version reçue, jamais sur ma saisie.
+test("Montants : pendant la saisie, « Changé depuis » montre toujours le changement de l'autre", function()
+    local pieces = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+    local d = GetServerTime() + 3 * 86400
+    local c = recu({ v = "2", parent = "00000000000b7400", d = d, o = { { id = 2841, qty = 1, unit = 600000 } },
+        prev = { v = "1", m = { { id = 2770, qty = 4, unit = 100 } }, o = { { id = 2841, qty = 1, unit = 450000 } }, d = d } })
+    sur(c, function(f)
+        local attendu = ("livraison %s -> %s"):format(pieces(450000), pieces(600000))
+        assertTrue(f.alertes:GetText():find(attendu, 1, true) ~= nil, "avant la saisie : " .. f.alertes:GetText())
+        taper(f.champs.livraison, "10")
+        assertTrue(f.alertes:GetText():find(attendu, 1, true) ~= nil, "pendant la saisie, le changement de Bob : " .. f.alertes:GetText())
+        assertTrue(f.alertes:GetText():find(pieces(100000), 1, true) == nil, "ma saisie n'entre pas dans le différentiel")
+    end)
 end)
