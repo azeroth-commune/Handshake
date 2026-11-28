@@ -1685,7 +1685,8 @@ for _, f in ipairs({ "Calcul", "Projet", "Fenetre", "Besoins" }) do
 end
 for f in hstoc:gmatch("([%w_]+)%.lua") do
   local code = io.open("Handshake/" .. f .. ".lua"):read("*a"):gsub("%-%-[^\n]*", "")
-  for _, m in ipairs({ "ComposantsDB", "ComposantsFrame", "craftPlan", "projetArbre", "dessinArbre", "HandleModifiedItemClick" }) do
+  -- (HandleModifiedItemClick revient pour les objets de la fiche du contrat, #73 ; la commande à la main ne le prend pas, plus haut.)
+  for _, m in ipairs({ "ComposantsDB", "ComposantsFrame", "craftPlan", "projetArbre", "dessinArbre" }) do
     assert(not code:find(m, 1, true), f .. ".lua : " .. m)
   end
 end

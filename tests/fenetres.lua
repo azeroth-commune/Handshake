@@ -49,22 +49,22 @@ async_test("Commande à la main agrandie : plus de lignes, les boutons du bas re
     end)
 end)
 
-async_test("Contrats agrandie : le texte suit la largeur ; aucun bouton en haut, la fiche sous la barre de titre", function(done)
+async_test("Contrats agrandie : la fiche suit la largeur ; aucun bouton en haut, la fiche sous la barre de titre", function(done)
     SlashCmdList.HANDSHAKECONTRAT()
     local f = HandshakeContratsFrame
     local w, h = f:GetSize()
     for _, t in ipairs({ "Commande à la main", "Sauvegarder" }) do assertNil(bouton(f, t), "plus de « " .. t .. " »") end
-    local haut = f.body:GetTop()
+    local haut = f.content:GetTop()
     assertTrue(haut <= f:GetTop() - 24 and haut >= f:GetTop() - 40, "la fiche sous la barre de titre : " .. (f:GetTop() - haut))
-    local avant = f.body:GetWidth()
+    local avant = f.content:GetWidth()
     f:SetSize(w + 200, h)
     ensuite(done, function()
         done(function()
-            local large = f.body:GetWidth()
+            local large = f.content:GetWidth()
             f:SetSize(w, h)
             f:Hide()
-            assertTrue(large >= avant + 190, "le texte s'élargit avec la fenêtre : " .. avant .. " -> " .. large)
-            assertTrue(avant >= 440, "à la taille de départ, le texte a sa place : " .. avant)
+            assertTrue(large >= avant + 190, "la fiche s'élargit avec la fenêtre : " .. avant .. " -> " .. large)
+            assertTrue(avant >= 440, "à la taille de départ, la fiche a sa place : " .. avant)
         end)
     end)
 end)
@@ -91,7 +91,7 @@ test("Contrats : une colonne à gauche, une entrée par contrat ; un clic l'affi
             assertNotNil(b, "l'entrée de " .. noms[i])
             assertTrue(b.nom:GetText():find(noms[i], 1, true) == 1, b.nom:GetText())
             b:Click()
-            assertTrue(f.body:GetText():find("Contrat avec " .. noms[i], 1, true) ~= nil, "le clic affiche " .. noms[i])
+            assertTrue(f.titre:GetText():find(noms[i], 1, true) == 1, "le clic affiche " .. noms[i])
             for _, x in ipairs(montrees) do assertEquals(x == b, x.fond:IsShown(), "surlignée : seulement l'affichée") end
             assertTrue(b.trait:IsShown(), "le trait doré")
             assertEquals(({ "brouillon", "en attente", "à signer", "signé" })[i], (b.etat:GetText():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")), "l'état court")
@@ -101,11 +101,11 @@ test("Contrats : une colonne à gauche, une entrée par contrat ; un clic l'affi
         for k, x in ipairs(montrees) do rang[x.c] = k end
         local function r(i) return rang[HandshakeDB.contracts[cles[i]]] end
         assertTrue(r(3) < r(1) and r(1) < r(2) and r(2) < r(4), "triée comme le menu d'avant")
-        assertTrue(montrees[1]:GetLeft() < f.body:GetLeft(), "la colonne à gauche du contrat")
+        assertTrue(montrees[1]:GetLeft() < f.content:GetLeft(), "la colonne à gauche du contrat")
         -- « + Nouvelle commande » : la première ligne de la colonne, au-dessus de tous les contrats ; elle ouvre la Commande à la main.
         local nouvelle = bouton(f, "+ Nouvelle commande")
         assertNotNil(nouvelle, "« + Nouvelle commande »")
-        assertTrue(nouvelle:GetLeft() < f.body:GetLeft(), "dans la colonne")
+        assertTrue(nouvelle:GetLeft() < f.content:GetLeft(), "dans la colonne")
         for _, x in ipairs(montrees) do assertTrue(nouvelle:GetBottom() >= x:GetTop() - 1, "au-dessus de " .. x.nom:GetText()) end
         nouvelle:Click()
         assertTrue(HandshakeMainFrame and HandshakeMainFrame:IsShown(), "la Commande à la main s'ouvre")

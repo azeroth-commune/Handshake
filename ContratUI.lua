@@ -1,6 +1,7 @@
--- Handshake, la fenêtre des contrats (/contrat). Un contrat à la fois : qui donne quoi à chaque étape,
--- ce qui a changé depuis la version d'avant, TON estimation de la caution et ta perte maximale (P8), les
--- vérifications (objets liés, besoins plus gros que les recettes, nom proche d'un autre), l'avancement.
+-- Handshake, la fenêtre des contrats (/contrat). Un contrat à la fois, sa fiche lue comme la fenêtre d'échange du jeu
+-- (#73) : l'en-tête (la bulle du nom : GUID, empreinte, identité), les alertes quand il y en a (identité pas vérifiée,
+-- nom proche, ce qui a changé depuis la version d'avant, vérifications), qui donne quoi à chaque étape en deux colonnes
+-- avec l'avancement une fois signé, TON estimation de la caution et ta perte maximale (P8).
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
 -- « Vérifier et envoyer… » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants)
 -- en ouvre le brouillon, relu ici ; « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un
@@ -77,7 +78,8 @@ local function plain(name) return name:lower():gsub("[\128-\255]", "") end
 -- en alertes, en haut, seulement quand elles s'appliquent ; TON estimation et ta perte maximale en bas (P8).
 --   titre, echeance, role ; bulle = { lignes } ; alertes = { textes } ;
 --   etapes = { { titre, gauche = { titre, lignes }, droite = { titre, lignes } } }, la gauche toujours « Tu … » ; une
---   ligne : { id, qty, unit, fait, mot } (un objet ; fait = l'avancement, une fois signé) ou { texte } (un montant) ;
+--   ligne : { id, qty, detail, fait, mot } (un objet ; detail = son prix au contrat ; fait = l'avancement, une fois
+--   signé) ou { texte } (un montant) ;
 --   apres = { notes sous les étapes } ; estimation = { textes }.
 function ns.ctFiche(c, me)
   local status = ns.ctStatus(c)
@@ -145,10 +147,10 @@ function ns.ctFiche(c, me)
 
   -- Les étapes en deux colonnes, la mienne à gauche ; l'avancement (ce que ton addon a vu passer) une fois signé.
   local suivi = c.signed or c.ledger
-  local function objets(list, recu)
+  local function objets(list, recu, detail)
     local t = {}
     for _, l in ipairs(list) do
-      t[#t + 1] = { id = l.id, qty = l.qty, unit = l.unit, mot = recu and "reçu" or "donné",
+      t[#t + 1] = { id = l.id, qty = l.qty, detail = detail:format(ns.money(l.unit)), mot = recu and "reçu" or "donné",
         fait = suivi and ((recu and (c.got or {}) or (c.gave or {}))[l.id] or 0) or nil }
     end
     return t
@@ -159,11 +161,11 @@ function ns.ctFiche(c, me)
   end
   local unique = #c.m == 0
   if not unique then
-    local apports, cautionL = objets(c.m, artisan), { { texte = ns.money(caution) .. " de caution" } }
+    local apports, cautionL = objets(c.m, artisan, "caution %s l'unité"), { { texte = ns.money(caution) .. " de caution" } }
     if artisan then etape("1. Composants", "donnes", "donne", cautionL, apports)
     else etape("1. Composants", "donnes", "donne", apports, cautionL) end
   end
-  local livre, paie = objets(c.o, not artisan), { { texte = ns.money(delivery) } }
+  local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery) } }
   if not unique then paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s)|r"):format(ns.money(caution), ns.moneySigned(delivery - caution)) } end
   local titre = unique and "Livraison" or "2. Livraison"
   if artisan then etape(titre, "livres", "paie", livre, paie) else etape(titre, "paies", "livre", paie, livre) end
@@ -183,10 +185,10 @@ function ns.ctFiche(c, me)
   return f
 end
 
--- Une ligne d'étape en texte : « 20 × Cuivre  donné 3/20 », ou le montant.
+-- Une ligne d'étape en texte : « 20 Cuivre  donné 3/20 », ou le montant.
 local function ligneTexte(l)
   if not l.id then return l.texte end
-  local s = ("%d × %s"):format(l.qty, ns.itemLabel(l.id))
+  local s = ("%d %s"):format(l.qty, ns.itemLabel(l.id))
   if l.fait then s = s .. ("  %s%s %d/%d|r"):format(l.fait >= l.qty and "|cff59cc73" or "|cff999999", l.mot, l.fait, l.qty) end
   return s
 end
@@ -203,7 +205,7 @@ function ns.ctDescribe(c, me)
     add(e.titre)
     for _, col in ipairs({ e.gauche, e.droite }) do
       add("   " .. col.titre)
-      for _, l in ipairs(col.lignes) do add("      " .. ligneTexte(l)) end
+      for _, l in ipairs(col.lignes) do add("      " .. ligneTexte(l) .. (l.detail and ("   (" .. l.detail .. ")") or "")) end
     end
   end
   for _, s in ipairs(f.apres) do add(s) end
@@ -230,6 +232,103 @@ end
 -- Ce qui est affiché d'un contrat (un brouillon n'a pas encore d'empreinte : on la calcule) : ses termes et son état.
 local function empreinte(c) return ns.ctHash(ns.ctCanonical(c)) .. c.status end
 
+-- Un objet de la fiche se comporte comme un objet du jeu (skill ui-addon, modèle : la frise de Maîtrise) : la vraie bulle
+-- puis son prix au contrat ; Maj+clic = lien dans le chat, Ctrl+clic = cabine d'essayage (HandleModifiedItemClick).
+local function lien(id)
+  local l = ns.lienObjet(id)
+  return l:find("|H", 1, true) and l or ("|cffffffff|Hitem:%d::::::::::::::::|h%s|h|r"):format(id, l) -- pas encore chargé : fait main
+end
+local function bulleObjet(self)
+  local l = self.l
+  if not (l and l.id) then return end
+  GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+  GameTooltip:SetItemByID(l.id)
+  GameTooltip:AddLine(" ")
+  GameTooltip:AddLine(("%d au contrat, %s"):format(l.qty, l.detail), 1, 0.82, 0)
+  GameTooltip:AddLine("Maj+clic : le lien dans le chat", 0.6, 0.6, 0.6)
+  GameTooltip:Show()
+end
+local function clicObjet(self)
+  if self.l and self.l.id then HandleModifiedItemClick(lien(self.l.id)) end
+end
+
+-- La fiche du contrat affiché (frame.ficheDe), dessinée de haut en bas dans le contenu qui défile, à sa largeur :
+-- en-tête, alertes, étapes en deux colonnes (la mienne à gauche), estimation (#73). Redessinée quand la largeur change.
+local ETAPE_W, ICONE = 92, 16
+local function dessiner()
+  local C, c = frame.content, frame.ficheDe
+  local w = C:GetWidth()
+  for _, r in ipairs(frame.fiche) do r:Hide() end
+  for _, b in ipairs(frame.cellules) do b:Hide() end
+  if not c then
+    frame.vide:Show()
+    frame.vide:SetWidth(w - 6)
+    C:SetHeight(frame.vide:GetStringHeight() + 10)
+    return
+  end
+  frame.vide:Hide()
+  local f, y, n = ns.ctFiche(c, ns.me()), 0, 0
+  local function place(r, x, dy, largeur)
+    r:ClearAllPoints()
+    r:SetPoint("TOPLEFT", C, "TOPLEFT", x, -(y + (dy or 0)))
+    if largeur then r:SetWidth(largeur) end
+    r:Show()
+  end
+  local function texte(r, s, x, largeur, apres)
+    r:SetText(s)
+    place(r, x, 0, largeur)
+    y = y + r:GetStringHeight() + (apres or 6)
+  end
+  local function trait(r) place(r, 0, 2, w - 6); y = y + 10 end
+  -- En-tête : le titre est le bouton de la bulle du nom ; l'échéance à droite.
+  frame.titre:SetText(f.titre)
+  frame.titre.bulle = f.bulle
+  place(frame.titre, 0, 0, w - 6)
+  frame.echeance:SetText(f.echeance)
+  frame.echeance:Show()
+  y = y + 20
+  texte(frame.role, f.role, 0, w - 6)
+  if #f.alertes > 0 then texte(frame.alertes, table.concat(f.alertes, "\n"), 0, w - 6) end
+  trait(frame.traits[1])
+  -- Les étapes : titre de l'étape et des deux colonnes sur une rangée, puis une rangée par ligne.
+  local col = (w - 6 - ETAPE_W) / 2
+  local function cellule(l, x)
+    n = n + 1
+    local b = frame.cellules[n] or frame.nouvelleCellule()
+    b.l = l
+    b.icone:SetShown(l.id ~= nil)
+    if l.id then b.icone:SetTexture(C_Item.GetItemIconByID(l.id)) end
+    b.texte:ClearAllPoints()
+    b.texte:SetPoint("TOPLEFT", l.id and ICONE + 4 or 0, -3)
+    b.texte:SetWidth(col - (l.id and ICONE + 8 or 4))
+    b.texte:SetText(l.id and ligneTexte(l) or l.texte)
+    local h = math.max(ICONE, b.texte:GetStringHeight() + 3)
+    b:SetSize(col - 4, h)
+    place(b, x)
+    return h
+  end
+  for i, e in ipairs(f.etapes) do
+    local t = frame.etapes[i]
+    t[1]:SetText(e.titre); place(t[1], 0)
+    t[2]:SetText(e.gauche.titre); place(t[2], ETAPE_W, 0, col - 4)
+    t[3]:SetText(e.droite.titre); place(t[3], ETAPE_W + col, 0, col - 4)
+    y = y + 16
+    for k = 1, math.max(#e.gauche.lignes, #e.droite.lignes) do
+      local h = 0
+      if e.gauche.lignes[k] then h = math.max(h, cellule(e.gauche.lignes[k], ETAPE_W)) end
+      if e.droite.lignes[k] then h = math.max(h, cellule(e.droite.lignes[k], ETAPE_W + col)) end
+      y = y + h + 3
+    end
+    y = y + 6
+  end
+  if #f.apres > 0 then texte(frame.apres, table.concat(f.apres, "\n"), 0, w - 6) end
+  trait(frame.traits[2])
+  texte(frame.estimation, table.concat(f.estimation, "\n"), 0, w - 6, 4)
+  C:SetHeight(y + 6)
+  local barre = frame.scroll.ScrollBar
+  if barre then barre:SetShown(C:GetHeight() > frame.scroll:GetHeight()) end -- la barre seulement si ça déborde, comme la colonne
+end
+
 local function refresh()
   if Composants then Composants.Rafraichir() end -- l'état des contrats d'un projet (son emplacement du bloc) se lit ici
   if ns.refreshCommandeMain then ns.refreshCommandeMain() end
@@ -246,13 +345,9 @@ local function refresh()
   frame.syncColonne() -- la liste et le contrat affiché ont pu changer
   for _, b in ipairs(frame.actions) do b:Hide() end
   frame.edit:SetShown(false)
-  if not c then
-    frame.body:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « + Nouvelle commande » puis « Préparer la demande ».|r")
-    frame.content:SetHeight(frame.body:GetStringHeight() + 10)
-    return
-  end
-  frame.body:SetText(ns.ctDescribe(c, me))
-  frame.content:SetHeight(frame.body:GetStringHeight() + 10)
+  frame.ficheDe = c
+  dessiner()
+  if not c then return end
   local status = ns.ctStatus(c)
   local function show(b) b:Show() end
   if status == "a_signer" then
@@ -428,19 +523,69 @@ local function build()
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", X0, -34) -- sous la barre de titre
   scroll:SetPoint("BOTTOMRIGHT", -32, 96)
-  frame.content = CreateFrame("Frame", nil, scroll)
-  frame.content:SetSize(W - X0 - 36, 1)
-  scroll:SetScrollChild(frame.content)
-  frame.body = frame.content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  frame.body:SetPoint("TOPLEFT")
-  frame.body:SetWidth(W - X0 - 42)
-  scroll:SetScript("OnSizeChanged", function(_, w) -- le texte suit la largeur de la fenêtre agrandie
-    frame.content:SetWidth(w)
-    frame.body:SetWidth(w - 6)
-    frame.content:SetHeight(frame.body:GetStringHeight() + 10)
+  local C = CreateFrame("Frame", nil, scroll)
+  frame.content, frame.scroll = C, scroll
+  C:SetSize(W - X0 - 36, 1)
+  scroll:SetScrollChild(C)
+  scroll:SetScript("OnSizeChanged", function(_, w) -- la fiche suit la largeur de la fenêtre agrandie
+    C:SetWidth(w)
+    if frame.cellules then dessiner() end
   end)
-  frame.body:SetJustifyH("LEFT")
-  frame.body:SetSpacing(3)
+  -- Les morceaux de la fiche (dessiner les place) : frame.fiche les liste pour tout cacher d'un coup.
+  frame.fiche, frame.cellules, frame.traits, frame.etapes = {}, {}, {}, {}
+  local function fs(police)
+    local t = C:CreateFontString(nil, "OVERLAY", police or "GameFontHighlightSmall")
+    t:SetJustifyH("LEFT")
+    t:SetSpacing(2)
+    frame.fiche[#frame.fiche + 1] = t
+    return t
+  end
+  frame.vide = C:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  frame.vide:SetPoint("TOPLEFT")
+  frame.vide:SetJustifyH("LEFT")
+  frame.vide:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « + Nouvelle commande » puis « Préparer la demande ».|r")
+  frame.titre = CreateFrame("Button", nil, C)
+  frame.titre:SetHeight(16)
+  frame.titre:SetFontString(frame.titre:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
+  frame.titre:GetFontString():SetPoint("LEFT")
+  frame.titre:GetFontString():SetJustifyH("LEFT")
+  frame.titre:GetFontString():SetWordWrap(false)
+  frame.titre:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+    for i, l in ipairs(self.bulle) do
+      if i == 1 then GameTooltip:AddLine(l) else GameTooltip:AddLine(l, 1, 1, 1) end
+    end
+    GameTooltip:Show()
+  end)
+  frame.titre:SetScript("OnLeave", function() GameTooltip:Hide() end)
+  frame.fiche[#frame.fiche + 1] = frame.titre
+  frame.echeance = fs()
+  frame.echeance:SetPoint("TOPRIGHT", C, "TOPRIGHT", -6, -2)
+  frame.echeance:SetJustifyH("RIGHT")
+  frame.titre:GetFontString():SetPoint("RIGHT", frame.echeance, "LEFT", -8, 0)
+  frame.role, frame.alertes, frame.apres, frame.estimation = fs(), fs(), fs(), fs()
+  for i = 1, 2 do
+    local t = C:CreateTexture(nil, "ARTWORK")
+    t:SetHeight(1)
+    t:SetColorTexture(1, 0.82, 0, 0.25)
+    frame.traits[i] = t
+    frame.fiche[#frame.fiche + 1] = t
+  end
+  for i = 1, 2 do frame.etapes[i] = { fs("GameFontNormalSmall"), fs("GameFontNormalSmall"), fs("GameFontNormalSmall") } end
+  frame.nouvelleCellule = function()
+    local b = CreateFrame("Button", nil, C)
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b.icone = b:CreateTexture(nil, "ARTWORK")
+    b.icone:SetSize(ICONE, ICONE)
+    b.icone:SetPoint("TOPLEFT")
+    b.texte = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    b.texte:SetJustifyH("LEFT")
+    b:SetScript("OnEnter", bulleObjet)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnClick", clicObjet)
+    frame.cellules[#frame.cellules + 1] = b
+    return b
+  end
 
   -- Actions (bas de la fenêtre)
   frame.accept = button("Signer", 90, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)

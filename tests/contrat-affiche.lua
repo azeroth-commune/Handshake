@@ -26,7 +26,7 @@ for i = 1, 6 do cles[#cles + 1] = ("Player-1-0000D00%d#66%d"):format(i, i) end -
 local function ouvrir() SlashCmdList.HANDSHAKECONTRAT() return HandshakeContratsFrame end -- ouvre ou rafraîchit
 local function affiche(f)
     for _, nom in ipairs({ "Aline Affichee", "Bruno Encours", "Carla Arrivee" }) do
-        if f.body:GetText():find("Contrat avec " .. nom, 1, true) then return nom end
+        if f.titre:GetText():find(nom, 1, true) == 1 then return nom end
     end
 end
 local function cliquerEntree(f, nom)
@@ -177,7 +177,7 @@ test("Contrats, la colonne : nom, icône du premier objet livré, état en coule
         bulle = table.concat(bulle, "\n")
         assertTrue(bulle:find("2 ×", 1, true) and bulle:find("5 ×", 1, true), "les deux objets dans la bulle : " .. bulle)
         cliquerEntree(f, "Aline Affichee")
-        assertTrue(f.body:GetText():find("v1", 1, true) ~= nil, "la version sur la fiche")
+        assertTrue(f.titre:GetText():find("v1", 1, true) ~= nil, "la version sur la fiche")
     end)
 end)
 
@@ -197,7 +197,7 @@ test("Contrats, la colonne : à signer, préparé, en attente, signé, le dernie
         assertTrue(fanny:GetTop() <= f.archives:GetBottom() + 1, "sous l'en-tête")
         assertTrue(fanny:GetAlpha() < 1 and entreeDe(f, "Emma Close"):GetAlpha() == 1, "les archivés plus pâles")
         fanny:Click()
-        assertTrue(f.body:GetText():find("Contrat avec Fanny Refus", 1, true) ~= nil, "un archivé s'affiche et se relit")
+        assertTrue(f.titre:GetText():find("Fanny Refus", 1, true) == 1, "un archivé s'affiche et se relit")
         assertTrue(fanny.fond:IsShown(), "surligné")
         f.archives:Click() -- replié de nouveau (le repli tient pour la session)
         assertEquals(5, #colonne(f), "replié d'un clic")
