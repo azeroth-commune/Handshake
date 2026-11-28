@@ -112,7 +112,7 @@ test("avec Trade Board (version 1) : son dialogue rempli, rien publié par Hands
         FireEvent("CHAT_MSG_WHISPER", "bonjour", "Bel Dupont", "", "", "Bel Dupont", "", 0, 0, "", 0, 1, "Player-1-0000BE11")
         m.player = "Bel Dupont"
         boutonQui(HandshakeMainFrame, function(t) return t == "Préparer la demande" end):Click()
-        boutonQui(HandshakeContratsFrame, function(t) return t == "Envoyer la proposition" end):Click()
+        boutonQui(HandshakeContratsFrame, function(t) return t == "Envoyer" end):Click()
         assertEquals("envoye", HandshakeDB.contracts[m.contrat].status)
         assertEquals("RemoveOwnRequest item 2841", appels[#appels])
         HandshakeDB.contracts[m.contrat] = nil

@@ -1,6 +1,6 @@
 -- Commande à la main (#38) dans le simulateur : la liste se remplit par la recherche d'objets du socle et par un objet déposé,
--- part en demande par le chemin d'aujourd'hui (brouillon relu dans Contrats, « Envoyer la proposition ») ; côté artisan,
--- une demande reçue se répond dans la liste.
+-- part en demande par le chemin d'aujourd'hui (brouillon relu dans Contrats, « Envoyer ») ; côté artisan, sans
+-- Composants, « Répondre » répond à une demande reçue dans la liste (#74 : plus de « Répondre en liste »).
 local function tous(f, ok, out)
     out = out or {}
     for _, c in ipairs({ f:GetChildren() }) do
@@ -76,7 +76,7 @@ test("commande à la main → demande → contrat", function()
     assertEquals("brouillon", ct.status)
     -- son Handshake a répondu (#71) : le contrat part par Handshake
     FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|Player-1-0000BE11", "WHISPER", ARTISAN)
-    bouton(HandshakeContratsFrame, "Envoyer la proposition"):Click()
+    bouton(HandshakeContratsFrame, "Envoyer"):Click()
     assertEquals("envoye", ct.status)
     assertEquals("1", ct.v)
     assertEquals(voulu, ct.o[1].id)
@@ -97,15 +97,20 @@ test("commande à la main → demande → contrat", function()
     HandshakeDB.main = nil
 end)
 
-test("une demande reçue se répond dans la liste : ce qu'il veut est figé", function()
+test("sans Composants, « Répondre » répond dans la liste : ce qu'il veut est figé ; plus de « Répondre en liste »", function()
     local moi = UnitGUID("player")
     local c = { origin = "Player-1-0000B0B0", id = "4242", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = moi,
         m = { { id = 2770, qty = 4, unit = 10 } }, o = { { id = 2841, qty = 2, unit = 5040 } }, d = GetServerTime() + 86400,
         hash = "00000000deadbeef", status = "a_signer", author = "Player-1-0000B0B0", peer = { guid = "Player-1-0000B0B0", name = "Bob Dupont" } }
     HandshakeDB.contracts["Player-1-0000B0B0#4242"] = c
     SlashCmdList.HANDSHAKECONTRAT()
-    parcourirContrats(function() return bouton(HandshakeContratsFrame, "Répondre en liste") ~= nil end)
-    bouton(HandshakeContratsFrame, "Répondre en liste"):Click()
+    parcourirContrats(function() return bouton(HandshakeContratsFrame, "Répondre") ~= nil end)
+    assertNil(bouton(HandshakeContratsFrame, "Répondre en liste"), "un seul « Répondre »")
+    local C0 = Composants
+    Composants = nil
+    local ok, err = pcall(function() bouton(HandshakeContratsFrame, "Répondre"):Click() end)
+    Composants = C0
+    if not ok then error(err, 0) end
     assertTrue(HandshakeMainFrame:IsShown())
     local veux, apporte = unpack(recherches())
     assertTrue(not veux:IsShown(), "ce qu'il veut : pas de recherche")

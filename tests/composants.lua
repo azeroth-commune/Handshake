@@ -153,7 +153,7 @@ local function verifierEtEnvoyer(c)
     assertTrue(HandshakeContratsFrame:IsShown(), "la fiche s'ouvre dans Contrats")
     assertTrue(HandshakeContratsFrame.titre:GetText():find("BROUILLON", 1, true) ~= nil, "sur la fiche de ce brouillon")
     local envoyer
-    for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer la proposition" and b:IsShown() end)) do envoyer = b end
+    for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer" and b:IsShown() end)) do envoyer = b end
     assertNotNil(envoyer, "« Envoyer la proposition » sur la fiche")
     envoyer:Click()
     HandshakeContratsFrame:Hide()
@@ -244,7 +244,7 @@ test("Un contrat parti signale l'écart ; sa nouvelle version se relit avant l'e
         end
     end
     assertTrue(fiche, "le différentiel est affiché avant l'envoi")
-    for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer la proposition" and b:IsShown() end)) do b:Click() end
+    for _, b in ipairs(tous(HandshakeContratsFrame, function(b) return b.GetText and b:GetText() == "Envoyer" and b:IsShown() end)) do b:Click() end
     HandshakeContratsFrame:Hide()
     local v2 = HandshakeDB.contracts[c.contrat]
     assertEquals("2", v2.v)
@@ -462,7 +462,7 @@ end) end)
 
 -- La contre-proposition de l'artisan part de sa fiche (SECURITE.md, P8, n° 11, 13, 26, 57) : « Contre-proposer… » dans le
 -- panneau de la Réponse prépare un brouillon de la nouvelle version et ouvre Contrats dessus (caution, perte maximale,
--- échéance, nom et GUID) ; rien ne part avant « Envoyer la proposition ».
+-- échéance, nom et GUID) ; rien ne part avant « Envoyer ».
 test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fiche ; il part de Contrats", function() sansRecettes(function()
     local cle = "Player-1-0000B0B0#4346"
     local c = { origin = "Player-1-0000B0B0", id = "4346", v = "1", parent = "0", client = "Player-1-0000B0B0", artisan = UnitGUID("player"),
@@ -492,7 +492,7 @@ test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fic
         assertTrue(table.concat(f.titre.bulle, " "):find("Player-1-0000B0B0", 1, true) ~= nil, "le GUID dans la bulle du nom")
         assertTrue(f.echeance:GetText():find("échéance", 1, true) ~= nil, "l'échéance dans l'en-tête")
         FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|Player-1-0000B0B0", "WHISPER", "Bob Dupont") -- il a Handshake (#71)
-        boutonDe(HandshakeContratsFrame, "Envoyer la proposition"):Click()
+        boutonDe(HandshakeContratsFrame, "Envoyer"):Click()
         assertNil(HandshakeDB.contracts[cle .. "+"], "envoyée : plus de brouillon")
         local v2 = HandshakeDB.contracts[cle]
         assertTrue(v2.v == "2" and v2.status == "envoye", "la v2 part de sa fiche")

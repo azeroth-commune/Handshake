@@ -5,15 +5,17 @@
 -- Accepter : jamais par Entrée ni fenêtre surgissante, bouton réarmé 2 s après l'affichage d'une version (P7).
 -- « Vérifier et envoyer… » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants)
 -- en ouvre le brouillon, relu ici ; « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un
--- brouillon, relu ici ; « Nouvelle version »
--- un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer » (ns.ctEnvoyer, #71 : par
--- Handshake s'il l'a, sinon en clair, et alors seulement « Il a dit oui »). Une demande reçue se
--- répond dans l'arbre ou en liste. La fenêtre retient la clé du contrat affiché, et chaque clic de sa fiche part avec ce
+-- brouillon, relu ici ; « Nouvelle version » et la Réponse de l'artisan, un brouillon de la version suivante : rien ne
+-- part avant « Envoyer » (ns.ctEnvoyer, #71 : par Handshake s'il l'a, sinon en clair, et alors seulement « Il a dit
+-- oui »). Montants (#74) : caution, livraison et délai sont des champs de la fiche d'un préparé ou d'un à signer ;
+-- « Envoyer » part avec ce qu'ils montrent ; à signer, un champ changé remplace « Signer » par « Contre-proposer »
+-- (la version suivante, envoyée du même clic) et « Annuler ». Une demande reçue se répond dans l'arbre de Composants,
+-- ou dans la liste sans lui. La fenêtre retient la clé du contrat affiché, et chaque clic de sa fiche part avec ce
 -- contrat-là, tel qu'affiché (empreinte), ou rien (#69).
 local _, ns = ...
 
 -- La colonne des contrats à gauche (COL_W), le contrat affiché à droite de X0. W × H : taille de départ et minimum, ce
--- que prend le cas courant (la ligne « Modifier » et la plus longue rangée de boutons) ; le texte défile, on agrandit.
+-- que prend le cas courant (la fiche d'un contrat à deux étapes et sa rangée de boutons) ; le texte défile, on agrandit.
 local COL_W, X0 = 150, 166
 local W, H = 680, 400
 local ENTREE_H, NOUVELLE_H, ARCHIVES_H = 34, 22, 22
@@ -79,7 +81,8 @@ local function plain(name) return name:lower():gsub("[\128-\255]", "") end
 --   titre, echeance, role ; bulle = { lignes } ; alertes = { textes } ;
 --   etapes = { { titre, gauche = { titre, lignes }, droite = { titre, lignes } } }, la gauche toujours « Tu … » ; une
 --   ligne : { id, qty, detail, fait, mot } (un objet ; detail = son prix au contrat ; fait = l'avancement, une fois
---   signé) ou { texte } (un montant) ;
+--   signé) ou { texte, champ, unite } (un montant ; champ = "caution" ou "livraison" : un champ à saisir, suivi de
+--   unite, sur un préparé ou un à signer, #74) ;
 --   apres = { notes sous les étapes } ; estimation = { textes }.
 function ns.ctFiche(c, me)
   local status = ns.ctStatus(c)
@@ -120,7 +123,7 @@ function ns.ctFiche(c, me)
     alerte(("Changé depuis la v%s : %s"):format(c.prev.v, #ch > 0 and table.concat(ch, " ; ") or "rien"))
   end
   if delivery - caution <= 0 then
-    alerte(artisan and "Aucun prix pour ton travail : « Répondre » ou « Répondre en liste » pour chiffrer ta part."
+    alerte(artisan and "Aucun prix pour ton travail : change la livraison ci-dessous, ou « Répondre » pour chiffrer ta part."
       or "Prix laissé à l'artisan : il le chiffrera en contre-proposant.")
   end
   -- Vérifications (n° 11, 12)
@@ -161,11 +164,12 @@ function ns.ctFiche(c, me)
   end
   local unique = #c.m == 0
   if not unique then
-    local apports, cautionL = objets(c.m, artisan, "caution %s l'unité"), { { texte = ns.money(caution) .. " de caution" } }
+    local apports, cautionL = objets(c.m, artisan, "caution %s l'unité"),
+      { { texte = ns.money(caution) .. " de caution", champ = "caution", unite = "po de caution" } }
     if artisan then etape("1. Composants", "donnes", "donne", cautionL, apports)
     else etape("1. Composants", "donnes", "donne", apports, cautionL) end
   end
-  local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery) } }
+  local livre, paie = objets(c.o, not artisan, "%s l'objet"), { { texte = ns.money(delivery), champ = "livraison", unite = "po" } }
   if not unique then paie[2] = { texte = ("|cff999999(caution rendue %s + prix %s)|r"):format(ns.money(caution), ns.moneySigned(delivery - caution)) } end
   local titre = unique and "Livraison" or "2. Livraison"
   if artisan then etape(titre, "livres", "paie", livre, paie) else etape(titre, "paies", "livre", paie, livre) end
@@ -254,7 +258,9 @@ end
 
 -- La fiche du contrat affiché (frame.ficheDe), dessinée de haut en bas dans le contenu qui défile, à sa largeur :
 -- en-tête, alertes, étapes en deux colonnes (la mienne à gauche), estimation (#73). Redessinée quand la largeur change.
-local ETAPE_W, ICONE = 92, 16
+local ETAPE_W, ICONE, CHAMP_W = 92, 16, 64
+-- Les montants se saisissent sur la fiche d'un préparé ou d'un à signer (#74) ; ailleurs, ils se lisent.
+local function saisissable(c) local s = ns.ctStatus(c) return s == "a_signer" or s == "brouillon" end
 local function dessiner()
   local C, c = frame.content, frame.ficheDe
   local w = C:GetWidth()
@@ -268,6 +274,7 @@ local function dessiner()
   end
   frame.vide:Hide()
   local f, y, n = ns.ctFiche(c, ns.me()), 0, 0
+  local champs = saisissable(c) and frame.champs
   local function place(r, x, dy, largeur)
     r:ClearAllPoints()
     r:SetPoint("TOPLEFT", C, "TOPLEFT", x, -(y + (dy or 0)))
@@ -286,7 +293,13 @@ local function dessiner()
   place(frame.titre, 0, 0, w - 6)
   frame.echeance:SetText(f.echeance)
   frame.echeance:Show()
-  y = y + 20
+  local avant = frame.echeance -- le délai à saisir, juste avant l'échéance
+  if champs then
+    champs.delai:Show(); champs.delaiTexte:Show()
+    avant = champs.delaiTexte
+  end
+  frame.titre:GetFontString():SetPoint("RIGHT", avant, "LEFT", -8, 0)
+  y = y + 22
   texte(frame.role, f.role, 0, w - 6)
   if #f.alertes > 0 then texte(frame.alertes, table.concat(f.alertes, "\n"), 0, w - 6) end
   trait(frame.traits[1])
@@ -295,16 +308,23 @@ local function dessiner()
   local function cellule(l, x)
     n = n + 1
     local b = frame.cellules[n] or frame.nouvelleCellule()
+    local e = champs and l.champ and champs[l.champ] -- un montant à saisir : le champ, puis son unité
     b.l = l
     b.icone:SetShown(l.id ~= nil)
     if l.id then b.icone:SetTexture(C_Item.GetItemIconByID(l.id)) end
     b.texte:ClearAllPoints()
-    b.texte:SetPoint("TOPLEFT", l.id and ICONE + 4 or 0, -3)
-    b.texte:SetWidth(col - (l.id and ICONE + 8 or 4))
-    b.texte:SetText(l.id and ligneTexte(l) or l.texte)
-    local h = math.max(ICONE, b.texte:GetStringHeight() + 3)
+    b.texte:SetPoint("TOPLEFT", l.id and ICONE + 4 or e and CHAMP_W + 12 or 0, e and -6 or -3)
+    b.texte:SetWidth(col - (l.id and ICONE + 8 or e and CHAMP_W + 16 or 4))
+    b.texte:SetText(l.id and ligneTexte(l) or e and l.unite or l.texte)
+    local h = math.max(e and 20 or ICONE, b.texte:GetStringHeight() + 3)
     b:SetSize(col - 4, h)
     place(b, x)
+    if e then
+      e:ClearAllPoints()
+      e:SetPoint("TOPLEFT", b, "TOPLEFT", 6, 0)
+      e:SetFrameLevel(b:GetFrameLevel() + 2) -- au-dessus de la cellule, qui prendrait le clic
+      e:Show()
+    end
     return h
   end
   for i, e in ipairs(f.etapes) do
@@ -329,6 +349,77 @@ local function dessiner()
   if barre then barre:SetShown(C:GetHeight() > frame.scroll:GetHeight()) end -- la barre seulement si ça déborde, comme la colonne
 end
 
+-- Les champs des montants (#74), remplis avec les valeurs reçues une fois par version affichée (frame.champs.pour) : une
+-- saisie n'est jamais écrasée par un rafraîchissement, et ne change ni le contrat ni son empreinte (#69) ; le clic lit
+-- ce qu'ils montrent.
+local function jours(c) return (("%.1f"):format(math.max(0, (c.d - GetServerTime()) / 86400)):gsub("%.0$", "")) end
+local function remplir(c)
+  local ch = frame.champs
+  ch.remplit = true
+  ch.recu = { caution = #c.m > 0 and ns.ctTotal(c.m) or nil, livraison = ns.ctTotal(c.o), delai = tonumber(jours(c)) }
+  ch.caution:SetText(po(ns.ctTotal(c.m)))
+  ch.livraison:SetText(po(ns.ctTotal(c.o)))
+  ch.delai:SetText(jours(c))
+  ch.remplit = nil
+end
+-- Ce que montrent les champs : pour chacun, rien s'il montre la valeur reçue, sinon sa valeur (cuivre, jours), ou false
+-- s'il est illisible, négatif, ou (délai) hors de 0-30 jours ; modifie = au moins un champ diffère du reçu.
+local function saisie()
+  local ch, s = frame.champs, {}
+  for nom, recu in pairs(ch.recu or {}) do
+    local v = tonumber((ch[nom]:GetText():gsub(",", "."):gsub("^%s+", ""):gsub("%s+$", "")))
+    if v and nom ~= "delai" then v = math.floor(v * 10000 + 0.5) end
+    if v ~= recu then
+      s[nom] = v and v >= 0 and (nom ~= "delai" or v > 0 and v <= 30) and v or false
+      s.modifie = true
+    end
+  end
+  return s
+end
+-- La saisie, ou nil, la raison du refus (une ligne : rien ne part).
+local function lire()
+  local s = saisie()
+  if s.delai == false then return nil, "délai entre 0 et 30 jours : rien n'est parti" end
+  if s.caution == false or s.livraison == false then return nil, "montant illisible ou négatif : rien n'est parti" end
+  return s
+end
+
+-- Les boutons du bas, au plus trois (skill ui-addon) : préparé, « Envoyer » ; à signer, « Signer · Refuser · Répondre »,
+-- ou « Contre-proposer · Annuler » dès qu'un champ diffère du reçu (on ne signe jamais autre chose que ce qui est
+-- affiché) ; en attente, « Retirer » (et « Il a dit oui » parti en clair) ; signé ou terminé, aucun.
+local function boutons()
+  for _, b in ipairs(frame.actions) do b:Hide() end
+  local c = frame.ficheDe
+  if not c then return end
+  local status = ns.ctStatus(c)
+  if status == "a_signer" then
+    if saisie().modifie then
+      frame.counter:Show(); frame.cancel:Show()
+      frame.counter:SetEnabled(not ns.ctEnAttente(c)) -- en route, sa réponse attendue : pas de second envoi (#71)
+    else
+      frame.accept:Show(); frame.refuse:Show()
+      if c.artisan == ns.me() then frame.reply:Show() end
+    end
+  elseif status == "brouillon" then
+    frame.send:Show()
+    frame.send:SetEnabled(not ns.ctEnAttente(c)) -- la question de présence est partie : pas de second envoi (#71)
+  elseif status == "envoye" then
+    frame.withdraw:Show()
+    if c.enClair then frame.manual:Show() end -- seulement parti en clair : parti par Handshake, sa signature compte
+  end
+  -- Réarmement (n° 5) : « Signer » et « Il a dit oui » (une signature locale) s'activent 2 s après le premier affichage
+  -- de CE contrat dans CET état, ou après « Annuler » ; « Refuser » avec « Signer » (il prend la place d'« Annuler »). Le
+  -- clic porte l'empreinte affichée, un autre contrat ne peut pas être signé par lui.
+  local signe = (frame.accept:IsShown() and frame.accept) or (frame.manual:IsShown() and frame.manual)
+  if signe then
+    firstShown[shownEmpreinte] = firstShown[shownEmpreinte] or GetTime()
+    local wait = 2 - (GetTime() - firstShown[shownEmpreinte])
+    signe:SetEnabled(wait <= 0)
+    frame.refuse:SetEnabled(wait <= 0)
+    if wait > 0 then C_Timer.After(wait + 0.05, boutons) end
+  end
+end
+
 local function refresh()
   if Composants then Composants.Rafraichir() end -- l'état des contrats d'un projet (son emplacement du bloc) se lit ici
   if ns.refreshCommandeMain then ns.refreshCommandeMain() end
@@ -340,53 +431,24 @@ local function refresh()
   local function trouve(k) for i, x in ipairs(list) do if ns.ctKey(x) == k then return i end end end
   pos = shownKey and (trouve(shownKey) or trouve((shownKey:gsub("%+$", "")))) or 1
   pos = math.min(math.max(1, pos), math.max(1, #list))
-  local c, me = list[pos], ns.me()
+  local c = list[pos]
   shownKey, shownEmpreinte = c and ns.ctKey(c), c and empreinte(c)
   frame.syncColonne() -- la liste et le contrat affiché ont pu changer
-  for _, b in ipairs(frame.actions) do b:Hide() end
-  frame.edit:SetShown(false)
   frame.ficheDe = c
+  shownHash = c and c.hash
+  -- Une autre version du contrat affiché (la sienne, arrivée pendant la saisie) : la fiche passe à elle, les saisies sont
+  -- jetées, et une ligne le dit ; « Signer » revient désarmé (nouvelle empreinte, n° 5).
+  local ch = frame.champs
+  local pour = c and saisissable(c) and ns.ctKey(c) .. "|" .. (c.hash or ns.ctCanonical(c)) or nil
+  if pour ~= ch.pour then
+    if c and ch.cle == ns.ctKey(c) and ns.ctStatus(c) == "a_signer" and saisie().modifie then
+      print(("|cffa98fffContrats :|r %s a envoyé une v%s : tes modifications sont annulées."):format(c.peer.name, c.v))
+    end
+    ch.pour, ch.cle, ch.recu = pour, c and ns.ctKey(c), nil
+    if pour then remplir(c) end
+  end
   dessiner()
-  if not c then return end
-  local status = ns.ctStatus(c)
-  local function show(b) b:Show() end
-  if status == "a_signer" then
-    show(frame.accept); show(frame.refuse)
-    if c.artisan == me then
-      if Composants then show(frame.reply) end -- sans Composants, pas d'arbre : la liste seulement
-      show(frame.replyList)
-    end
-    shownHash = c.hash
-  end
-  if status == "brouillon" then
-    show(frame.send)
-    frame.send:SetEnabled(not ns.ctEnAttente(c)) -- la question de présence est partie : pas de second envoi (#71)
-  end
-  if status == "envoye" then
-    show(frame.withdraw)
-    if c.enClair then show(frame.manual) end -- seulement parti en clair : parti par Handshake, sa signature compte
-  end
-  -- Réarmement (n° 5) : « Signer » et « Il a dit oui » (une signature locale) s'activent 2 s après le premier affichage
-  -- de CE contrat dans CET état ; le clic porte l'empreinte affichée, un autre contrat ne peut pas être signé par lui.
-  local signe = (status == "a_signer" and frame.accept) or (frame.manual:IsShown() and frame.manual)
-  if signe then
-    firstShown[shownEmpreinte] = firstShown[shownEmpreinte] or GetTime()
-    local wait = 2 - (GetTime() - firstShown[shownEmpreinte])
-    signe:SetEnabled(wait <= 0)
-    if wait > 0 then C_Timer.After(wait + 0.05, refresh) end
-  end
-  if status == "a_signer" or status == "brouillon" then
-    frame.edit:Show()
-    if frame.edit.shownFor ~= (c.hash or ns.ctKey(c) .. ns.ctTotal(c.o) .. ns.ctTotal(c.m) .. c.d) then -- remplis une fois par version (pas d'écrasement pendant la saisie)
-      frame.edit.shownFor = c.hash or ns.ctKey(c) .. ns.ctTotal(c.o) .. ns.ctTotal(c.m) .. c.d
-      frame.edit.caution:SetText(po(ns.ctTotal(c.m)))
-      frame.edit.delivery:SetText(po(ns.ctTotal(c.o)))
-      frame.edit.days:SetText((("%.1f"):format(math.max(0, (c.d - GetServerTime()) / 86400)):gsub("%.0$", "")))
-      frame.edit.initial = { frame.edit.caution:GetText(), frame.edit.delivery:GetText(), frame.edit.days:GetText() }
-    end
-    frame.edit.caution:SetEnabled(#c.m > 0)
-    frame.edit.go:SetText(status == "brouillon" and "Modifier" or "Contre-proposer…")
-  end
+  boutons()
 end
 ns.refreshContracts = refresh
 
@@ -522,7 +584,7 @@ local function build()
 
   local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", X0, -34) -- sous la barre de titre
-  scroll:SetPoint("BOTTOMRIGHT", -32, 96)
+  scroll:SetPoint("BOTTOMRIGHT", -32, 44)
   local C = CreateFrame("Frame", nil, scroll)
   frame.content, frame.scroll = C, scroll
   C:SetSize(W - X0 - 36, 1)
@@ -572,6 +634,24 @@ local function build()
     frame.fiche[#frame.fiche + 1] = t
   end
   for i = 1, 2 do frame.etapes[i] = { fs("GameFontNormalSmall"), fs("GameFontNormalSmall"), fs("GameFontNormalSmall") } end
+  -- Les champs des montants (#74), placés par dessiner : caution et livraison dans leur étape, le délai dans l'en-tête.
+  -- Entrée ne valide rien (P7, n° 25) ; chaque frappe ne fait que choisir les boutons (Signer ou Contre-proposer).
+  local ch = {}
+  local function champ(w)
+    local e = CreateFrame("EditBox", nil, C, "InputBoxTemplate")
+    e:SetSize(w, 20)
+    e:SetAutoFocus(false)
+    e:SetScript("OnEnterPressed", e.ClearFocus)
+    e:SetScript("OnTextChanged", function() if not ch.remplit then boutons() end end)
+    frame.fiche[#frame.fiche + 1] = e
+    return e
+  end
+  ch.caution, ch.livraison, ch.delai = champ(CHAMP_W), champ(CHAMP_W), champ(32)
+  ch.delai:SetPoint("RIGHT", frame.echeance, "LEFT", -10, 0)
+  ch.delaiTexte = fs()
+  ch.delaiTexte:SetText("délai (jours)")
+  ch.delaiTexte:SetPoint("RIGHT", ch.delai, "LEFT", -10, 0)
+  frame.champs = ch
   frame.nouvelleCellule = function()
     local b = CreateFrame("Button", nil, C)
     b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -588,69 +668,49 @@ local function build()
   end
 
   -- Actions (bas de la fenêtre)
+  local function non(err) print("|cffe64d4dContrats :|r " .. err .. ".") end
   frame.accept = button("Signer", 90, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)
   frame.refuse = button("Refuser", 80, function(c) ns.ctRefuse(c) end)
-  -- « Répondre » : la Réponse, un projet tenu de Composants ouvert en Préparer (seulement s'il est chargé).
-  frame.reply = button("Répondre", 90, function(c) Composants.Ouvrir(ns.projetReponse(c).id) end)
-  frame.replyList = button("Répondre en liste", 130, function(c) ns.openCommandeMain(c) end) -- sans arbre (#38)
-  -- Envoyer (#71) : par Handshake s'il l'a, sinon en clair ; une ligne dans le chat dit comment il est parti.
-  frame.send = button("Envoyer la proposition", 170, function(c)
-    local ok, err = ns.ctEnvoyer(c)
-    if not ok then print("|cffe64d4dContrats :|r " .. err .. ".") end
+  -- « Répondre » (l'artisan) : la Réponse, un projet tenu de Composants ouvert en Préparer ; sans Composants, la liste (#38).
+  frame.reply = button("Répondre", 90, function(c)
+    if Composants then Composants.Ouvrir(ns.projetReponse(c).id) else ns.openCommandeMain(c) end
+  end)
+  -- Contre-proposer (#74) : la version suivante avec les montants affichés, envoyée du même clic par la règle d'Envoyer.
+  -- Refusée (bornes, pas de réponse de son Handshake…) : une ligne le dit, les champs gardent la saisie.
+  frame.counter = button("Contre-proposer", 130, function(c)
+    local s, err = lire()
+    if not s then return non(err) end
+    if not s.modifie then return end
+    local ok, pourquoi = ns.ctCounter(c, s.caution, s.livraison, s.delai)
+    if not ok then non(pourquoi) end
+  end)
+  -- Annuler : les montants reçus reviennent, et « Signer », réarmé (n° 5).
+  frame.cancel = button("Annuler", 80, function(c)
+    remplir(c)
+    firstShown[shownEmpreinte] = GetTime()
+  end)
+  -- Envoyer (#71) : avec les montants affichés (le brouillon les prend), par Handshake s'il l'a, sinon en clair ; une
+  -- ligne dans le chat dit comment il est parti.
+  frame.send = button("Envoyer", 90, function(c)
+    local s, err = lire()
+    if not s then return non(err) end
+    ns.ctEditDraft(c, s.caution, s.livraison, s.delai)
+    local ok, pourquoi = ns.ctEnvoyer(c)
+    if not ok then non(pourquoi) end
   end)
   frame.withdraw = button("Retirer", 90, function(c) ns.ctWithdraw(c) end)
   -- Parti en clair, il n'a pas Handshake : tu notes son accord. Ton panneau vérifiera tes échanges contre TA copie.
   frame.manual = button("Il a dit oui", 110, function(c) ns.ctIlADitOui(c) end)
-  frame.actions = { frame.accept, frame.refuse, frame.reply, frame.replyList, frame.send, frame.withdraw, frame.manual }
+  frame.actions = { frame.accept, frame.refuse, frame.reply, frame.counter, frame.cancel, frame.send, frame.withdraw, frame.manual }
   frame.accept:SetPoint("BOTTOMLEFT", X0, 12)
   frame.refuse:SetPoint("LEFT", frame.accept, "RIGHT", 6, 0)
   frame.reply:SetPoint("LEFT", frame.refuse, "RIGHT", 6, 0)
-  frame.replyList:SetPoint("LEFT", frame.reply, "RIGHT", 6, 0)
+  frame.counter:SetPoint("BOTTOMLEFT", X0, 12)
+  frame.cancel:SetPoint("LEFT", frame.counter, "RIGHT", 6, 0)
   frame.send:SetPoint("BOTTOMLEFT", X0, 12)
   frame.withdraw:SetPoint("BOTTOMLEFT", X0, 12)
   frame.manual:SetPoint("LEFT", frame.withdraw, "RIGHT", 6, 0)
 
-  -- Modifier / contre-proposer : totaux et échéance
-  local edit = CreateFrame("Frame", nil, frame)
-  edit:SetPoint("BOTTOMLEFT", X0, 44)
-  edit:SetSize(W - X0 - 14, 40)
-  local function field(label, w, anchor)
-    local t = edit:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    if anchor then t:SetPoint("LEFT", anchor, "RIGHT", 14, 0) else t:SetPoint("LEFT", 0, 0) end
-    t:SetText(label)
-    local e = CreateFrame("EditBox", nil, edit, "InputBoxTemplate")
-    e:SetSize(w, 22)
-    e:SetPoint("LEFT", t, "RIGHT", 10, 0)
-    e:SetAutoFocus(false)
-    e:SetScript("OnEnterPressed", e.ClearFocus) -- Entrée ne valide rien (P7)
-    return e
-  end
-  edit.caution = field("Caution (po)", 60)
-  edit.delivery = field("Livraison (po)", 60, edit.caution)
-  edit.days = field("Délai (jours)", 36, edit.delivery)
-  edit.go = CreateFrame("Button", nil, edit, "UIPanelButtonTemplate")
-  edit.go:SetSize(90, 22)
-  edit.go:SetPoint("LEFT", edit.days, "RIGHT", 12, 0)
-  edit.go:SetScript("OnClick", function()
-    local c = list[pos]
-    if not c then return end
-    local function copper(e) local n = tonumber((e:GetText():gsub(",", "."))) return n and n >= 0 and math.floor(n * 10000 + 0.5) or nil end
-    -- seuls les champs que tu as modifiés changent quelque chose
-    local init = edit.initial or {}
-    local caution = #c.m > 0 and edit.caution:GetText() ~= init[1] and copper(edit.caution) or nil
-    local delivery = edit.delivery:GetText() ~= init[2] and copper(edit.delivery) or nil
-    local days = edit.days:GetText() ~= init[3] and tonumber((edit.days:GetText():gsub(",", "."))) or nil
-    if not (caution or delivery or days) then return print("Contrats : tu n'as rien modifié.") end
-    if days and (days <= 0 or days > 30) then return print("Contrats : échéance entre 0 et 30 jours.") end
-    if ns.ctStatus(c) == "brouillon" then ns.ctEditDraft(c, caution, delivery, days)
-    else
-      local n, err = ns.ctCounter(c, caution, delivery, days) -- un brouillon : sa fiche, puis « Envoyer la proposition »
-      if not n then return print("|cffe64d4dContrats :|r " .. err .. ".") end
-      return ns.openContracts(ns.ctKey(n))
-    end
-    refresh()
-  end)
-  frame.edit = edit
   frame:SetScript("OnShow", refresh)
 end
 
