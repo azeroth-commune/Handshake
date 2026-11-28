@@ -1900,11 +1900,16 @@ do
   local c7 = brouillon(GGAS, GASN)
   ns.ctEnvoyer(c7)
   minuteurs[1].fn()
-  inject(GASN, BOB, "H|3|" .. GGAS) -- Gaston a installé Handshake : connu présent
   assert(c7.enClair, "v1 partie en clair")
+  -- Gaston toujours sans Handshake (pas connu présent) : la v2 part en clair tout de suite, sans question.
   captes = {}
-  local v2c = assert(ns.ctCounter(c7, nil, 9600))
-  assert(ns.ctEnvoyer(v2c) == v2c and v2c.v == "2" and v2c.status == "envoye" and v2c.enClair and #minuteurs == 1, "la v2 suit la v1 : en clair")
+  local v2s = assert(ns.ctCounter(c7, nil, 9500))
+  assert(ns.ctEnvoyer(v2s) == v2s and v2s.status == "envoye" and v2s.enClair and #minuteurs == 1 and #captes >= 1
+    and captes[1].kind == "chuchotement" and #wire == w0, "v2 en clair sans question : " .. tostring((captes[1] or {}).text))
+  inject(GASN, BOB, "H|3|" .. GGAS) -- Gaston a installé Handshake : connu présent
+  captes = {}
+  local v2c = assert(ns.ctCounter(v2s, nil, 9600))
+  assert(ns.ctEnvoyer(v2c) == v2c and v2c.v == "3" and v2c.status == "envoye" and v2c.enClair and #minuteurs == 1, "la v3 suit la v1 : en clair")
   assert(#captes >= 2 and captes[1].kind == "chuchotement" and #wire == w0, "pas de question ni de contrat par Handshake : " .. tostring(captes[1].text))
   assert(notes[#notes]:find("parti en clair", 1, true), "la ligne du chat : " .. notes[#notes])
   -- Parente partie par Handshake (ou reçue par Handshake) : la nouvelle version part par Handshake, jamais en clair. Fanny
