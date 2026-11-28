@@ -36,7 +36,7 @@ Le texte d'un contrat chuchoté à un joueur sans Handshake ; il ne vaut pas sig
 Clos, refusé, retiré ou échu : plus rien n'en dépend. Un contrat signé mais pas livré n'est pas terminé.
 
 **Archivé** (un contrat):
-Un contrat terminé rangé à part, relisible tel quel ; tout contrat terminé l'est d'office, sauf le dernier terminé, gardé en vue pour qu'on voie son issue (grill du 28/11/2026). Désarchiver le remet parmi les autres.
+Un contrat terminé rangé à part, relisible tel quel ; tout contrat terminé l'est d'office, sauf le dernier terminé, gardé en vue pour qu'on voie son issue (grill du 28/11/2026). Désarchiver le remet parmi les autres, et il y reste : l'archivage d'office ne le reprend plus (#72).
 _Avoid_: supprimé, historique
 
 ### Le prix
