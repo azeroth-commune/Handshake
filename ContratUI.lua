@@ -669,7 +669,10 @@ local function build()
 
   -- Actions (bas de la fenêtre)
   local function non(err) print("|cffe64d4dContrats :|r " .. err .. ".") end
-  frame.accept = button("Signer", 90, function(c) if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end end)
+  frame.accept = button("Signer", 90, function(c)
+    if saisie().modifie then return non("un montant affiché diffère du reçu : rien n'est signé") end -- caché alors ; par sûreté
+    if not ns.ctAccept(c, shownHash) then print("Contrats : la version affichée a changé, relis-la.") end
+  end)
   frame.refuse = button("Refuser", 80, function(c) ns.ctRefuse(c) end)
   -- « Répondre » (l'artisan) : la Réponse, un projet tenu de Composants ouvert en Préparer ; sans Composants, la liste (#38).
   frame.reply = button("Répondre", 90, function(c)
@@ -694,9 +697,10 @@ local function build()
   frame.send = button("Envoyer", 90, function(c)
     local s, err = lire()
     if not s then return non(err) end
+    local m, o, d = c.m, c.o, c.d -- refusé (bornes…) : le brouillon reste tel qu'il était, les champs gardent la saisie
     ns.ctEditDraft(c, s.caution, s.livraison, s.delai)
     local ok, pourquoi = ns.ctEnvoyer(c)
-    if not ok then non(pourquoi) end
+    if not ok then c.m, c.o, c.d = m, o, d; non(pourquoi) end
   end)
   frame.withdraw = button("Retirer", 90, function(c) ns.ctWithdraw(c) end)
   -- Parti en clair, il n'a pas Handshake : tu notes son accord. Ton panneau vérifiera tes échanges contre TA copie.

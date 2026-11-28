@@ -75,6 +75,8 @@ test("Montants : un champ changé, Contre-proposer · Annuler ; Annuler remet le
         assertTrue(bouton(f, "Signer"):IsEnabled(), "affiché depuis 5 s : armé")
         taper(f.champs.livraison, "3")
         assertEquals("Contre-proposer · Annuler", (bas(f)), "Signer caché dès qu'un montant diffère")
+        f.accept:Click()
+        assertEquals("a_signer", HandshakeDB.contracts[CLE].status, "un montant changé : rien n'est signé, même par le bouton caché")
         taper(f.champs.livraison, "2.0")
         assertEquals("Signer · Refuser · Répondre", (bas(f)), "la même valeur : rien de changé")
         taper(f.champs.delai, "x")
@@ -166,6 +168,21 @@ test("Montants : préparé, Envoyer part avec les montants affichés", function(
         assertEquals(100, c.m[1].unit, "la caution pas touchée")
         assertTrue(math.abs(c.d - (GetServerTime() + 5 * 86400)) < 5, "le délai affiché")
     end)
+    cleSur = moi .. "#7402"
+    c.status, c.hash, c.author, c.enClair = "brouillon", nil, nil, nil
+    if ok then ok, err = pcall(sur, c, function(f, dits)
+        present()
+        for _, cas in ipairs({ { f.champs.livraison, "-1" }, { f.champs.delai, "31" }, { f.champs.livraison, "300000" } }) do
+            local n = #dits
+            taper(cas[1], cas[2])
+            bouton(f, "Envoyer"):Click()
+            assertEquals("brouillon", c.status, cas[2] .. " : rien n'est parti")
+            assertTrue(c.o[1].unit == 40000 and math.abs(c.d - (GetServerTime() + 5 * 86400)) < 5, cas[2] .. " : rien n'est rangé")
+            assertEquals(n + 1, #dits, cas[2] .. " : une ligne")
+            assertEquals(cas[2], cas[1]:GetText(), cas[2] .. " : la saisie reste")
+            taper(f.champs.livraison, "4"); taper(f.champs.delai, "5")
+        end
+    end) end
     cleSur = nil
     if not ok then error(err, 0) end
 end)
