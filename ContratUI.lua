@@ -5,7 +5,8 @@
 -- « Vérifier et envoyer… » dans le panneau d'un contrat préparé (Emplacement.lua, un bloc commandé dans Composants)
 -- en ouvre le brouillon, relu ici ; « Préparer la demande » dans la commande à la main (ns.mainPreparer) en fait un
 -- brouillon, relu ici ; « Nouvelle version »
--- un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer ». Une demande reçue se
+-- un brouillon de la version suivante (ns.projetNouvelleVersion) : rien ne part avant « Envoyer » (ns.ctEnvoyer, #71 : par
+-- Handshake s'il l'a, sinon en clair, et alors seulement « Il a dit oui »). Une demande reçue se
 -- répond dans l'arbre ou en liste. La fenêtre retient la clé du contrat affiché, et chaque clic de sa fiche part avec ce
 -- contrat-là, tel qu'affiché (empreinte), ou rien (#69).
 local _, ns = ...
@@ -79,6 +80,7 @@ function ns.ctDescribe(c, me)
   add(("|cffffd100Contrat avec %s|r"):format(ns.identity(other, peer.guid)))
   add(("Toi : %s   ·   v%s   ·   empreinte %s"):format(ns.myIdentity(), c.v, (c.hash or "—"):sub(1, 8)))
   add((STATUS[status] or status) .. ("   ·   tu es %s   ·   échéance %s"):format(artisan and "l'ARTISAN" or "le CLIENT", rel(c.d - GetServerTime())))
+  if c.enClair then add(("|cffe6994dParti en clair : %s n'a pas répondu par Handshake ; s'il dit oui, « Il a dit oui ».|r"):format(other)) end
   add(peer.verified and ("Identité de %s : |cff59cc73confirmée par le serveur|r (GUID %s)"):format(other, tostring(peer.guid))
     or ("Identité de %s : |cffe6994dGUID annoncé, vérifié au premier échange|r (GUID %s)"):format(other, tostring(peer.guid)))
   for _, x in pairs(ns.ctStore()) do -- n° 26 : nom presque identique à un autre partenaire
@@ -225,20 +227,24 @@ local function refresh()
       if Composants then show(frame.reply) end -- sans Composants, pas d'arbre : la liste seulement
       show(frame.replyList)
     end
-    -- Réarmement (n° 5) : « Signer » s'active 2 s après le premier affichage de CETTE version ; le bouton porte
-    -- l'empreinte affichée, une autre version ne peut pas être signée par ce clic.
     shownHash = c.hash
-    firstShown[c.hash] = firstShown[c.hash] or GetTime()
-    local wait = 2 - (GetTime() - firstShown[c.hash])
-    frame.accept:SetEnabled(wait <= 0)
-    if wait > 0 then C_Timer.After(wait + 0.05, refresh) end
   end
-  if status == "brouillon" then show(frame.send) end
-  if status == "envoye" then show(frame.withdraw); show(frame.manual) end
-  if status == "brouillon" or status == "envoye" then
-    frame.readable:ClearAllPoints()
-    frame.readable:SetPoint("LEFT", status == "brouillon" and frame.send or frame.manual, "RIGHT", 6, 0)
-    show(frame.readable)
+  if status == "brouillon" then
+    show(frame.send)
+    frame.send:SetEnabled(not ns.ctEnAttente(c)) -- la question de présence est partie : pas de second envoi (#71)
+  end
+  if status == "envoye" then
+    show(frame.withdraw)
+    if c.enClair then show(frame.manual) end -- seulement parti en clair : parti par Handshake, sa signature compte
+  end
+  -- Réarmement (n° 5) : « Signer » et « Il a dit oui » (une signature locale) s'activent 2 s après le premier affichage
+  -- de CE contrat dans CET état ; le clic porte l'empreinte affichée, un autre contrat ne peut pas être signé par lui.
+  local signe = (status == "a_signer" and frame.accept) or (frame.manual:IsShown() and frame.manual)
+  if signe then
+    firstShown[shownEmpreinte] = firstShown[shownEmpreinte] or GetTime()
+    local wait = 2 - (GetTime() - firstShown[shownEmpreinte])
+    signe:SetEnabled(wait <= 0)
+    if wait > 0 then C_Timer.After(wait + 0.05, refresh) end
   end
   if status == "a_signer" or status == "brouillon" then
     frame.edit:Show()
@@ -258,20 +264,6 @@ ns.refreshContracts = refresh
 ns.ctNotify = function(text)
   print("|cffa98fffContrats :|r " .. text)
   refresh()
-end
-
--- Le texte du contrat en clair, pour quelqu'un qui n'a pas l'addon (il ne vaut pas signature).
-local function readable(c)
-  local SendChatMessage = function(msg, _, _, target) ns.whisper(msg, target) end
-  local other = c.peer and c.peer.name
-  if #c.m > 0 then
-    for _, msg in ipairs(ns.listMessages("Contrat", c.m, ("· composants fournis par le client, caution %s"):format(ns.poText(ns.ctTotal(c.m))))) do
-      SendChatMessage(msg, "WHISPER", nil, other)
-    end
-  end
-  for _, msg in ipairs(ns.listMessages("Contrat", c.o, ("· à la livraison %s · avant le %s"):format(ns.poText(ns.ctTotal(c.o)), date("%d/%m %H:%M", c.d)))) do
-    SendChatMessage(msg, "WHISPER", nil, other)
-  end
 end
 
 local function build()
@@ -422,19 +414,15 @@ local function build()
   -- « Répondre » : la Réponse, un projet tenu de Composants ouvert en Préparer (seulement s'il est chargé).
   frame.reply = button("Répondre", 90, function(c) Composants.Ouvrir(ns.projetReponse(c).id) end)
   frame.replyList = button("Répondre en liste", 130, function(c) ns.openCommandeMain(c) end) -- sans arbre (#38)
+  -- Envoyer (#71) : par Handshake s'il l'a, sinon en clair ; une ligne dans le chat dit comment il est parti.
   frame.send = button("Envoyer la proposition", 170, function(c)
-    local ok, err = ns.ctPropose(c)
+    local ok, err = ns.ctEnvoyer(c)
     if not ok then print("|cffe64d4dContrats :|r " .. err .. ".") end
   end)
   frame.withdraw = button("Retirer", 90, function(c) ns.ctWithdraw(c) end)
-  frame.manual = button("Il a dit oui (sans addon)", 180, function(c)
-    -- Il n'a pas l'addon : tu notes son accord. Ton panneau vérifiera tes échanges contre TA copie.
-    if c.status == "envoye" then
-      c.status, c.signed, c.manual = "signe", GetServerTime(), true
-    end
-  end)
-  frame.readable = button("Envoyer en clair", 130, function(c) readable(c) end)
-  frame.actions = { frame.accept, frame.refuse, frame.reply, frame.replyList, frame.send, frame.withdraw, frame.manual, frame.readable }
+  -- Parti en clair, il n'a pas Handshake : tu notes son accord. Ton panneau vérifiera tes échanges contre TA copie.
+  frame.manual = button("Il a dit oui", 110, function(c) ns.ctIlADitOui(c) end)
+  frame.actions = { frame.accept, frame.refuse, frame.reply, frame.replyList, frame.send, frame.withdraw, frame.manual }
   frame.accept:SetPoint("BOTTOMLEFT", X0, 12)
   frame.refuse:SetPoint("LEFT", frame.accept, "RIGHT", 6, 0)
   frame.reply:SetPoint("LEFT", frame.refuse, "RIGHT", 6, 0)

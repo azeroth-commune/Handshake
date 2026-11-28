@@ -490,6 +490,7 @@ test("Réponse : « Contre-proposer… » prépare un brouillon, relu sur sa fic
         local fiche = HandshakeContratsFrame.body:GetText()
         assertTrue(fiche:find("BROUILLON", 1, true) ~= nil, "sur la fiche du brouillon")
         assertTrue(fiche:find("Player-1-0000B0B0", 1, true) ~= nil and fiche:find("échéance", 1, true) ~= nil, "nom, GUID, échéance")
+        FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|Player-1-0000B0B0", "WHISPER", "Bob Dupont") -- il a Handshake (#71)
         boutonDe(HandshakeContratsFrame, "Envoyer la proposition"):Click()
         assertNil(HandshakeDB.contracts[cle .. "+"], "envoyée : plus de brouillon")
         local v2 = HandshakeDB.contracts[cle]

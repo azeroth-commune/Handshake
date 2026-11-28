@@ -84,7 +84,8 @@ test("Contrats : un clic d'envoi dont le contrat affiché a changé n'envoie rie
         bouton(f, "Envoyer la proposition"):Click()
         assertEquals("brouillon", refait.status, "plus affichable : rien n'est parti")
         assertTrue(#dits > n and dits[#dits]:find("a changé", 1, true) ~= nil, "une ligne le dit")
-        -- relu (la fenêtre redessinée), le clic part avec ce qui est affiché
+        -- relu (la fenêtre redessinée), le clic part avec ce qui est affiché ; Aline a Handshake (un message d'elle : #71)
+        FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|" .. A, "WHISPER", "Aline Affichee")
         db[cles[1]] = refait
         ouvrir()
         cliquerEntree(f, "Aline Affichee")

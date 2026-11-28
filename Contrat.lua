@@ -13,6 +13,7 @@
 --        expéditeur, origine, client, artisan = GUID (« Player-6942-014B6DDC ») ; m, o = "id:qté:unité,…" triés par id
 --   A|3|expéditeur|origine|id|version|empreinte      (accepte cette version précise)
 --   R|3|expéditeur|origine|id|version (refuse)         X|3|expéditeur|origine|id|version (retire sa proposition)
+--   Q|3|expéditeur  (as-tu Handshake ?)                H|3|expéditeur  (oui : la réponse, envoyée seule, sans rien afficher)
 -- Identité (SECURITE.md, n° 26) : le GUID déclaré dans un message n'est pas une preuve. Il doit concorder avec ce que
 -- le serveur a donné (ns.knownGUID : chuchotement, cible, survol, groupe) : un autre GUID appris pour ce nom, ou ce GUID
 -- appris sous un autre nom, fait rejeter le message. Jamais appris, il est accepté pour négocier et vérifié au premier
@@ -226,6 +227,10 @@ function ns.ctBrouillonPerime(c)
 end
 
 local function notify(text) if ns.ctNotify then ns.ctNotify(text) end end
+-- Envoyer (#71) : les joueurs (nom donné par le serveur) dont on sait qu'ils ont Handshake, pour la session ; les envois
+-- qui attendent la réponse à la question de présence, par joueur.
+local presents, attente = {}, {}
+local repondu
 
 local function pendingFrom(sender) -- par nom authentifié : un GUID déclaré ne coûte rien à changer
   local n = 0
@@ -247,6 +252,9 @@ function ns.ctReceive(sender, body)
   end
   local claim = ns.ctCheckClaim(sender, from)
   if claim == "faux" then return notify(("message de %s rejeté : le GUID annoncé n'est pas le sien."):format(sender)) end
+  presents[sender] = true -- un message de contrat valide : il a Handshake (pour la session, #71)
+  if f[1] == "Q" and #f == 3 then return send(sender, wire("H")) end -- répondu en silence : rien d'affiché, rien à cliquer
+  if f[1] == "H" and #f == 3 then return repondu(sender, false) end
   if f[1] == "P" then
     local c, why = ns.ctParse(body, me, t)
     if not c then return notify(("proposition de %s rejetée (%s)."):format(sender, why)) end
@@ -297,20 +305,86 @@ local function horsBornes(c)
   if c.d < now() or c.d > now() + MAX_DAYS * 86400 then return "échéance dépassée ou à plus de 30 jours" end
 end
 
--- Renvoie le contrat envoyé, ou nil, raison (rien n'est enregistré ni envoyé). Un brouillon de nouvelle version (#19)
--- périmé est effacé, pas envoyé ; envoyé, il prend la place de la version en cours.
-function ns.ctPropose(c)
+-- Ce qui doit tenir avant tout envoi : un brouillon de nouvelle version (#19) périmé est effacé, pas envoyé ; puis nos
+-- bornes. Renvoie nil, ou la raison.
+local function pasPret(c)
   if ns.ctBrouillonPerime(c) then
     store()[key(c)] = nil
-    return nil, "le contrat a changé depuis ce brouillon : « Nouvelle version » le refait"
+    return "le contrat a changé depuis ce brouillon : « Nouvelle version » le refait"
   end
-  local err = horsBornes(c)
-  if err then return nil, err end
+  return horsBornes(c)
+end
+
+-- Le texte du contrat en clair, chuchoté à quelqu'un sans Handshake (il ne vaut pas signature).
+local function texteEnClair(c)
+  local other = c.peer.name
+  if #c.m > 0 then
+    for _, msg in ipairs(ns.listMessages("Contrat", c.m, ("· composants fournis par le client, caution %s"):format(ns.poText(ns.ctTotal(c.m))))) do
+      ns.whisper(msg, other)
+    end
+  end
+  for _, msg in ipairs(ns.listMessages("Contrat", c.o, ("· à la livraison %s · avant le %s"):format(ns.poText(ns.ctTotal(c.o)), date("%d/%m %H:%M", c.d)))) do
+    ns.whisper(msg, other)
+  end
+end
+
+-- Le contrat part : par Handshake, ou en clair (marqueur c.enClair, le seul qui permet « Il a dit oui »). Envoyé, un
+-- brouillon de nouvelle version prend la place de la version en cours.
+local function partir(c, clair)
   store()[c.origin .. "#" .. c.id .. "+"] = nil -- une nouvelle version part : un brouillon de la suivante ne vaut plus
-  c.hash, c.author, c.status = ns.ctHash(ns.ctCanonical(c)), ns.me(), "envoye"
+  c.hash, c.author, c.status, c.enClair = ns.ctHash(ns.ctCanonical(c)), ns.me(), "envoye", clair or nil
   store()[key(c)] = c
-  send(c.peer.name, ns.ctMessage(c))
+  if clair then texteEnClair(c) else send(c.peer.name, ns.ctMessage(c)) end
   ns.balayerTB() -- une commande partie en contrat quitte le tableau de Trade Board (Annonce.lua)
+  return c
+end
+
+-- Par Handshake, sans question : renvoie le contrat envoyé, ou nil, raison (rien n'est enregistré ni envoyé).
+function ns.ctPropose(c)
+  local err = pasPret(c)
+  if err then return nil, err end
+  return partir(c)
+end
+
+-- Envoyer (#71, CONTEXT.md) : un seul geste. Si l'on sait qu'il a Handshake, le contrat part par Handshake ; sinon une
+-- question de présence (Q) part, et sa réponse (H) dans les 3 s le fait partir par Handshake, son silence en clair. Le
+-- contrat attend tel quel : modifié ou effacé entre-temps, rien ne part. Renvoie le contrat, ou nil, raison.
+local function dire(c, clair)
+  notify(clair and ("contrat v%s parti en clair à %s (pas de réponse de Handshake) : s'il dit oui, « Il a dit oui »."):format(c.v, c.peer.name)
+    or ("contrat v%s parti signé à %s (il a Handshake)."):format(c.v, c.peer.name))
+end
+repondu = function(name, clair)
+  local liste = attente[name]
+  attente[name] = nil
+  for _, e in ipairs(liste or {}) do
+    local c = e.c
+    local change = store()[key(c)] ~= c or c.status ~= "brouillon" or ns.ctCanonical(c) ~= e.texte
+    local err = change and "le contrat a changé pendant l'attente de sa réponse" or pasPret(c)
+    if err then notify(("rien n'est parti à %s : %s."):format(name, err))
+    else dire(partir(c, clair), clair) end
+  end
+end
+function ns.ctEnAttente(c)
+  for _, e in ipairs(c.peer and attente[c.peer.name] or {}) do if e.c == c then return true end end
+  return false
+end
+function ns.ctEnvoyer(c)
+  if ns.ctEnAttente(c) then return nil, "déjà en route : sa réponse est attendue" end
+  local err = pasPret(c)
+  if err then return nil, err end
+  local name = c.peer.name
+  if presents[name] then
+    dire(partir(c), false)
+    return c
+  end
+  local liste = attente[name]
+  if not liste then
+    liste = {}
+    attente[name] = liste
+    C_Timer.After(3, function() if attente[name] == liste then repondu(name, true) end end)
+  end
+  liste[#liste + 1] = { c = c, texte = ns.ctCanonical(c) }
+  if #liste == 1 then send(name, wire("Q")) end -- après l'inscription : la réponse peut arriver tout de suite (debug)
   return c
 end
 
@@ -328,10 +402,19 @@ function ns.ctRefuse(c)
   send(c.peer.name, wire("R", c.origin, c.id, c.v))
 end
 
+-- Parti en clair : il n'a rien reçu par Handshake, retirer ne change que ma copie (rien ne part).
 function ns.ctWithdraw(c)
   if c.status ~= "envoye" then return end
   c.status = "retire"
-  send(c.peer.name, wire("X", c.origin, c.id, c.v))
+  if not c.enClair then send(c.peer.name, wire("X", c.origin, c.id, c.v)) end
+end
+
+-- « Il a dit oui » (#71) : l'accord d'un joueur sans Handshake, noté à la main. Seulement pour un contrat parti en clair :
+-- parti par Handshake, c'est sa signature qui compte. Mon panneau vérifiera les échanges contre MA copie.
+function ns.ctIlADitOui(c)
+  if c.status ~= "envoye" or not c.enClair then return false end
+  c.status, c.signed, c.manual = "signe", now(), true
+  return true
 end
 
 -- Contre-proposition : nouveaux totaux (caution, livraison) et échéance ; les unités sont mises à l'échelle.

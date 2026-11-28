@@ -74,6 +74,8 @@ test("commande à la main → demande → contrat", function()
     assertTrue(HandshakeContratsFrame:IsShown(), "le brouillon s'ouvre dans les contrats")
     local ct = HandshakeDB.contracts[m.contrat]
     assertEquals("brouillon", ct.status)
+    -- son Handshake a répondu (#71) : le contrat part par Handshake
+    FireEvent("CHAT_MSG_ADDON", "Handshake", "1/1|H|3|Player-1-0000BE11", "WHISPER", ARTISAN)
     bouton(HandshakeContratsFrame, "Envoyer la proposition"):Click()
     assertEquals("envoye", ct.status)
     assertEquals("1", ct.v)
