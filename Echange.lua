@@ -282,12 +282,11 @@ local function confirm(snapshot, tries)
   if not ok and tries < 3 then return C_Timer.After(1, function() confirm(snapshot, tries + 1) end) end
   if ok then
     ns.ctRecord(c, ns.me(), s, GetServerTime())
-    print(("Contrats : échange avec %s inscrit%s. Fais /reload (ou « Sauvegarder » dans /contrat) pour l'enregistrer sur le disque.")
+    print(("Contrats : échange avec %s inscrit%s.")
       :format(tostring(c.peer and c.peer.name), c.status == "clos" and ", contrat CLOS" or ""))
   else
     c.unconfirmed = c.unconfirmed or {}
     table.insert(c.unconfirmed, { t = GetServerTime(), give = s.give, get = s.get })
-    c.unsaved = true
     print("|cffe6994dContrats :|r échange terminé, mais ton or ou tes sacs ne correspondent pas : noté « à vérifier », pas inscrit.")
   end
   if ns.refreshContracts then ns.refreshContracts() end

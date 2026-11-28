@@ -16,7 +16,8 @@ INSTALLER (2 minutes)
 - Rien ne part tout seul : tu cliques toujours toi-même (envoyer, signer, accepter l'échange).
 - Pendant un échange avec quelqu'un avec qui tu as un contrat signé, un panneau s'affiche à droite de la
   fenêtre d'échange et dit si c'est CONFORME au contrat. S'il dit NON CONFORME, n'accepte pas.
-- Après un échange lié à un contrat, tape /reload : c'est ce qui enregistre sur le disque.
+- Si le jeu plante, ce qui n'était pas encore écrit sur le disque est perdu : une étape sans trace n'est pas prouvée,
+  vérifie-la avec l'autre avant de la refaire. /chatlog garde la discussion dans un fichier.
 - Avant de tester, tape une fois :  /console scriptErrors 1   (pour voir les erreurs s'il y en a).
 - Handshake demande l'addon Azeroth Commune (à installer avec lui) : il relève tes persos (sacs, banque, recettes)
   et les prix de l'HV (son scan à l'ouverture de l'HV, ou Auctionator s'il est installé).
@@ -38,7 +39,7 @@ FAIRE UNE DEMANDE DEPUIS UN PROJET (avec l'addon Composants)
   jusqu'à son échéance (rien n'est envoyé). Le bloc redevient à faire toi-même ; refusé, retiré ou échu, pareil.
 
 COMMANDE À LA MAIN (sans arbre)
-  /handshake, /handshake liste, ou « Commande à la main » dans /contrat : deux listes, « ce que je veux » et « ce que
+  /handshake, /handshake liste, ou « + Nouvelle commande » dans /contrat : deux listes, « ce que je veux » et « ce que
   j'apporte ». Tape un objet dans la recherche (ou glisse un objet de tes sacs sur la liste),
   mets l'artisan et ton offre, puis « Préparer la demande » et « Envoyer la proposition » dans /contrat.
   Une demande reçue se répond en liste : « Répondre en liste » dans /contrat (ou « Répondre » avec Composants : la Réponse, un projet de Composants).
