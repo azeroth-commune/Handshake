@@ -1686,6 +1686,42 @@ do
 end
 print("Handshake : remplir ma part OK")
 
+-- Archivage (#72) : un contrat terminé (clos, refusé, retiré, échu) est archivé d'office, sauf le dernier terminé ; un
+-- signé pas livré jamais ; l'échu se calcule avec le temps, donc l'archivage se règle à chaque passage (au tri).
+do
+  local base, avant = { contracts = {} }, HandshakeDB
+  HandshakeDB = base
+  local t0 = 1796000000
+  local function ct(id, status, champs)
+    local c = { origin = MOI, id = id, v = "1", status = status, d = t0 + 86400, received = tonumber(id) }
+    for k, v in pairs(champs or {}) do c[k] = v end
+    base.contracts[MOI .. "#" .. id] = c
+    return c
+  end
+  local signe = ct("10", "signe", { signed = t0 - 50 })
+  local envoye = ct("11", "envoye")
+  local refuse = ct("12", "refuse")
+  local clos = ct("13", "clos", { ledger = { { t = t0 - 10 } } }) -- clos à son dernier échange : le dernier terminé
+  local retire = ct("14", "retire")
+  ns.ctArchiver(t0)
+  assert(refuse.archive and retire.archive, "refusé, retiré : archivés")
+  assert(not clos.archive, "le dernier terminé reste en vue")
+  assert(not signe.archive and not envoye.archive, "ni le signé, ni l'en attente")
+  -- Le temps passe : le signé devient échu à son échéance, plus récent que la clôture, et prend la place du dernier.
+  ns.ctArchiver(t0 + 86400 + 1)
+  assert(ns.ctTermine(signe, t0 + 86400 + 1) and not signe.archive, "échu par le temps : le dernier terminé, en vue")
+  assert(clos.archive, "le clos d'avant part aux archivés")
+  -- Désarchiver : remis parmi les autres, et l'archivage d'office ne le reprend plus (c.desarchive).
+  ns.ctDesarchiver(clos)
+  ns.ctArchiver(t0 + 86400 + 2)
+  assert(not clos.archive, "désarchivé, il le reste")
+  local nouveau = ct("15", "refuse", { received = t0 + 90000 }) -- refusé après : le dernier terminé
+  ns.ctArchiver(t0 + 90000)
+  assert(not nouveau.archive and signe.archive and not clos.archive, "le dernier change ; le désarchivé reste en vue")
+  HandshakeDB = avant
+end
+print("Handshake : archivage des contrats terminés OK")
+
 -- Avec Composants : /handshake <objet> ou /handshake demo … lui sont transmis (l'arbre est chez lui).
 do
   local avant, recu = SlashCmdList.COMPOSANTS, nil

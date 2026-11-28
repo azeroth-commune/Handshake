@@ -488,6 +488,32 @@ function ns.ctStatus(c, t)
   return c.status
 end
 
+-- Terminé (CONTEXT.md) : plus rien n'en dépend. Un signé pas livré ne l'est pas (tant qu'il n'est pas échu).
+local TERMINE = { clos = true, refuse = true, retire = true, echu = true }
+function ns.ctTermine(c, t) return TERMINE[ns.ctStatus(c, t)] or false end
+-- Quand il est devenu terminé : l'échéance pour un échu, le dernier échange pour un clos ; sinon (refusé, retiré) sa
+-- réception ou son numéro (une date de création).
+-- ponytail: refus et retrait ne sont pas datés ; noter le moment aux transitions si le « dernier terminé » se trompe.
+local function fin(c, t)
+  if ns.ctStatus(c, t) == "echu" then return c.d end
+  return c.ledger and c.ledger[#c.ledger].t or c.received or tonumber(c.id) or 0
+end
+-- Archivé (CONTEXT.md, #72) : un champ du contrat (c.archive), réglé à chaque tri (l'échu vient du temps, pas d'une
+-- transition). Tout terminé est archivé d'office, sauf le dernier terminé, gardé en vue ; un archivé le reste. Désarchiver
+-- efface le champ et pose c.desarchive : l'archivage d'office ne reprend plus jamais ce contrat-là (le joueur l'a voulu en
+-- vue ; il ne s'archive plus que d'une autre façon, s'il en vient une).
+function ns.ctArchiver(t)
+  local dernier, quand
+  for _, c in pairs(store()) do
+    if ns.ctTermine(c, t) and (not dernier or fin(c, t) > quand) then dernier, quand = c, fin(c, t) end
+  end
+  for _, c in pairs(store()) do
+    if not ns.ctTermine(c, t) then c.archive = nil -- un signé pas livré n'est jamais archivé
+    elseif c ~= dernier and not c.desarchive then c.archive = true end
+  end
+end
+function ns.ctDesarchiver(c) c.archive, c.desarchive = nil, true end
+
 local function find(list, id)
   for _, l in ipairs(list) do if l.id == id then return l end end
 end
