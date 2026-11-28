@@ -205,7 +205,7 @@ local function refresh()
   for _, b in ipairs(frame.actions) do b:Hide() end
   frame.edit:SetShown(false)
   if not c then
-    frame.body:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « Préparer la demande » dans la commande à la main.|r")
+    frame.body:SetText("|cff999999Aucun contrat. « Commander » un bloc dans Composants, ou « + Nouvelle commande » puis « Préparer la demande ».|r")
     frame.content:SetHeight(frame.body:GetStringHeight() + 10)
     return
   end
