@@ -14,8 +14,9 @@ local _, ns = ...
 -- que prend le cas courant (la ligne « Modifier » et la plus longue rangée de boutons) ; le texte défile, on agrandit.
 local COL_W, X0 = 150, 166
 local W, H = 680, 400
-local ENTREE_H, NOUVELLE_H = 34, 22
+local ENTREE_H, NOUVELLE_H, ARCHIVES_H = 34, 22, 22
 local frame, list, pos, shownHash = nil, {}, 1, nil
+local deplie = false -- « Archivés (n) » replié par défaut, pour la session (#72)
 -- Le contrat affiché, retenu par sa clé à travers les rafraîchissements (#69), et l'empreinte de ce qui en est affiché.
 local shownKey, shownEmpreinte
 local firstShown = {} -- empreinte -> moment où cette version a été affichée pour la première fois (réarmement)
@@ -25,6 +26,8 @@ local STATUS = { brouillon = "|cff999999BROUILLON (pas envoyé)|r", envoye = "|c
 -- Dans la colonne des contrats : l'état en un mot (avec la couleur de STATUS).
 local COURT = { brouillon = "brouillon", envoye = "en attente", a_signer = "à signer", signe = "signé", clos = "clos",
   echu = "échu", refuse = "refusé", retire = "retiré" }
+-- L'ordre de la colonne : à signer, préparé, en attente, signé, puis le dernier terminé (et les désarchivés) ; les
+-- archivés à la fin, sous leur en-tête (#72).
 local ORDER = { a_signer = 1, brouillon = 2, envoye = 3, signe = 4, echu = 5, clos = 6, refuse = 7, retire = 8 }
 
 local money = function(c) return ns.moneyShort(c) end
@@ -178,7 +181,9 @@ local function sorted()
   for k, c in pairs(ns.ctStore()) do
     if ns.ctBrouillonPerime(c) then ns.ctStore()[k] = nil else l[#l + 1] = c end -- la version en cours a changé depuis
   end
+  ns.ctArchiver() -- l'échu vient du temps : l'archivage se règle à chaque tri (#72)
   table.sort(l, function(a, b)
+    if not a.archive ~= not b.archive then return not a.archive end
     local oa, ob = ORDER[ns.ctStatus(a)] or 9, ORDER[ns.ctStatus(b)] or 9
     if oa ~= ob then return oa < ob end
     return (a.received or tonumber(a.id) or 0) > (b.received or tonumber(b.id) or 0)
@@ -195,9 +200,10 @@ local function refresh()
   if not (frame and frame:IsShown()) then return end
   list = sorted()
   -- Le contrat affiché se retrouve par sa clé, pas par sa place : une proposition arrivée en tête ou un brouillon périmé
-  -- effacé ne font rien glisser sous les yeux (#69). Son brouillon parti ou effacé : sa version en cours.
+  -- effacé ne font rien glisser sous les yeux (#69). Son brouillon parti ou effacé : sa version en cours ; sans version en
+  -- cours (brouillon v1 abandonné, contrat effacé) : la tête de liste, pas ce qui a glissé à sa place.
   local function trouve(k) for i, x in ipairs(list) do if ns.ctKey(x) == k then return i end end end
-  pos = shownKey and (trouve(shownKey) or trouve((shownKey:gsub("%+$", "")))) or pos
+  pos = shownKey and (trouve(shownKey) or trouve((shownKey:gsub("%+$", "")))) or 1
   pos = math.min(math.max(1, pos), math.max(1, #list))
   local c, me = list[pos], ns.me()
   shownKey, shownEmpreinte = c and ns.ctKey(c), c and empreinte(c)
@@ -289,32 +295,45 @@ local function build()
     return b
   end
   -- Le contrat affiché : une colonne de tous les contrats, comme celle des projets de Composants (skill ui-addon : pas de
-  -- menu déroulant) ; une entrée par contrat, qui et quelle version, l'état en dessous ; celle affichée surlignée (le
-  -- surlignage du jeu, tenu, et un trait doré) ; clic = l'afficher. Elle défile au-delà de sa hauteur. En tête, une ligne
+  -- menu déroulant) ; une entrée par contrat : l'icône du premier objet livré, le nom de l'autre, l'état en couleur en
+  -- dessous (la version est sur la fiche) ; la bulle donne tous les objets. Celle affichée surlignée (le surlignage du
+  -- jeu, tenu, et un trait doré) ; clic = l'afficher. Elle défile au-delà de sa hauteur. En bas, « Archivés (n) », replié
+  -- par défaut ; clic droit sur un archivé : « Désarchiver » (#72). En tête, fixe hors de la liste qui défile,
   -- « + Nouvelle commande » : la Commande à la main, sans arbre ni projet (#38, #70).
   local col = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
   col:SetPoint("TOPLEFT", 10, -30) -- sous la barre de titre du gabarit
   col:SetPoint("BOTTOMLEFT", 10, 10)
   col:SetWidth(COL_W)
   local sc = CreateFrame("ScrollFrame", nil, col, "UIPanelScrollFrameTemplate")
-  sc:SetPoint("TOPLEFT", 4, -4)
+  sc:SetPoint("TOPLEFT", 4, -4 - NOUVELLE_H)
   sc:SetPoint("BOTTOMRIGHT", -24, 4)
   local liste = CreateFrame("Frame", nil, sc)
   liste:SetSize(COL_W - 28, 1)
   sc:SetScrollChild(liste)
-  local nouvelle = CreateFrame("Button", nil, liste)
+  local nouvelle = CreateFrame("Button", nil, col)
   nouvelle:SetSize(COL_W - 28, NOUVELLE_H - 2)
-  nouvelle:SetPoint("TOPLEFT")
+  nouvelle:SetPoint("TOPLEFT", 4, -4)
   nouvelle:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
   nouvelle:SetFontString(nouvelle:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")) -- doré, aligné sur les noms
   nouvelle:GetFontString():SetPoint("LEFT", 8, 0)
   nouvelle:SetText("+ Nouvelle commande")
   nouvelle:SetScript("OnClick", function() ns.openCommandeMain() end)
+  -- L'en-tête des archivés, comme ceux du journal de quêtes (le + / – du jeu).
+  local archives = CreateFrame("Button", nil, liste)
+  archives:SetSize(COL_W - 28, ARCHIVES_H - 2)
+  archives:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+  archives.signe = archives:CreateTexture(nil, "ARTWORK")
+  archives.signe:SetSize(14, 14)
+  archives.signe:SetPoint("LEFT", 6, 0)
+  archives:SetFontString(archives:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+  archives:GetFontString():SetPoint("LEFT", archives.signe, "RIGHT", 4, 0)
+  archives:SetScript("OnClick", function() deplie = not deplie; frame.syncColonne() end)
+  frame.archives = archives
   frame.entrees = {}
   local function entree(i)
     local b = CreateFrame("Button", nil, liste)
     b:SetSize(COL_W - 28, ENTREE_H - 2)
-    b:SetPoint("TOPLEFT", 0, -NOUVELLE_H - (i - 1) * ENTREE_H)
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     b.fond = b:CreateTexture(nil, "BACKGROUND")
     b.fond:SetAllPoints()
     b.fond:SetTexture("Interface\\QuestFrame\\UI-QuestLogTitleHighlight")
@@ -324,30 +343,59 @@ local function build()
     b.trait:SetPoint("TOPLEFT"); b.trait:SetPoint("BOTTOMLEFT"); b.trait:SetWidth(2)
     b.trait:SetColorTexture(1, 0.82, 0, 0.9)
     b:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    b.icone = b:CreateTexture(nil, "ARTWORK")
+    b.icone:SetSize(22, 22)
+    b.icone:SetPoint("LEFT", 6, 0)
     b.nom = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.nom:SetPoint("TOPLEFT", 8, -4); b.nom:SetPoint("RIGHT", -4, 0)
+    b.nom:SetPoint("TOPLEFT", 32, -4); b.nom:SetPoint("RIGHT", -4, 0)
     b.nom:SetJustifyH("LEFT"); b.nom:SetWordWrap(false)
     b.etat = b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    b.etat:SetPoint("TOPLEFT", 8, -18); b.etat:SetPoint("RIGHT", -4, 0)
+    b.etat:SetPoint("TOPLEFT", 32, -18); b.etat:SetPoint("RIGHT", -4, 0)
     b.etat:SetJustifyH("LEFT")
-    b:SetScript("OnClick", function() shownKey = ns.ctKey(b.c); refresh() end)
+    b:SetScript("OnClick", function(self, souris)
+      local c = self.c
+      if souris ~= "RightButton" then shownKey = ns.ctKey(c); return refresh() end
+      if c.archive then
+        MenuUtil.CreateContextMenu(self, function(_, root)
+          root:CreateButton("Désarchiver", function() ns.ctDesarchiver(c); refresh() end)
+        end)
+      end
+    end)
+    b:SetScript("OnEnter", function(self)
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      GameTooltip:AddLine(self.nom:GetText())
+      for _, l in ipairs(self.c.o) do GameTooltip:AddLine(("%d × %s"):format(l.qty, ns.itemLabel(l.id)), 1, 1, 1) end
+      if self.c.archive then GameTooltip:AddLine("Clic droit : Désarchiver", 0.6, 0.6, 0.6) end
+      GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     frame.entrees[i] = b
     return b
   end
   frame.syncColonne = function()
+    local n, y = 0, 0
+    for _, c in ipairs(list) do if c.archive then n = n + 1 end end
+    archives:SetShown(n > 0)
+    archives:SetText(("Archivés (%d)"):format(n))
+    archives.signe:SetTexture(deplie and "Interface\\Buttons\\UI-MinusButton-Up" or "Interface\\Buttons\\UI-PlusButton-Up")
     for i, c in ipairs(list) do
       local b = frame.entrees[i] or entree(i)
+      if i == #list - n + 1 then archives:SetPoint("TOPLEFT", 0, -y); y = y + ARCHIVES_H end -- le premier archivé
       local s = ns.ctStatus(c)
       b.c = c
-      b.nom:SetText(("%s · v%s"):format(c.peer and c.peer.name or "?", c.v))
+      b.nom:SetText(c.peer and c.peer.name or "?")
+      b.icone:SetTexture(c.o[1] and C_Item.GetItemIconByID(c.o[1].id) or "Interface\\Icons\\INV_Misc_Note_01")
       local couleur = (STATUS[s] or ""):match("^|c" .. ("%x"):rep(8)) -- la couleur de l'état en entier (8 chiffres : « |cff999999BROUILLON »)
       b.etat:SetText(couleur and (couleur .. (COURT[s] or s) .. "|r") or (COURT[s] or s))
       b.fond:SetShown(i == pos)
       b.trait:SetShown(i == pos)
-      b:Show()
+      b:SetAlpha(c.archive and 0.5 or 1)
+      b:SetPoint("TOPLEFT", 0, -y)
+      b:SetShown(not c.archive or deplie)
+      if b:IsShown() then y = y + ENTREE_H end
     end
     for i = #list + 1, #frame.entrees do frame.entrees[i]:Hide() end
-    liste:SetHeight(NOUVELLE_H + #list * ENTREE_H + 8)
+    liste:SetHeight(y + 8)
     if sc.ScrollBar then sc.ScrollBar:SetShown(liste:GetHeight() > sc:GetHeight()) end -- la barre seulement si ça déborde
   end
 

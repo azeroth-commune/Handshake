@@ -22,6 +22,7 @@ local function contrat(g, id, status, nom, champs)
 end
 local A, B, C = "Player-1-0000A001", "Player-1-0000B002", "Player-1-0000C003"
 local cles = { A .. "#771", B .. "#880", B .. "#880+", C .. "#990" }
+for i = 1, 6 do cles[#cles + 1] = ("Player-1-0000D00%d#66%d"):format(i, i) end -- ceux de la colonne (#72)
 local function ouvrir() SlashCmdList.HANDSHAKECONTRAT() return HandshakeContratsFrame end -- ouvre ou rafraîchit
 local function affiche(f)
     for _, nom in ipairs({ "Aline Affichee", "Bruno Encours", "Carla Arrivee" }) do
@@ -32,13 +33,13 @@ local function cliquerEntree(f, nom)
     for _, b in ipairs(f.entrees) do if b:IsShown() and b.c.peer.name == nom then return b:Click() end end
     error("pas d'entrée pour " .. nom)
 end
-local function nettoyer()
-    if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
-    for _, k in ipairs(cles) do HandshakeDB.contracts[k] = nil end
-end
+-- Chaque test sur une base des contrats à lui (les tests d'avant en laissent : leur tri, leurs archivés), rendue après.
 local function sur(fn)
+    local avant = HandshakeDB.contracts
+    HandshakeDB.contracts = {}
     local ok, err = pcall(fn)
-    nettoyer()
+    if HandshakeContratsFrame then HandshakeContratsFrame:Hide() end
+    HandshakeDB.contracts = avant
     if not ok then error(err, 0) end
 end
 
@@ -115,5 +116,131 @@ test("Contrats : Entrée dans un champ ne valide jamais rien (P7)", function()
         assertEquals("brouillon", db[cles[1]].status, "le brouillon n'est pas parti")
         assertEquals(100, db[cles[1]].o[1].unit, "ni modifié")
         assertEquals("a_signer", db[cles[4]].status, "la proposition n'est ni signée ni refusée")
+    end)
+end)
+
+test("Contrats : le contrat affiché disparu sans version en cours (brouillon abandonné, effacé), la tête de liste s'affiche", function()
+    sur(function()
+        local db = HandshakeDB.contracts
+        db[cles[4]] = contrat(C, "990", "a_signer", "Carla Arrivee", { hash = "00000000000c0990", author = C, artisan = moi, client = C })
+        db[cles[1]] = contrat(A, "771", "brouillon", "Aline Affichee")
+        db[cles[2]] = contrat(B, "880", "envoye", "Bruno Encours", { hash = "00000000000b0880" })
+        local f = ouvrir()
+        cliquerEntree(f, "Aline Affichee") -- au milieu : Carla avant, Bruno après
+        db[cles[1]] = nil -- son brouillon abandonné
+        ouvrir()
+        assertEquals("Carla Arrivee", affiche(f), "la tête de liste, pas Bruno qui a glissé à sa place")
+    end)
+end)
+
+-- La colonne (#72) : nom, icône du premier objet livré, état ; bulle avec tous les objets ; les terminés archivés d'office
+-- sauf le dernier, sous « Archivés (n) », replié par défaut ; clic droit « Désarchiver ».
+local D = {}
+for i = 1, 6 do D[i] = ("Player-1-0000D00%d"):format(i) end
+local function colonne(f)
+    local t = {}
+    for _, b in ipairs(f.entrees) do if b:IsShown() then t[#t + 1] = b end end
+    table.sort(t, function(a, b) return a:GetTop() > b:GetTop() end)
+    return t
+end
+local function entreeDe(f, nom)
+    for _, b in ipairs(colonne(f)) do if b.c.peer.name == nom then return b end end
+end
+local function texte(fs) return (fs:GetText():gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+local function semer()
+    local db, t = HandshakeDB.contracts, GetServerTime()
+    db[cles[1]] = contrat(A, "771", "brouillon", "Aline Affichee", { o = { { id = 2841, qty = 2, unit = 100 }, { id = 2770, qty = 5, unit = 10 } } })
+    db[cles[2]] = contrat(B, "880", "envoye", "Bruno Encours", { hash = "00000000000b0880" })
+    db[cles[4]] = contrat(C, "990", "a_signer", "Carla Arrivee", { hash = "00000000000c0990", author = C, artisan = moi, client = C })
+    db[cles[5]] = contrat(D[1], "661", "signe", "Denis Signe", { hash = "00000000000d0661", signed = t - 100 })
+    db[cles[6]] = contrat(D[2], "662", "clos", "Emma Close", { hash = "00000000000d0662", ledger = { { t = t - 10 } } })
+    db[cles[7]] = contrat(D[3], "663", "refuse", "Fanny Refus", { hash = "00000000000d0663", received = t - 5000 })
+    db[cles[8]] = contrat(D[4], "664", "signe", "Gilles Echu", { hash = "00000000000d0664", signed = t - 9000, d = t - 3600 })
+    return db
+end
+local function noms(f) local t = {} for i, b in ipairs(colonne(f)) do t[i] = b.c.peer.name end return table.concat(t, ", ") end
+
+test("Contrats, la colonne : nom, icône du premier objet livré, état en couleur ; la bulle donne tous les objets", function()
+    sur(function()
+        semer()
+        local f = ouvrir()
+        local b = entreeDe(f, "Aline Affichee")
+        assertEquals("Aline Affichee", b.nom:GetText(), "le nom seul : la version passe sur la fiche")
+        assertEquals(C_Item.GetItemIconByID(2841), b.icone:GetTexture(), "l'icône du premier objet livré")
+        assertEquals("brouillon", texte(b.etat))
+        assertTrue(b.etat:GetText():find("^|c") ~= nil, "l'état en couleur")
+        b:GetScript("OnEnter")(b)
+        local bulle = {}
+        for i = 1, GameTooltip:NumLines() do bulle[#bulle + 1] = _G["GameTooltipTextLeft" .. i]:GetText() end
+        GameTooltip:Hide()
+        bulle = table.concat(bulle, "\n")
+        assertTrue(bulle:find("2 ×", 1, true) and bulle:find("5 ×", 1, true), "les deux objets dans la bulle : " .. bulle)
+        cliquerEntree(f, "Aline Affichee")
+        assertTrue(f.body:GetText():find("v1", 1, true) ~= nil, "la version sur la fiche")
+    end)
+end)
+
+test("Contrats, la colonne : à signer, préparé, en attente, signé, le dernier terminé ; les autres terminés archivés, repliés", function()
+    sur(function()
+        local db = semer()
+        local f = ouvrir()
+        assertEquals("Carla Arrivee, Aline Affichee, Bruno Encours, Denis Signe, Emma Close", noms(f), "l'ordre, les archivés repliés")
+        assertTrue(db[cles[7]].archive and db[cles[8]].archive, "le refusé et l'échu par le temps : archivés")
+        assertTrue(not db[cles[5]].archive and not db[cles[6]].archive, "ni le signé ni le dernier terminé")
+        assertEquals("Archivés (2)", f.archives:GetText(), "repliés par défaut, le nombre")
+        assertTrue(f.archives:GetTop() <= entreeDe(f, "Emma Close"):GetBottom() + 1, "en bas de la colonne")
+        f.archives:Click()
+        local vus = colonne(f)
+        assertEquals(7, #vus, "dépliés d'un clic")
+        local fanny = entreeDe(f, "Fanny Refus")
+        assertTrue(fanny:GetTop() <= f.archives:GetBottom() + 1, "sous l'en-tête")
+        assertTrue(fanny:GetAlpha() < 1 and entreeDe(f, "Emma Close"):GetAlpha() == 1, "les archivés plus pâles")
+        fanny:Click()
+        assertTrue(f.body:GetText():find("Contrat avec Fanny Refus", 1, true) ~= nil, "un archivé s'affiche et se relit")
+        assertTrue(fanny.fond:IsShown(), "surligné")
+        f.archives:Click() -- replié de nouveau (le repli tient pour la session)
+        assertEquals(5, #colonne(f), "replié d'un clic")
+    end)
+end)
+
+test("Contrats, la colonne : clic droit « Désarchiver » le remet parmi les autres, et il y reste", function()
+    sur(function()
+        local db = semer()
+        local f = ouvrir()
+        f.archives:Click()
+        local fanny = entreeDe(f, "Fanny Refus")
+        local vrai, racine = MenuUtil.CreateContextMenu, nil
+        MenuUtil.CreateContextMenu = function(owner, gen)
+            racine = MenuUtil.CreateRootMenuDescription(MenuVariants.GetDefaultContextMenuMixin())
+            gen(owner, racine)
+            return vrai(owner, gen)
+        end
+        local ok, err = pcall(fanny.Click, fanny, "RightButton")
+        MenuUtil.CreateContextMenu = vrai
+        Menu.GetManager():CloseMenus()
+        if not ok then error(err, 0) end
+        local choix
+        for _, d in racine:EnumerateElementDescriptions() do if MenuUtil.GetElementText(d) == "Désarchiver" then choix = d end end
+        assertNotNil(choix, "« Désarchiver » au clic droit")
+        choix:Pick(MenuInputContext.MouseButton, "LeftButton")
+        f.archives:Click() -- replié
+        ouvrir()
+        assertEquals(nil, db[cles[7]].archive, "plus archivé, même après un nouveau tri")
+        assertEquals("Archivés (1)", f.archives:GetText())
+        assertTrue(entreeDe(f, "Fanny Refus") and entreeDe(f, "Fanny Refus"):GetAlpha() == 1, "parmi les autres, pas pâle")
+    end)
+end)
+
+test("Contrats, la colonne : « + Nouvelle commande » reste en haut, hors de la liste qui défile", function()
+    sur(function()
+        semer()
+        local f = ouvrir()
+        local nouvelle = bouton(f, "+ Nouvelle commande")
+        local sc = f.entrees[1]:GetParent():GetParent()
+        assertEquals("ScrollFrame", sc:GetObjectType())
+        local p = nouvelle:GetParent()
+        while p and p ~= sc do p = p:GetParent() end
+        assertNil(p, "« + Nouvelle commande » n'est pas dans ce qui défile")
+        assertTrue(nouvelle:GetBottom() >= sc:GetTop() - 1, "au-dessus de la liste")
     end)
 end)
