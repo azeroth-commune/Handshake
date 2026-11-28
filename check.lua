@@ -1308,7 +1308,8 @@ do
   for fichier in HSTOC:gmatch("([%w_]+%.lua)") do
     if fichier ~= "Contrat.lua" and fichier ~= "ContratUI.lua" then
       local code = io.open("Handshake/" .. fichier):read("*a"):gsub("%-%-[^\n]*", "")
-      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true), fichier .. " envoie un contrat sans sa fiche")
+      assert(not code:find("ctPropose", 1, true) and not code:find("ctSendRaw", 1, true) and not code:find("ctEnvoyer", 1, true),
+        fichier .. " envoie un contrat sans sa fiche")
     end
   end
   -- Le minage : préparé (j'apporte le cuivre), son brouillon dans Contrats, puis abandonné : le brouillon s'efface, le bloc
@@ -1872,6 +1873,17 @@ do
   ns.learnGUID(EVEN, GEVE)
   inject(EVEN, BOB, "Q|3|" .. GDEN)
   assert(#captes == 0, "GUID d'un autre : pas de réponse")
+  -- La réponse d'un tiers ne libère pas l'envoi d'un autre (présence par le nom donné par le serveur) ; une réponse
+  -- arrivée après les 3 s ne fait rien partir une seconde fois.
+  minuteurs, captes, w0 = {}, {}, #wire
+  local c6 = brouillon(GDEN, DENN)
+  ns.ctEnvoyer(c6)
+  inject(EVEN, BOB, "H|3|" .. GEVE)
+  assert(c6.status == "brouillon" and ns.ctEnAttente(c6) and #captes == 1, "la réponse d'Eve ne vaut pas pour Denis")
+  minuteurs[1].fn()
+  local apres = #captes
+  inject(DENN, BOB, "H|3|" .. GDEN)
+  assert(c6.status == "envoye" and c6.enClair and #captes == apres and #wire == w0, "réponse tardive : rien ne part deux fois")
 
   -- Aucun envoi hors du transport (ns.debugSend : le mode debug n'envoie rien) : pas de SendChatMessage dans les contrats,
   -- le clair passe par ns.whisper ; la fenêtre Contrats envoie par « Envoyer » et note « Il a dit oui » par le module.

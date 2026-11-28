@@ -437,7 +437,7 @@ end
 -- Toute nouvelle version (contre-proposition, réponse de l'artisan, nouvelle version d'une demande) est préparée en
 -- brouillon (#19), à côté de la version en cours : rien ne part avant que son auteur ait relu SA fiche dans Contrats
 -- (caution, perte maximale, objets sans prix, échéance, nom et GUID : P8, n° 11, 13, 26, 57) et cliqué « Envoyer la
--- proposition » (ns.ctPropose). Préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
+-- proposition » (ns.ctEnvoyer). Préparée de nouveau, le brouillon est refait. Bornes vérifiées dès maintenant.
 local function newVersion(c, m, o, d)
   local n = nextVersion(c, m, o, d)
   local err = horsBornes(n)
